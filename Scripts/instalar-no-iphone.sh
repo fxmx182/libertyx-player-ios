@@ -75,9 +75,13 @@ echo
 echo "==> conferindo no aparelho…"
 sleep 2
 
-if ideviceinstaller -l 2>/dev/null | grep -qi 'labplayer'; then
+# `ideviceinstaller list`, não `-l`: a flag antiga não existe mais e o erro de
+# sintaxe, silenciado por 2>/dev/null, virava um falso "não instalou".
+if ideviceinstaller list 2>&1 | grep -qi 'labplayer'; then
   echo
   echo "INSTALADO. O LabPlayer está na tela inicial do iPhone."
+  # O AltServer acrescenta o sufixo do time ao bundle id em conta gratuita.
+  ideviceinstaller list 2>/dev/null | grep -i labplayer | sed 's/^/  /'
   echo
   echo "Antes de abrir, confie no certificado uma vez:"
   echo "  Ajustes > Geral > VPN e Gerenciamento de Dispositivo > seu Apple ID > Confiar"
