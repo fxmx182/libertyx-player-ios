@@ -43,18 +43,7 @@ jobs:
       - name: Gerar projeto
         run: xcodegen generate
 
-      # Assinatura ad-hoc ("-"), NÃO ausência de assinatura.
-      #
-      # Com CODE_SIGNING_ALLOWED=NO o binário sai sem sequer o comando
-      # LC_CODE_SIGNATURE no cabeçalho Mach-O. O AltServer então tem que criar
-      # essa estrutura do zero ao reassinar, e é aí que ele erra: o iOS recusa
-      # o resultado com "spawn failed, error=85: Bad executable" — sem crash
-      # report, porque o processo nunca chega a existir.
-      #
-      # Ad-hoc resolve: o binário já sai com a estrutura de assinatura montada
-      # e o AltServer só substitui o conteúdo pelo certificado do Apple ID.
-      # Continua sem exigir certificado no CI.
-      - name: Compilar (assinatura ad-hoc)
+      - name: Compilar (sem assinar)
         run: |
           set -o pipefail
           xcodebuild \
@@ -63,27 +52,37 @@ jobs:
             -configuration Release \
             -sdk iphoneos \
             -derivedDataPath build \
-            CODE_SIGN_IDENTITY="-" \
-            CODE_SIGNING_REQUIRED=YES \
-            CODE_SIGNING_ALLOWED=YES \
-            CODE_SIGN_STYLE=Manual \
-            DEVELOPMENT_TEAM="" \
-            PROVISIONING_PROFILE_SPECIFIER="" \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
             build 2>&1 | tee build.log
 
-      # Conferir aqui em vez de descobrir no aparelho: um app sem assinatura
-      # só dá sinal de vida como um ícone que pisca e fecha.
-      - name: Conferir que o binário está assinado
+      # Assinar ad-hoc DEPOIS do xcodebuild, não durante.
+      #
+      # CODE_SIGNING_ALLOWED=NO deixa o binário sem o comando LC_CODE_SIGNATURE
+      # no cabeçalho Mach-O (verificado: ele realmente sai ausente). O AltServer
+      # teria que inserir essa estrutura ao reassinar e não consegue — o iOS
+      # recusa com "spawn failed, error=85: Bad executable", sem crash report,
+      # porque o processo nunca chega a nascer.
+      #
+      # `xcodebuild` proíbe ad-hoc no SDK de iOS ("Ad Hoc code signing is not
+      # allowed with SDK 'iOS 18.5'"), mas a proibição é dele, não do codesign.
+      # Assinando aqui, o binário ganha a estrutura e o AltServer só troca o
+      # conteúdo pelo certificado do Apple ID. O CI segue sem certificado.
+      - name: Assinar ad-hoc
+        run: |
+          APP="build/Build/Products/Release-iphoneos/LabPlayer.app"
+          codesign --force --sign - --timestamp=none "$APP"
+
+      - name: Conferir a assinatura
         run: |
           APP="build/Build/Products/Release-iphoneos/LabPlayer.app"
           codesign -dvvv "$APP" 2>&1 | sed 's/^/  /'
-          if ! codesign -dv "$APP" 2>&1 | grep -q 'Signature'; then
-            echo "::error title=Binário sem assinatura::o .ipa não vai abrir no aparelho"
+          otool -l "$APP/LabPlayer" | grep -q LC_CODE_SIGNATURE || {
+            echo "::error title=Sem LC_CODE_SIGNATURE::o app não vai abrir no aparelho — pisca e fecha"
             exit 1
-          fi
-          otool -l "$APP/LabPlayer" | grep -q LC_CODE_SIGNATURE \
-            || { echo "::error title=Sem LC_CODE_SIGNATURE::cabeçalho Mach-O sem espaço para assinatura"; exit 1; }
-          echo "assinatura presente"
+          }
+          echo "LC_CODE_SIGNATURE presente"
 
       # O log completo do job só é baixável por quem tem admin no repositório,
       # mas as *anotações* de um repo público são lidas por qualquer um. Então
