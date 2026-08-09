@@ -15,6 +15,8 @@ jobs:
     name: Compilar e empacotar
     runs-on: macos-15
     timeout-minutes: 30
+    permissions:
+      contents: write   # para publicar o release "latest"
 
     steps:
       - uses: actions/checkout@v4
@@ -132,3 +134,23 @@ jobs:
           path: LabPlayer.ipa
           retention-days: 30
           if-no-files-found: error
+
+      # Artefato só baixa autenticado; asset de release baixa com um curl seco.
+      # Isso deixa o .ipa acessível direto do servidor de casa — nada de abrir
+      # o navegador e descompactar zip a cada iteração.
+      - name: Publicar release "latest"
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag 2>/dev/null || true
+          gh release create latest LabPlayer.ipa \
+            --title "LabPlayer — build mais recente" \
+            --notes "Compilado de ${GITHUB_SHA:0:7}. Assinado ad-hoc; o AltServer/SideStore reassina no aparelho.
+
+          Instalar:
+          \`\`\`
+          curl -L -o LabPlayer.ipa https://github.com/${GITHUB_REPOSITORY}/releases/download/latest/LabPlayer.ipa
+          Scripts/instalar-no-iphone.sh LabPlayer.ipa
+          \`\`\`" \
+            --prerelease
