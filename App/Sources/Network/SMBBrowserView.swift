@@ -5,6 +5,7 @@ struct SMBServersView: View {
 
     @EnvironmentObject private var store: SMBServerStore
     @State private var editing: SMBServer?
+    @State private var pendingDeletion: SMBServer?
     @State private var addingNew = false
 
     var body: some View {
@@ -34,9 +35,9 @@ struct SMBServersView: View {
                 }
                 .swipeActions {
                     Button(role: .destructive) {
-                        store.remove(server)
+                        pendingDeletion = server
                     } label: {
-                        Label("Remover", systemImage: "trash")
+                        Label("Excluir", systemImage: "trash")
                     }
                     Button {
                         editing = server
@@ -45,7 +46,33 @@ struct SMBServersView: View {
                     }
                     .tint(.orange)
                 }
+                // Deslizar o dedo é discreto demais para uma ação que só se
+                // usa de vez em quando; segurar é o gesto que o resto do app
+                // já usa para menus.
+                .contextMenu {
+                    Button {
+                        editing = server
+                    } label: {
+                        Label("Editar informações do servidor", systemImage: "pencil")
+                    }
+                    Button(role: .destructive) {
+                        pendingDeletion = server
+                    } label: {
+                        Label("Excluir servidor", systemImage: "trash")
+                    }
+                }
             }
+        }
+        // Confirmação porque excluir também apaga a senha do Keychain — e não
+        // há como desfazer isso.
+        .alert("Excluir servidor?", isPresented: Binding(
+            get: { pendingDeletion != nil },
+            set: { if !$0 { pendingDeletion = nil } }
+        ), presenting: pendingDeletion) { server in
+            Button("Excluir", role: .destructive) { store.remove(server) }
+            Button("Cancelar", role: .cancel) {}
+        } message: { server in
+            Text("Remove “\(server.name)” da lista e apaga a senha guardada no Keychain do aparelho.")
         }
         .navigationTitle("Servidores")
         .toolbar {
