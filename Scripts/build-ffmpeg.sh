@@ -75,6 +75,9 @@ for ALVO in "${ALVOS[@]}"; do
 
   # O assembly x86 do FFmpeg exige nasm, que não vem no runner. Desligá-lo
   # custa desempenho que não importa: essa fatia só existe para o simulador.
+  #
+  # A expansão usa a forma ${arr[@]+"${arr[@]}"} porque o macOS ainda traz
+  # bash 3.2, onde expandir array vazio sob `set -u` é erro fatal.
   EXTRA_CONFIG=()
   [ "$ARQUITETURA" = "x86_64" ] && EXTRA_CONFIG+=(--disable-x86asm)
 
@@ -102,7 +105,7 @@ for ALVO in "${ALVOS[@]}"; do
       --sysroot="$SDK_PATH" \
       --extra-cflags="-arch $ARQUITETURA $FLAG_VERSAO -fno-stack-check" \
       --extra-ldflags="-arch $ARQUITETURA $FLAG_VERSAO" \
-      "${EXTRA_CONFIG[@]}" \
+      ${EXTRA_CONFIG[@]+"${EXTRA_CONFIG[@]}"} \
       --enable-static --disable-shared \
       --enable-pic \
       --disable-programs --disable-doc --disable-debug \
