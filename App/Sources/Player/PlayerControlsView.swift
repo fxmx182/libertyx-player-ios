@@ -14,9 +14,6 @@ final class PlayerControlsView: UIView {
     /// `finished == false` durante o arrasto (scrub ao vivo), `true` ao soltar.
     var onScrub: ((Double, Bool) -> Void)?
     var onSeekRelative: ((Double) -> Void)?
-    var onSpeedChange: ((Float) -> Void)?
-    var onCycleAspect: (() -> Void)?
-    var onRotate: (() -> Void)?
     var onShowTracks: ((TrackKind) -> Void)?
     var onLockChange: ((Bool) -> Void)?
     var onPrevious: (() -> Void)?
@@ -37,7 +34,6 @@ final class PlayerControlsView: UIView {
 
     private var duration: Double = 0
     private var isUserScrubbing = false
-    private var currentSpeed: Float = 1.0
 
     // MARK: - Views
 
@@ -71,12 +67,8 @@ final class PlayerControlsView: UIView {
     private let elapsedLabel = UILabel()
     private let remainingLabel = UILabel()
     private let slider = UISlider()
-    private let toolRow = UIStackView()
 
     private let lockButton = UIButton(type: .system)
-    private let speedButton = UIButton(type: .system)
-    private let aspectButton = UIButton(type: .system)
-    private let rotateButton = UIButton(type: .system)
     /// Botão solto que aparece sozinho quando tudo está bloqueado.
     private let unlockButton = UIButton(type: .system)
     private let spinner = UIActivityIndicatorView(style: .large)
@@ -305,18 +297,26 @@ final class PlayerControlsView: UIView {
         slider.addTarget(self, action: #selector(sliderTouchUp),
                          for: [.touchUpInside, .touchUpOutside, .touchCancel])
 
-        setupToolRow()
+        // Só o cadeado permanece no rodapé. O resto virou redundante quando a
+        // fileira de ferramentas passou a oferecer as mesmas ações — e cadeado
+        // é ação de um toque, que perde o sentido escondida atrás de um menu.
+        configure(lockButton, symbol: "lock.open", action: #selector(lockTapped))
 
-        [elapsedLabel, slider, remainingLabel, toolRow].forEach(bottomBar.addSubview)
+        [elapsedLabel, slider, remainingLabel, lockButton].forEach(bottomBar.addSubview)
 
         NSLayoutConstraint.activate([
             bottomBar.bottomAnchor.constraint(equalTo: bottomAnchor),
             bottomBar.leadingAnchor.constraint(equalTo: leadingAnchor),
             bottomBar.trailingAnchor.constraint(equalTo: trailingAnchor),
-            bottomBar.heightAnchor.constraint(equalToConstant: 140),
+            bottomBar.heightAnchor.constraint(equalToConstant: 110),
+
+            lockButton.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 12),
+            lockButton.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -6),
+            lockButton.widthAnchor.constraint(equalToConstant: 44),
+            lockButton.heightAnchor.constraint(equalToConstant: 44),
 
             elapsedLabel.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 16),
-            elapsedLabel.bottomAnchor.constraint(equalTo: toolRow.topAnchor, constant: -14),
+            elapsedLabel.bottomAnchor.constraint(equalTo: lockButton.topAnchor, constant: -8),
 
             remainingLabel.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -16),
             remainingLabel.centerYAnchor.constraint(equalTo: elapsedLabel.centerYAnchor),
@@ -324,34 +324,7 @@ final class PlayerControlsView: UIView {
             slider.leadingAnchor.constraint(equalTo: elapsedLabel.trailingAnchor, constant: 10),
             slider.trailingAnchor.constraint(equalTo: remainingLabel.leadingAnchor, constant: -10),
             slider.centerYAnchor.constraint(equalTo: elapsedLabel.centerYAnchor),
-
-            toolRow.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 8),
-            toolRow.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -8),
-            toolRow.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -8),
-            toolRow.heightAnchor.constraint(equalToConstant: 46),
         ])
-    }
-
-    private func setupToolRow() {
-        configure(lockButton, symbol: "lock.open", action: #selector(lockTapped))
-        configure(aspectButton, symbol: "rectangle.arrowtriangle.2.inward", action: #selector(aspectTapped))
-        configure(rotateButton, symbol: "rotate.right", action: #selector(rotateTapped))
-
-        speedButton.setTitle("1×", for: .normal)
-        speedButton.tintColor = .white
-        speedButton.setTitleColor(.white, for: .normal)
-        speedButton.titleLabel?.font = .monospacedDigitSystemFont(ofSize: 15, weight: .semibold)
-        speedButton.translatesAutoresizingMaskIntoConstraints = false
-        // Menu em vez de ciclar: ciclar entre seis velocidades obriga a passar
-        // por todas para chegar na que se quer.
-        speedButton.showsMenuAsPrimaryAction = true
-        speedButton.menu = speedMenu()
-
-        toolRow.axis = .horizontal
-        toolRow.distribution = .equalSpacing
-        toolRow.alignment = .center
-        toolRow.translatesAutoresizingMaskIntoConstraints = false
-        [lockButton, speedButton, aspectButton, rotateButton].forEach(toolRow.addArrangedSubview)
     }
 
     private func setupUnlockButton() {
@@ -376,27 +349,8 @@ final class PlayerControlsView: UIView {
         button.addTarget(self, action: action, for: .touchUpInside)
     }
 
-    private func speedMenu() -> UIMenu {
-        let velocidades: [Float] = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]
-        let acoes = velocidades.map { velocidade in
-            UIAction(title: Self.speedLabel(velocidade),
-                     state: velocidade == currentSpeed ? .on : .off) { [weak self] _ in
-                self?.applySpeed(velocidade)
-            }
-        }
-        return UIMenu(title: "Velocidade", children: acoes)
-    }
 
-    private static func speedLabel(_ value: Float) -> String {
-        value == rintf(value) ? "\(Int(value))×" : String(format: "%.2g×", value)
-    }
 
-    private func applySpeed(_ value: Float) {
-        currentSpeed = value
-        speedButton.setTitle(Self.speedLabel(value), for: .normal)
-        speedButton.menu = speedMenu()
-        onSpeedChange?(value)
-    }
 
     override func layoutSubviews() {
         super.layoutSubviews()
@@ -441,12 +395,6 @@ final class PlayerControlsView: UIView {
         nextButton.alpha = hasNext ? 1 : 0.3
     }
 
-    func setAspectLabel(_ text: String) {
-        aspectButton.setTitle(nil, for: .normal)
-        // O rótulo aparece no HUD central; aqui só o ícone muda de ênfase.
-        aspectButton.tintColor = text == "Ajustar" ? .white : tintColor
-    }
-
     func setVisible(_ visible: Bool, animated: Bool) {
         guard !isLocked, visible != isVisible else { return }
         isVisible = visible
@@ -468,8 +416,6 @@ final class PlayerControlsView: UIView {
     @objc private func forwardTapped()   { onSeekRelative?(10) }
     @objc private func previousTapped()  { onPrevious?() }
     @objc private func nextTapped()      { onNext?() }
-    @objc private func aspectTapped()    { onCycleAspect?() }
-    @objc private func rotateTapped()    { onRotate?() }
     @objc private func subtitlesTapped() { onShowTracks?(.subtitle) }
     @objc private func audioTapped()     { onShowTracks?(.audio) }
 

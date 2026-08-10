@@ -143,16 +143,6 @@ final class PlayerViewController: UIViewController {
             self?.handleControlScrub(to: time, finished: finished)
         }
         controls.onSeekRelative = { [weak self] delta in self?.jump(by: delta) }
-        controls.onSpeedChange = { [weak self] speed in
-            guard let self else { return }
-            self.playbackSpeed = speed
-            if self.engine.state == .playing { self.engine.rate = speed }
-            self.hud.show(.rate(speed))
-            self.hud.hideAfterDelay()
-            self.scheduleControlsHide()
-        }
-        controls.onCycleAspect = { [weak self] in self?.cycleAspect() }
-        controls.onRotate = { [weak self] in self?.toggleOrientation() }
         controls.onShowTracks = { [weak self] kind in self?.showTracks(kind) }
         controls.onPrevious = { [weak self] in self?.goToPrevious() }
         controls.onNext = { [weak self] in self?.goToNext() }
@@ -522,7 +512,6 @@ final class PlayerViewController: UIViewController {
         let mode = gravityModes[gravityIndex]
         (renderView as? VideoGravityAdjustable)?.setGravity(mode)
         let texto = label(for: mode)
-        controls.setAspectLabel(texto)
         hud.show(.text(texto))
         hud.hideAfterDelay()
     }
