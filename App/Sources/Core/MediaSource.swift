@@ -25,11 +25,11 @@ enum MediaOrigin: Equatable, Hashable {
 }
 
 struct SMBShareRef: Equatable, Hashable, Codable {
+    /// Aponta para o servidor salvo. É por aqui que o motor recupera endereço
+    /// e credenciais na hora de tocar — a senha vive no Keychain, nunca aqui.
+    var serverID: UUID
     var host: String
     var share: String
-    var username: String
-    /// Só o identificador; a senha vive no Keychain, nunca aqui.
-    var credentialID: String?
 }
 
 /// Um item reproduzível, já resolvido para exibição.

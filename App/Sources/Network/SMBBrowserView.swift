@@ -235,8 +235,23 @@ struct SMBDirectoryView: View {
     @State private var entries: [SMBConnection.Entry] = []
     @State private var loading = true
     @State private var failure: String?
-    @State private var pendingPlayback: SMBConnection.Entry?
+    @State private var playing: MediaItem?
     @State private var showingInfo: SMBConnection.Entry?
+
+    /// A pasta inteira vira lista de reprodução, igual às pastas locais.
+    private var playlist: [MediaItem] {
+        entries.filter { !$0.isDirectory && isVideo($0.name) }.map(mediaItem(for:))
+    }
+
+    private func mediaItem(for entry: SMBConnection.Entry) -> MediaItem {
+        MediaItem(
+            title: entry.name,
+            origin: .smb(share: SMBShareRef(serverID: server.id, host: server.host, share: share),
+                         path: entry.path),
+            fileSize: Int64(entry.size),
+            modifiedAt: entry.modifiedAt
+        )
+    }
 
     var body: some View {
         List {
@@ -257,7 +272,7 @@ struct SMBDirectoryView: View {
                     }
                 } else if isVideo(entry.name) {
                     Button {
-                        pendingPlayback = entry
+                        playing = mediaItem(for: entry)
                     } label: {
                         HStack(spacing: 12) {
                             Image(systemName: "film").foregroundStyle(.tint).frame(width: 24)
@@ -286,13 +301,8 @@ struct SMBDirectoryView: View {
             SMBMediaInfoView(connection: connection, share: share,
                              path: entry.path, title: entry.name, size: entry.size)
         }
-        .alert("Ainda não toca daqui", isPresented: .init(
-            get: { pendingPlayback != nil },
-            set: { if !$0 { pendingPlayback = nil } }
-        )) {
-            Button("Entendi", role: .cancel) {}
-        } message: {
-            Text("Navegar pelo servidor já funciona. Reproduzir direto do SMB depende do motor FFmpeg, que é o próximo passo — o AVFoundation da Apple não fala SMB.")
+        .fullScreenCover(item: $playing) { item in
+            PlayerScreen(item: item, playlist: playlist).ignoresSafeArea()
         }
         .overlay {
             if !loading, failure == nil, entries.isEmpty {

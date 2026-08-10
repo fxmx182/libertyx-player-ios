@@ -132,6 +132,28 @@ actor SMBConnection {
         }
     }
 
+    /// Sessão de reprodução lendo direto do servidor.
+    ///
+    /// A fonte de bytes vai junto como `keepAlive`: o AVIOContext guarda só um
+    /// ponteiro sem posse para ela, e se ela for coletada no meio do filme o
+    /// FFmpeg lê memória liberada.
+    func makeSession(share: String, path: String) async throws -> FFmpegPlaybackSession {
+        let client = try await connectedClient()
+
+        if mountedShare != share {
+            if mountedShare != nil { try? await client.disconnectShare() }
+            try await client.connectShare(share)
+            mountedShare = share
+        }
+
+        let fonte = try await SMBByteSource.open(client: client, path: path)
+        let avio = fonte.makeAVIOSource()
+
+        return try await FFmpegRunner.run {
+            try FFmpegPlaybackSession(source: avio, keepAlive: fonte)
+        }
+    }
+
     func disconnect() async {
         guard let client else { return }
         if mountedShare != nil { try? await client.disconnectShare() }

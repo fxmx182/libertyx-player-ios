@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import AVFoundation
 
 enum PlaybackState: Equatable {
     case idle
@@ -52,6 +53,16 @@ protocol PlaybackEngine: AnyObject {
     /// Camada onde o vídeo é desenhado; a view controller insere na hierarquia.
     func makeRenderView() -> UIView
     func teardown()
+}
+
+/// Superfícies de vídeo que sabem mudar o enquadramento.
+///
+/// Existe porque cada motor traz a sua: o AVPlayer desenha numa AVPlayerLayer,
+/// o FFmpeg numa AVSampleBufferDisplayLayer. O gesto de pinça fala com esta
+/// abstração e não precisa saber qual está em uso.
+@MainActor
+protocol VideoGravityAdjustable: AnyObject {
+    func setGravity(_ gravity: AVLayerVideoGravity)
 }
 
 enum PlaybackError: LocalizedError {

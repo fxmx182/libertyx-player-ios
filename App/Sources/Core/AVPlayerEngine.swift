@@ -215,7 +215,7 @@ final class AVPlayerEngine: NSObject, PlaybackEngine {
 
 /// UIView cuja layer de fundo é uma AVPlayerLayer — evita ter que sincronizar
 /// frames manualmente no layout.
-final class PlayerLayerView: UIView {
+final class PlayerLayerView: UIView, VideoGravityAdjustable {
     override class var layerClass: AnyClass { AVPlayerLayer.self }
     private var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
 

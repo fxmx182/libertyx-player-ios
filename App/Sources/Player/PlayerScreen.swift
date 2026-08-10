@@ -21,8 +21,9 @@ struct PlayerScreen: UIViewControllerRepresentable {
 
     @MainActor
     private static func makeEngine(for item: MediaItem) -> PlaybackEngine {
-        // TODO(fase 2): retornar FFmpegEngine() para .smb e para contêineres
-        // que o AVFoundation não abre (mkv, avi, ts) — e eventualmente para tudo.
-        AVPlayerEngine()
+        // FFmpeg para tudo. O AVPlayerEngine continua no projeto como
+        // referência de comparação, mas não é mais o caminho padrão: ele não
+        // abre MKV, não toca DTS e não fala SMB.
+        FFmpegEngine()
     }
 }

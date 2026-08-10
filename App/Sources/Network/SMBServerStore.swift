@@ -20,6 +20,11 @@ struct SMBServer: Codable, Identifiable, Hashable {
 @MainActor
 final class SMBServerStore: ObservableObject {
 
+    /// Instância única: o motor de reprodução precisa recuperar endereço e
+    /// senha na hora de abrir um arquivo, e ele não vive na hierarquia de
+    /// views para receber isso por ambiente.
+    static let shared = SMBServerStore()
+
     @Published private(set) var servers: [SMBServer] = []
 
     private let defaultsKey = "labplayer.smbServers"

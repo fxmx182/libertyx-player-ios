@@ -399,7 +399,7 @@ final class PlayerViewController: UIViewController {
 
     private func applyGravity() {
         let mode = gravityModes[gravityIndex]
-        (renderView as? PlayerLayerView)?.setGravity(mode)
+        (renderView as? VideoGravityAdjustable)?.setGravity(mode)
         let texto = label(for: mode)
         controls.setAspectLabel(texto)
         hud.show(.text(texto))
