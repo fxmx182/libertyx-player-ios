@@ -34,6 +34,23 @@ final class SMBByteSource {
     private let size: Int64
     private var position: Int64 = 0
 
+    /// Leitura antecipada.
+    ///
+    /// Sem isto, cada pedido do decodificador vira uma ida e volta pela rede,
+    /// feita no exato momento em que ele precisa dos bytes. Num arquivo de alta
+    /// taxa o decodificador consome mais rápido do que a rede entrega, o laço
+    /// fica esperando e o vídeo trava alguns segundos depois de começar —
+    /// quando o buffer interno do FFmpeg acaba.
+    ///
+    /// Com blocos grandes em memória e o próximo já sendo buscado em segundo
+    /// plano, a maioria das leituras é atendida sem tocar na rede.
+    private static let chunkSize: Int64 = 4 * 1024 * 1024
+
+    private var cache = Data()
+    private var cacheStart: Int64 = -1
+    private var prefetch: Task<(Int64, Data)?, Never>?
+    private var prefetchStart: Int64 = -1
+
     init(reader: FileReader, size: Int64) {
         self.reader = reader
         self.size = size
@@ -64,29 +81,114 @@ final class SMBByteSource {
 
     private func read(into buffer: UnsafeMutablePointer<UInt8>, count: Int) -> Int {
         guard position < size else { return 0 }
-        let pedido = UInt32(min(Int64(count), size - position))
+        let pedido = min(Int64(count), size - position)
         guard pedido > 0 else { return 0 }
+
+        // 1. O bloco em memória atende?
+        if let servidos = serveFromCache(into: buffer, count: Int(pedido)) {
+            agendarProximoBloco()
+            return servidos
+        }
+
+        // 2. O bloco que já estava sendo buscado é este?
+        if prefetchStart == blocoDe(position), let tarefa = prefetch {
+            let resultado = esperar(tarefa)
+            prefetch = nil
+            prefetchStart = -1
+            if let (inicio, dados) = resultado, !dados.isEmpty {
+                cache = dados
+                cacheStart = inicio
+                if let servidos = serveFromCache(into: buffer, count: Int(pedido)) {
+                    agendarProximoBloco()
+                    return servidos
+                }
+            }
+        }
+
+        // 3. Buscar agora, bloqueando. Acontece no início e após cada salto.
+        prefetch = nil
+        prefetchStart = -1
+        guard let (inicio, dados) = buscarBloco(em: blocoDe(position)), !dados.isEmpty else {
+            return position >= size ? 0 : -1
+        }
+        cache = dados
+        cacheStart = inicio
+        let servidos = serveFromCache(into: buffer, count: Int(pedido)) ?? 0
+        agendarProximoBloco()
+        return servidos
+    }
+
+    /// Alinha em múltiplos do bloco para as buscas se repetirem no mesmo lugar
+    /// — sem isso, cada salto cria um bloco novo e o cache nunca acerta.
+    private func blocoDe(_ deslocamento: Int64) -> Int64 {
+        (deslocamento / Self.chunkSize) * Self.chunkSize
+    }
+
+    private func serveFromCache(into buffer: UnsafeMutablePointer<UInt8>, count: Int) -> Int? {
+        guard cacheStart >= 0, position >= cacheStart else { return nil }
+        let dentro = Int(position - cacheStart)
+        guard dentro < cache.count else { return nil }
+
+        let disponivel = min(count, cache.count - dentro)
+        cache.withUnsafeBytes { origem in
+            guard let base = origem.baseAddress else { return }
+            buffer.update(from: base.advanced(by: dentro).assumingMemoryBound(to: UInt8.self),
+                          count: disponivel)
+        }
+        position += Int64(disponivel)
+        return disponivel
+    }
+
+    /// Dispara a busca do bloco seguinte quando o atual está acabando.
+    private func agendarProximoBloco() {
+        guard prefetch == nil, cacheStart >= 0 else { return }
+        let restante = cacheStart + Int64(cache.count) - position
+        // Só vale a pena antecipar quando ainda há folga para a rede responder.
+        guard restante < Self.chunkSize / 2 else { return }
+
+        let proximo = cacheStart + Int64(cache.count)
+        guard proximo < size else { return }
+
+        prefetchStart = proximo
+        prefetch = Task { [reader, size] in
+            let tamanho = UInt32(min(Self.chunkSize, size - proximo))
+            guard let dados = try? await reader.read(offset: UInt64(proximo), length: tamanho) else {
+                return nil
+            }
+            return (proximo, dados)
+        }
+    }
+
+    private func buscarBloco(em inicio: Int64) -> (Int64, Data)? {
+        let tamanho = UInt32(min(Self.chunkSize, size - inicio))
+        guard tamanho > 0 else { return nil }
 
         let caixa = ResultBox()
         let semaforo = DispatchSemaphore(value: 0)
-        let deslocamento = UInt64(position)
-
         Task { [reader] in
-            do    { caixa.data = try await reader.read(offset: deslocamento, length: pedido) }
+            do    { caixa.data = try await reader.read(offset: UInt64(inicio), length: tamanho) }
             catch { caixa.failed = true }
             semaforo.signal()
         }
         semaforo.wait()
 
-        if caixa.failed { return -1 }
-        guard let data = caixa.data, !data.isEmpty else { return 0 }
+        guard !caixa.failed, let dados = caixa.data else { return nil }
+        return (inicio, dados)
+    }
 
-        data.withUnsafeBytes { origem in
-            guard let base = origem.baseAddress else { return }
-            buffer.update(from: base.assumingMemoryBound(to: UInt8.self), count: data.count)
+    private func esperar(_ tarefa: Task<(Int64, Data)?, Never>) -> (Int64, Data)? {
+        let caixa = PrefetchBox()
+        let semaforo = DispatchSemaphore(value: 0)
+        Task {
+            caixa.resultado = await tarefa.value
+            semaforo.signal()
         }
-        position += Int64(data.count)
-        return data.count
+        semaforo.wait()
+        return caixa.resultado
+    }
+
+    private final class PrefetchBox {
+        var resultado: (Int64, Data)?
     }
 
     private func seek(to offset: Int64, whence: Int32) -> Int64 {
@@ -102,6 +204,14 @@ final class SMBByteSource {
         default:       return Int64(labp_averror_einval())
         }
         position = max(0, min(position, size))
+
+        // Saltar para longe invalida o que estava sendo buscado adiante; manter
+        // essa tarefa só gastaria banda com bytes que ninguém vai pedir.
+        if position < cacheStart || position >= cacheStart + Int64(cache.count) {
+            prefetch?.cancel()
+            prefetch = nil
+            prefetchStart = -1
+        }
         return position
     }
 
