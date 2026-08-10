@@ -1,4 +1,5 @@
 import SwiftUI
+import CoreGraphics
 
 /// Detalhes técnicos de um arquivo local, lidos pelo FFmpeg.
 ///
@@ -12,13 +13,16 @@ struct MediaInfoView: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var info: MediaInfo?
+    @State private var thumbnail: CGImage?
     @State private var failure: String?
 
     var body: some View {
         NavigationStack {
             Group {
                 if let info {
-                    MediaInfoDetails(info: info, sizeText: FolderScanner.humanSize(item.fileSize))
+                    MediaInfoDetails(info: info,
+                                     sizeText: FolderScanner.humanSize(item.fileSize),
+                                     thumbnail: thumbnail)
                 } else if let failure {
                     ContentUnavailableView("Não foi possível ler",
                                            systemImage: "exclamationmark.triangle",
@@ -60,9 +64,23 @@ struct MediaInfoView: View {
         }.value
 
         switch resultado {
-        case .success(let lido): info = lido
-        case .failure(let erro): failure = erro.localizedDescription
+        case .success(let lido):
+            info = lido
+            await carregarQuadro(duracao: lido.duration)
+        case .failure(let erro):
+            failure = erro.localizedDescription
         }
+    }
+
+    /// 10% da duração: o início de muito filme é tela preta ou logotipo.
+    private func carregarQuadro(duracao: Double) async {
+        let instante = duracao > 0 ? duracao * 0.1 : 0
+        let origin = item.origin
+        thumbnail = await Task.detached(priority: .utility) {
+            try? FileAccess.withAccess(origin) {
+                try FrameExtractor.image(path: $0, at: instante)
+            }
+        }.value ?? nil
     }
 }
 
@@ -77,13 +95,16 @@ struct SMBMediaInfoView: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var info: MediaInfo?
+    @State private var thumbnail: CGImage?
     @State private var failure: String?
 
     var body: some View {
         NavigationStack {
             Group {
                 if let info {
-                    MediaInfoDetails(info: info, sizeText: FolderScanner.humanSize(Int64(size)))
+                    MediaInfoDetails(info: info,
+                                     sizeText: FolderScanner.humanSize(Int64(size)),
+                                     thumbnail: thumbnail)
                 } else if let failure {
                     ContentUnavailableView("Não foi possível ler",
                                            systemImage: "exclamationmark.triangle",
@@ -101,8 +122,14 @@ struct SMBMediaInfoView: View {
             }
         }
         .task {
-            do    { info = try await connection.probe(share: share, path: path) }
-            catch { failure = error.localizedDescription }
+            do {
+                let lido = try await connection.probe(share: share, path: path)
+                info = lido
+                let instante = lido.duration > 0 ? lido.duration * 0.1 : 0
+                thumbnail = try? await connection.thumbnail(share: share, path: path, at: instante)
+            } catch {
+                failure = error.localizedDescription
+            }
         }
     }
 }
@@ -112,9 +139,26 @@ struct MediaInfoDetails: View {
 
     let info: MediaInfo
     var sizeText: String?
+    var thumbnail: CGImage?
 
     var body: some View {
         List {
+            if let thumbnail {
+                Section {
+                    Image(decorative: thumbnail, scale: 1)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: .infinity)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .listRowInsets(EdgeInsets())
+                } footer: {
+                    // Não é enfeite: esta imagem é a prova de que o FFmpeg
+                    // buscou um instante do vídeo e decodificou o quadro exato
+                    // dali — o mesmo procedimento da rolagem frame a frame.
+                    Text("Quadro decodificado pelo FFmpeg aos \(TimeFormat.clock(info.duration * 0.1)).")
+                }
+            }
+
             Section("Contêiner") {
                 linha("Formato", info.formatName.uppercased())
                 linha("Descrição", info.formatLongName)

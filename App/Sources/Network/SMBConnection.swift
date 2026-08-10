@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 import SMBClient
 
 /// Sessão SMB viva com um servidor.
@@ -106,6 +107,27 @@ actor SMBConnection {
             // AVIOContext guarda só um ponteiro sem posse para ela.
             try withExtendedLifetime(fonte) {
                 try MediaProbe.probe(source: avio)
+            }
+        }
+    }
+
+    /// Decodifica um quadro do arquivo no servidor. Prova, com uma imagem na
+    /// tela, que dá para buscar e decodificar por rede sem baixar nada.
+    func thumbnail(share: String, path: String, at seconds: Double) async throws -> CGImage {
+        let client = try await connectedClient()
+
+        if mountedShare != share {
+            if mountedShare != nil { try? await client.disconnectShare() }
+            try await client.connectShare(share)
+            mountedShare = share
+        }
+
+        let fonte = try await SMBByteSource.open(client: client, path: path)
+        let avio = fonte.makeAVIOSource()
+
+        return try await FFmpegRunner.run {
+            try withExtendedLifetime(fonte) {
+                try FrameExtractor.image(source: avio, at: seconds)
             }
         }
     }
