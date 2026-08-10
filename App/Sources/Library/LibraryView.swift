@@ -138,10 +138,10 @@ struct LibraryView: View {
                 Label("Abrir um arquivo avulso", systemImage: "play.rectangle")
             }
         } footer: {
-            // Prova de linkagem, não enfeite: se o xcframework não tivesse
-            // linkado, o app nem iniciaria. Ver isto no aparelho confirma que
-            // a biblioteca está viva antes de existir motor para usá-la.
-            Text("FFmpeg \(FFmpegRuntime.version) · \(FFmpegRuntime.demuxerCount) contêineres")
+            // Prova de linkagem e de identidade: confirma que o FFmpeg está
+            // vivo e diz exatamente qual build está instalado — sem isso não
+            // dá para distinguir "não mudou nada" de ".ipa antigo".
+            Text("LabPlayer \(AppBuild.version) (\(AppBuild.commit)) · FFmpeg \(FFmpegRuntime.version) · \(FFmpegRuntime.demuxerCount) contêineres")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
         }

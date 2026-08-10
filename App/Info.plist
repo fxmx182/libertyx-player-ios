@@ -23,6 +23,12 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 
+	<!-- Carimbado pelo CI com o commit de origem. Existe para responder na
+	     tela "qual build é este?" — sem isso não dá para distinguir um app que
+	     não mudou de um .ipa antigo instalado por engano. -->
+	<key>LabPlayerBuild</key>
+	<string>local</string>
+
 	<!-- Deixa o app aparecer no Files e abrir arquivos "no lugar"
 	     (pendrive USB, iCloud, outros apps) sem copiar. -->
 	<key>UIFileSharingEnabled</key>

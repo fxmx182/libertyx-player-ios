@@ -42,6 +42,11 @@ jobs:
           chmod +x Scripts/build-ffmpeg.sh
           ./Scripts/build-ffmpeg.sh
 
+      - name: Carimbar o build com o commit
+        run: |
+          /usr/libexec/PlistBuddy -c "Set :LabPlayerBuild ${GITHUB_SHA:0:7}" App/Info.plist
+          /usr/libexec/PlistBuddy -c "Print :LabPlayerBuild" App/Info.plist
+
       - name: Gerar projeto
         run: xcodegen generate
 

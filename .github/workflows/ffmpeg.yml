@@ -153,7 +153,11 @@ jobs:
             echo "::error title=Componentes ausentes no FFmpeg::$ENC"
             exit 1
           fi
-          echo "::notice title=FFmpeg conferido::todos os componentes esperados estão presentes"
+          DEMUX=$(grep -c '_demuxer$' /tmp/simbolos.txt || true)
+          DECOD=$(grep -c '_decoder$' /tmp/simbolos.txt || true)
+          PARS=$(grep -c '_parser$' /tmp/simbolos.txt || true)
+          TAM=$(du -sh Vendor/FFmpeg.xcframework | cut -f1)
+          echo "::notice title=FFmpeg conferido::demuxers: $DEMUX · decodificadores: $DECOD · parsers: $PARS · tamanho: $TAM"
 
       - name: Publicar artefato
         uses: actions/upload-artifact@v4
