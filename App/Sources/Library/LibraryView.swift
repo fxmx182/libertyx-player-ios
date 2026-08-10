@@ -126,7 +126,7 @@ struct LibraryView: View {
         } header: {
             Text("Rede")
         } footer: {
-            Text("Navegar pelos compartilhamentos já funciona. Reproduzir direto do servidor depende do motor FFmpeg — o AVFoundation não fala SMB.")
+            Text("Navegue pelos compartilhamentos e toque direto do servidor, sem baixar o arquivo.")
         }
     }
 

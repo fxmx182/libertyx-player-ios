@@ -188,6 +188,11 @@ jobs:
           chmod +x Scripts/build-ffmpeg.sh
           ./Scripts/build-ffmpeg.sh
 
+      # Mesmo carimbo do build de aparelho: sem ele a captura de tela mostra
+      # "(local)" no rodapé, e não dá para saber de qual commit ela é.
+      - name: Carimbar o build com o commit
+        run: /usr/libexec/PlistBuddy -c "Set :LabPlayerBuild ${GITHUB_SHA:0:7}" App/Info.plist
+
       - name: Gerar projeto
         run: xcodegen generate
 

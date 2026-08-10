@@ -76,10 +76,23 @@ jobs:
       - name: Conferir conteúdo da biblioteca
         run: |
           set -euo pipefail
-          LIB=$(find Vendor/FFmpeg.xcframework -name 'libffmpeg.a' | head -1)
-          [ -n "$LIB" ] || { echo "::error::libffmpeg.a não existe no xcframework"; exit 1; }
+          # As bibliotecas são nomeadas por plataforma (libffmpeg-iphoneos.a,
+          # libffmpeg-iphonesimulator.a), então a busca é por padrão.
+          FATIAS=$(find Vendor/FFmpeg.xcframework -name 'libffmpeg*.a' | sort)
+          [ -n "$FATIAS" ] || { echo "::error::nenhuma biblioteca no xcframework"; exit 1; }
 
-          echo "arquitetura: $(lipo -info "$LIB")"
+          QUANTAS=$(echo "$FATIAS" | wc -l | tr -d ' ')
+          echo "fatias encontradas: $QUANTAS"
+          for F in $FATIAS; do echo "  $(basename "$(dirname "$F")"): $(lipo -archs "$F")"; done
+
+          [ "$QUANTAS" -ge 2 ] || {
+            echo "::error title=Falta a fatia de simulador::só $QUANTAS encontrada — o app não compila para simulador"
+            exit 1
+          }
+
+          # A conferência de símbolos usa a fatia de aparelho, que é a que vai
+          # para o .ipa.
+          LIB=$(echo "$FATIAS" | grep -v simulator | head -1)
 
           # Um arquivo, não uma variável de shell: com dezenas de milhares de
           # símbolos, `echo "$VAR" | grep` é frágil. E fixamos a arquitetura —
