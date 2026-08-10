@@ -374,11 +374,23 @@ final class PlayerControlsView: UIView {
     func setVisible(_ visible: Bool, animated: Bool) {
         guard !isLocked, visible != isVisible else { return }
         isVisible = visible
+
+        // Mostrar traz a fileira de volta junto, sem depender de estado
+        // guardado. O comportamento anterior dependia de um sinalizador que
+        // podia ficar dessincronizado dos controles — e o sintoma era a barra
+        // voltar sozinha, sem as ferramentas.
+        if visible {
+            isToolStripExpanded = true
+            toolStrip.isHidden = false
+            toolsButton.tintColor = tintColor
+            bringSubviewToFront(toolStrip)
+        }
+
         let alpha: CGFloat = visible ? 1 : 0
         let work = {
             self.topBar.alpha = alpha
             self.bottomBar.alpha = alpha
-            self.toolStrip.alpha = self.isToolStripExpanded ? alpha : 0
+            self.toolStrip.alpha = alpha
         }
         animated ? UIView.animate(withDuration: 0.22, animations: work) : work()
     }

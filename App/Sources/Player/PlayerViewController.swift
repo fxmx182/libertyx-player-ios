@@ -461,8 +461,12 @@ final class PlayerViewController: UIViewController {
 
     @objc private func handleSingleTap() {
         guard gesturesEnabled else { return }
-        controls.setVisible(!controls.isVisible, animated: true)
-        if controls.isVisible { scheduleControlsHide() }
+
+        // Um toque alterna tudo junto: barra e ferramentas aparecem ou somem
+        // como um conjunto. É o que se espera de "tocar na tela".
+        let mostrar = !controls.isVisible
+        controls.setVisible(mostrar, animated: true)
+        if mostrar { scheduleControlsHide() }
     }
 
     @objc private func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
