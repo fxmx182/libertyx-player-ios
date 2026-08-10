@@ -84,6 +84,32 @@ actor SMBConnection {
             }
     }
 
+    /// Sonda um arquivo no servidor sem baixá-lo: abre a fonte de bytes, monta
+    /// o AVIOContext e deixa o FFmpeg ler só os pedaços de que precisa.
+    func probe(share: String, path: String) async throws -> MediaInfo {
+        let client = try await connectedClient()
+
+        if mountedShare != share {
+            if mountedShare != nil { try? await client.disconnectShare() }
+            try await client.connectShare(share)
+            mountedShare = share
+        }
+
+        let fonte = try await SMBByteSource.open(client: client, path: path)
+        let avio = fonte.makeAVIOSource()
+
+        // Fila própria: as callbacks do FFmpeg bloqueiam esperando o SMB, e
+        // bloquear o pool cooperativo aqui poderia impedir a própria leitura
+        // de ser escalonada.
+        return try await FFmpegRunner.run {
+            // `fonte` precisa continuar viva durante toda a leitura — o
+            // AVIOContext guarda só um ponteiro sem posse para ela.
+            try withExtendedLifetime(fonte) {
+                try MediaProbe.probe(source: avio)
+            }
+        }
+    }
+
     func disconnect() async {
         guard let client else { return }
         if mountedShare != nil { try? await client.disconnectShare() }

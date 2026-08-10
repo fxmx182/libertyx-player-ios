@@ -62,7 +62,32 @@ enum MediaProbe {
         guard let context = formatContext else {
             throw FFmpegError(code: labp_averror_einval(), operation: "abrir arquivo")
         }
+        return try parse(context)
+    }
 
+    /// Mesma leitura, mas sobre uma fonte de bytes qualquer — é assim que um
+    /// arquivo em servidor SMB é sondado sem ser baixado.
+    static func probe(source: AVIOSource) throws -> MediaInfo {
+        guard let alocado = avformat_alloc_context() else {
+            throw FFmpegError(code: labp_averror_enomem(), operation: "alocar contexto")
+        }
+        alocado.pointee.pb = source.context
+        // Sem esta flag o FFmpeg tentaria fechar e liberar o nosso AVIOContext,
+        // que pertence ao AVIOSource.
+        alocado.pointee.flags |= AVFMT_FLAG_CUSTOM_IO
+
+        var formatContext: UnsafeMutablePointer<AVFormatContext>? = alocado
+        try ffCheck("abrir stream",
+                    avformat_open_input(&formatContext, nil, nil, nil))
+        defer { avformat_close_input(&formatContext) }
+
+        guard let context = formatContext else {
+            throw FFmpegError(code: labp_averror_einval(), operation: "abrir stream")
+        }
+        return try parse(context)
+    }
+
+    private static func parse(_ context: UnsafeMutablePointer<AVFormatContext>) throws -> MediaInfo {
         // Sem isto, contêineres sem cabeçalho descritivo (MPEG-TS, por exemplo)
         // chegam sem codec identificado — o FFmpeg precisa decodificar um
         // pedaço para descobrir o que há dentro.

@@ -1,10 +1,10 @@
 import SwiftUI
 
-/// Detalhes técnicos do arquivo, lidos pelo FFmpeg.
+/// Detalhes técnicos de um arquivo local, lidos pelo FFmpeg.
 ///
-/// Além de útil (é o que o MX Player mostra), esta tela é a primeira prova de
-/// que o motor funciona ponta a ponta: se um MKV aparece aqui com as faixas de
-/// áudio e legenda corretas, então abrir contêiner, achar streams e identificar
+/// Além de útil (é o que o MX Player mostra), esta tela é a prova de que o
+/// motor funciona ponta a ponta: se um MKV aparece aqui com as faixas de áudio
+/// e legenda corretas, então abrir contêiner, achar streams e identificar
 /// codecs está tudo certo — que é a base de todo o resto.
 struct MediaInfoView: View {
 
@@ -18,13 +18,11 @@ struct MediaInfoView: View {
         NavigationStack {
             Group {
                 if let info {
-                    detalhes(info)
+                    MediaInfoDetails(info: info, sizeText: FolderScanner.humanSize(item.fileSize))
                 } else if let failure {
-                    ContentUnavailableView(
-                        "Não foi possível ler",
-                        systemImage: "exclamationmark.triangle",
-                        description: Text(failure)
-                    )
+                    ContentUnavailableView("Não foi possível ler",
+                                           systemImage: "exclamationmark.triangle",
+                                           description: Text(failure))
                 } else {
                     ProgressView("Lendo o arquivo…")
                 }
@@ -66,9 +64,56 @@ struct MediaInfoView: View {
         case .failure(let erro): failure = erro.localizedDescription
         }
     }
+}
 
-    @ViewBuilder
-    private func detalhes(_ info: MediaInfo) -> some View {
+/// Mesmos detalhes, sondados direto do servidor SMB — sem baixar o arquivo.
+struct SMBMediaInfoView: View {
+
+    let connection: SMBConnection
+    let share: String
+    let path: String
+    let title: String
+    let size: UInt64
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var info: MediaInfo?
+    @State private var failure: String?
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if let info {
+                    MediaInfoDetails(info: info, sizeText: FolderScanner.humanSize(Int64(size)))
+                } else if let failure {
+                    ContentUnavailableView("Não foi possível ler",
+                                           systemImage: "exclamationmark.triangle",
+                                           description: Text(failure))
+                } else {
+                    ProgressView("Lendo pelo servidor…")
+                }
+            }
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Fechar") { dismiss() }
+                }
+            }
+        }
+        .task {
+            do    { info = try await connection.probe(share: share, path: path) }
+            catch { failure = error.localizedDescription }
+        }
+    }
+}
+
+/// A lista de detalhes em si, separada de onde os dados vieram.
+struct MediaInfoDetails: View {
+
+    let info: MediaInfo
+    var sizeText: String?
+
+    var body: some View {
         List {
             Section("Contêiner") {
                 linha("Formato", info.formatName.uppercased())
@@ -79,8 +124,8 @@ struct MediaInfoView: View {
                 if let taxa = MediaInfo.humanBitrate(info.bitrate) {
                     linha("Taxa de bits", taxa)
                 }
-                if let tamanho = FolderScanner.humanSize(item.fileSize) {
-                    linha("Tamanho", tamanho)
+                if let sizeText {
+                    linha("Tamanho", sizeText)
                 }
             }
 

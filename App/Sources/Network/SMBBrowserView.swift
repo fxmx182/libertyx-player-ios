@@ -209,6 +209,7 @@ struct SMBDirectoryView: View {
     @State private var loading = true
     @State private var failure: String?
     @State private var pendingPlayback: SMBConnection.Entry?
+    @State private var showingInfo: SMBConnection.Entry?
 
     var body: some View {
         List {
@@ -241,12 +242,23 @@ struct SMBDirectoryView: View {
                         }
                     }
                     .buttonStyle(.plain)
+                    .contextMenu {
+                        Button {
+                            showingInfo = entry
+                        } label: {
+                            Label("Detalhes do arquivo", systemImage: "info.circle")
+                        }
+                    }
                 }
             }
         }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .task { await carregar() }
+        .sheet(item: $showingInfo) { entry in
+            SMBMediaInfoView(connection: connection, share: share,
+                             path: entry.path, title: entry.name, size: entry.size)
+        }
         .alert("Ainda não toca daqui", isPresented: .init(
             get: { pendingPlayback != nil },
             set: { if !$0 { pendingPlayback = nil } }
