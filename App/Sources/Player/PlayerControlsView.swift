@@ -34,9 +34,13 @@ final class PlayerControlsView: UIView {
     /// Bloqueio: esconde tudo e desliga os gestos. Existe porque assistir
     /// deitado significa encostar na tela sem querer o tempo todo.
     private(set) var isLocked = false
-    /// A fileira começa fechada: ferramenta boa de ter à mão não pode cobrir
-    /// o vídeo o tempo todo.
-    private(set) var isToolStripExpanded = false
+    /// A fileira aparece junto com a barra e some junto com ela.
+    ///
+    /// Deixá-la fechada por padrão escondia as ferramentas atrás de um segundo
+    /// toque — e o vídeo já fica limpo quando os controles se escondem
+    /// sozinhos. O botão de grade continua ali para quem quiser tirá-la de
+    /// vista sem esconder a barra.
+    private(set) var isToolStripExpanded = true
 
     var title: String = "" {
         didSet { titleLabel.text = title }
@@ -97,10 +101,12 @@ final class PlayerControlsView: UIView {
         if isLocked {
             return unlockButton.frame.insetBy(dx: -12, dy: -12).contains(point)
         }
+        // Escondida, a barra deixa o toque passar para os gestos; visível, ela
+        // captura só onde há controle de verdade.
         guard isVisible else { return false }
         return topBar.frame.contains(point)
             || bottomBar.frame.contains(point)
-            || (isToolStripExpanded && toolStrip.frame.contains(point))
+            || (isToolStripExpanded && !toolStrip.isHidden && toolStrip.frame.contains(point))
     }
 
     override func layoutSubviews() {
@@ -277,8 +283,7 @@ final class PlayerControlsView: UIView {
             toolStrip.trailingAnchor.constraint(equalTo: trailingAnchor),
             toolStrip.heightAnchor.constraint(equalToConstant: 86),
         ])
-        toolStrip.alpha = 0
-        toolStrip.isHidden = true
+        toolsButton.tintColor = tintColor
     }
 
     private func setupUnlockButton() {

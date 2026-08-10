@@ -99,6 +99,10 @@ final class PlayerViewController: UIViewController {
 
         renderView = engine.makeRenderView()
         renderView.translatesAutoresizingMaskIntoConstraints = false
+        // Nada é tocado sobre o vídeo: tudo é gesto ou botão dos controles. O
+        // VLC monta a própria view de desenho, interativa, e ela engolia os
+        // toques antes de chegarem aos gestos — por isso a barra não abria.
+        renderView.isUserInteractionEnabled = false
         view.addSubview(renderView)
 
         dimView.backgroundColor = .black
