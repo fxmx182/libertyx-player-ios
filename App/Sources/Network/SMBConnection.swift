@@ -103,9 +103,9 @@ actor SMBConnection {
         // bloquear o pool cooperativo aqui poderia impedir a própria leitura
         // de ser escalonada.
         return try await FFmpegRunner.run {
-            // `fonte` precisa continuar viva durante toda a leitura — o
-            // AVIOContext guarda só um ponteiro sem posse para ela.
-            try withExtendedLifetime(fonte) {
+            // O AVIOSource precisa continuar vivo durante toda a leitura: é
+            // dele o AVIOContext, e ele retém a fonte de bytes.
+            try withExtendedLifetime(avio) {
                 try MediaProbe.probe(source: avio)
             }
         }
@@ -126,17 +126,13 @@ actor SMBConnection {
         let avio = fonte.makeAVIOSource()
 
         return try await FFmpegRunner.run {
-            try withExtendedLifetime(fonte) {
+            try withExtendedLifetime(avio) {
                 try FrameExtractor.image(source: avio, at: seconds)
             }
         }
     }
 
     /// Sessão de reprodução lendo direto do servidor.
-    ///
-    /// A fonte de bytes vai junto como `keepAlive`: o AVIOContext guarda só um
-    /// ponteiro sem posse para ela, e se ela for coletada no meio do filme o
-    /// FFmpeg lê memória liberada.
     func makeSession(share: String, path: String) async throws -> FFmpegPlaybackSession {
         let client = try await connectedClient()
 
@@ -149,8 +145,12 @@ actor SMBConnection {
         let fonte = try await SMBByteSource.open(client: client, path: path)
         let avio = fonte.makeAVIOSource()
 
+        // keepAlive é o AVIOSource, não a fonte de bytes: é ELE que possui o
+        // AVIOContext e as callbacks. Reter só a fonte deixava o AVIOSource ser
+        // coletado ao fim desta função, e o primeiro seek do FFmpeg saltava
+        // para um ponteiro de função já liberado.
         return try await FFmpegRunner.run {
-            try FFmpegPlaybackSession(source: avio, keepAlive: fonte)
+            try FFmpegPlaybackSession(source: avio, keepAlive: avio)
         }
     }
 

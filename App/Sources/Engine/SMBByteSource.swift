@@ -47,10 +47,16 @@ final class SMBByteSource {
         return SMBByteSource(reader: reader, size: Int64(size))
     }
 
+    /// O `AVIOSource` devolvido retém esta fonte **fortemente**.
+    ///
+    /// Com captura fraca, bastava a fonte ser coletada para o FFmpeg saltar
+    /// para um ponteiro de função inválido no primeiro seek. Agora manter vivo
+    /// o AVIOSource basta para manter tudo vivo — e é ele que precisa
+    /// sobreviver, porque é dele o AVIOContext.
     func makeAVIOSource() -> AVIOSource {
         AVIOSource(
-            read: { [weak self] buffer, count in self?.read(into: buffer, count: count) ?? -1 },
-            seek: { [weak self] offset, whence in self?.seek(to: offset, whence: whence) ?? -1 }
+            read: { buffer, count in self.read(into: buffer, count: count) },
+            seek: { offset, whence in self.seek(to: offset, whence: whence) }
         )
     }
 
