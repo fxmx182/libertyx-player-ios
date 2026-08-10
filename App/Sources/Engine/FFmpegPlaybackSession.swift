@@ -57,6 +57,9 @@ final class FFmpegPlaybackSession {
     private let byteSource: AnyObject?
 
     private(set) var duration: Double = 0
+    /// Instante do primeiro quadro do arquivo. Todos os tempos entregues são
+    /// relativos a ele, de modo que a reprodução sempre comece em zero.
+    private(set) var startTime: Double = 0
     private(set) var audioFormat: AVAudioFormat?
 
     var hasVideo: Bool { videoIndex >= 0 }
@@ -98,6 +101,15 @@ final class FFmpegPlaybackSession {
             ? 0
             : Double(formatContext.pointee.duration) / Double(AV_TIME_BASE)
 
+        // Nem todo arquivo começa no instante zero: MKV e MPEG-TS costumam
+        // trazer o primeiro quadro carimbado em 10 s ou mais. Sem descontar
+        // essa origem, o laço compara o carimbo com um relógio que começa em
+        // zero, conclui que todo quadro está no futuro e espera para sempre —
+        // tela parada com o app vivo.
+        startTime = formatContext.pointee.start_time.isNoPTS
+            ? 0
+            : Double(formatContext.pointee.start_time) / Double(AV_TIME_BASE)
+
         packet = av_packet_alloc()
         frame = av_frame_alloc()
         guard packet != nil, frame != nil else {
@@ -110,6 +122,12 @@ final class FFmpegPlaybackSession {
         guard hasVideo || hasAudio else {
             throw PlaybackError.loadFailed("arquivo sem faixas reproduzíveis")
         }
+
+        LabLog.open("""
+            vídeo=\(hasVideo) hardware=\(hardwareDevice != nil) \
+            áudio=\(hasAudio) duração=\(String(format: "%.1f", duration))s \
+            início=\(String(format: "%.3f", startTime))s
+            """)
     }
 
     private func openVideo() throws {
@@ -233,7 +251,8 @@ final class FFmpegPlaybackSession {
 
             let base = isVideo ? videoTimeBase : audioTimeBase
             let pts = frame.pointee.best_effort_timestamp
-            let instante = pts.isNoPTS ? 0 : Double(pts) * av_q2d(base)
+            let bruto = pts.isNoPTS ? 0 : Double(pts) * av_q2d(base)
+            let instante = max(0, bruto - startTime)
 
             if isVideo {
                 if let pixelBuffer = makePixelBuffer(from: frame) {
@@ -341,7 +360,8 @@ final class FFmpegPlaybackSession {
 
     func seek(to seconds: Double) throws {
         guard let formatContext else { return }
-        let alvo = Int64(max(0, seconds) * Double(AV_TIME_BASE))
+        // O alvo volta para a régua do arquivo, que pode não começar em zero.
+        let alvo = Int64((max(0, seconds) + startTime) * Double(AV_TIME_BASE))
 
         // BACKWARD garante cair antes do alvo: decodificar para frente é
         // possível, para trás não.

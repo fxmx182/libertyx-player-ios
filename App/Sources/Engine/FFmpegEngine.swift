@@ -67,8 +67,15 @@ final class FFmpegEngine: NSObject, PlaybackEngine {
         lastKnownTime = 0
 
         if let formato = nova.audioFormat {
-            try audio.prepare(sampleRate: formato.sampleRate, channels: formato.channelCount)
+            do {
+                try audio.prepare(sampleRate: formato.sampleRate, channels: formato.channelCount)
+            } catch {
+                // Sem áudio o vídeo ainda serve; travar tudo por causa da
+                // saída de som seria pior. O relógio cai para o de parede.
+                LabLog.problem("saída de áudio indisponível: \(error.localizedDescription)")
+            }
         }
+        LabLog.open("sessão pronta: \(item.title)")
         state = .ready
     }
 
@@ -182,18 +189,29 @@ final class FFmpegEngine: NSObject, PlaybackEngine {
     nonisolated private func runLoop(session: FFmpegPlaybackSession,
                                      clock: PlaybackClock,
                                      generation: Int) {
+        var quadrosExibidos = 0
+        var blocosDeAudio = 0
+        var primeiroQuadro = true
+
         while clock.generation == generation {
             let unidade: FFmpegPlaybackSession.Unit?
-            do    { unidade = try session.nextUnit() }
-            catch { unidade = nil }
+            do {
+                unidade = try session.nextUnit()
+            } catch {
+                LabLog.problem("nextUnit falhou: \(error.localizedDescription)")
+                unidade = nil
+            }
 
             guard let unidade else {
+                LabLog.loop("fim do arquivo após \(quadrosExibidos) quadros e \(blocosDeAudio) blocos de áudio")
                 Task { @MainActor [weak self] in self?.state = .ended }
                 return
             }
 
             switch unidade {
             case .audio(let buffer, let instante):
+                blocosDeAudio += 1
+                if blocosDeAudio == 1 { LabLog.loop("primeiro áudio em \(String(format: "%.3f", instante))s") }
                 clock.markAudioScheduled(until: instante)
                 Task { @MainActor [weak self] in
                     self?.audio.schedule(buffer)
@@ -201,16 +219,29 @@ final class FFmpegEngine: NSObject, PlaybackEngine {
                 }
 
             case .video(let pixelBuffer, let instante):
-                // Espera o relógio alcançar o quadro. É também o freio da
-                // decodificação: sem esta pausa, o laço leria o arquivo inteiro
-                // o mais rápido possível e estouraria a memória.
-                let atraso = instante - clock.now
-                if atraso > 0 {
-                    Thread.sleep(forTimeInterval: min(atraso, 0.5))
+                // O primeiro quadro vai para a tela sem esperar. Além de tirar
+                // o preto imediatamente, evita a armadilha de ficar esperando
+                // um relógio que só começa a andar quando o áudio toca.
+                if primeiroQuadro {
+                    primeiroQuadro = false
+                    LabLog.loop("primeiro quadro em \(String(format: "%.3f", instante))s, relógio em \(String(format: "%.3f", clock.now))s")
+                } else {
+                    // Espera o relógio alcançar o quadro. É também o freio da
+                    // decodificação: sem esta pausa, o laço leria o arquivo
+                    // inteiro o mais rápido possível e estouraria a memória.
+                    let atraso = instante - clock.now
+                    if atraso > 0 {
+                        Thread.sleep(forTimeInterval: min(atraso, 0.5))
+                    }
+                    // Mais de 200 ms atrasado: descartar é melhor que exibir
+                    // tarde e acumular atraso quadro a quadro.
+                    if atraso <= -0.2 { continue }
                 }
-                // Mais de 200 ms atrasado: descartar é melhor que exibir tarde
-                // e acumular atraso quadro a quadro.
-                guard atraso > -0.2 else { continue }
+
+                quadrosExibidos += 1
+                if quadrosExibidos % 120 == 0 {
+                    LabLog.loop("quadro \(quadrosExibidos) em \(String(format: "%.1f", instante))s, relógio \(String(format: "%.1f", clock.now))s")
+                }
 
                 Task { @MainActor [weak self] in
                     self?.renderView.display(pixelBuffer)
@@ -218,6 +249,7 @@ final class FFmpegEngine: NSObject, PlaybackEngine {
                 }
             }
         }
+        LabLog.loop("laço encerrado (geração obsoleta) após \(quadrosExibidos) quadros")
     }
 
     private func reportTime(_ time: Double) {
