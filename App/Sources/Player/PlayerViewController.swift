@@ -55,6 +55,18 @@ final class PlayerViewController: UIViewController {
     private var didPresentError = false
     private var playbackSpeed: Float = 1.0
     private var lastSavedPosition: Double = 0
+
+    // MARK: - Ferramentas
+
+    enum RepeatMode { case off, one }
+    private var repeatMode: RepeatMode = .off
+    private var isShuffling = false
+    private var sleepTimer: Timer?
+    private var sleepDeadline: Date?
+    /// Camada escura por cima do vídeo — o "modo noturno" é escurecer além do
+    /// mínimo do sistema, útil para assistir no escuro sem queimar os olhos.
+    private let dimView = UIView()
+    private var pip: PictureInPicture?
     /// Sondagem do FFmpeg, usada para listar faixas de áudio e legenda.
     private var mediaInfo: MediaInfo?
 
@@ -89,6 +101,12 @@ final class PlayerViewController: UIViewController {
         renderView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(renderView)
 
+        dimView.backgroundColor = .black
+        dimView.alpha = 0
+        dimView.isUserInteractionEnabled = false
+        dimView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(dimView)
+
         controls.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(controls)
 
@@ -103,6 +121,11 @@ final class PlayerViewController: UIViewController {
             renderView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             renderView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             renderView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+
+            dimView.topAnchor.constraint(equalTo: view.topAnchor),
+            dimView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            dimView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            dimView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
 
             controls.topAnchor.constraint(equalTo: view.topAnchor),
             controls.bottomAnchor.constraint(equalTo: view.bottomAnchor),
@@ -139,6 +162,11 @@ final class PlayerViewController: UIViewController {
             if locked { self?.controlsHideWorkItem?.cancel() } else { self?.scheduleControlsHide() }
         }
 
+        controls.moreMenuProvider = { [weak self] in self?.buildToolsMenu() ?? [] }
+        if let ffmpeg = engine as? FFmpegEngine {
+            pip = PictureInPicture(engine: engine, layer: ffmpeg.displayLayer)
+        }
+
         installGestures()
         bindEngine()
         updateNavigation()
@@ -148,6 +176,9 @@ final class PlayerViewController: UIViewController {
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
+        // Sair com a janela flutuante aberta é legítimo: o vídeo continua nela.
+        guard pip?.isActive != true else { return }
+        cancelSleepTimer()
         engine.teardown()
     }
 
@@ -170,14 +201,7 @@ final class PlayerViewController: UIViewController {
             guard let self else { return }
             self.controls.apply(state: state)
             if case .failed(let message) = state { self.presentError(message) }
-            if state == .ended {
-                // Quem assistiu até o fim não quer voltar para os créditos na
-                // próxima vez.
-                ResumeStore.shared.clear(key: self.item.origin.resumeKey)
-                // Emendar no próximo é o comportamento esperado numa pasta de
-                // episódios; sem isso o vídeo acaba e a tela fica parada.
-                if self.currentIndex + 1 < self.playlist.count { self.goToNext() }
-            }
+            if state == .ended { self.handlePlaybackEnded() }
         }
     }
 
@@ -309,7 +333,34 @@ final class PlayerViewController: UIViewController {
     }
 
     private func goToNext() {
+        if isShuffling, playlist.count > 1 {
+            // Sorteia sem repetir o atual — cair no mesmo vídeo não parece
+            // aleatório, parece defeito.
+            var sorteado = currentIndex
+            while sorteado == currentIndex { sorteado = Int.random(in: playlist.indices) }
+            switchTo(index: sorteado)
+            return
+        }
         switchTo(index: currentIndex + 1)
+    }
+
+    private func handlePlaybackEnded() {
+        if repeatMode == .one {
+            Task { @MainActor in
+                await engine.seek(to: 0, precise: false)
+                engine.play()
+            }
+            return
+        }
+
+        // Quem assistiu até o fim não quer voltar para os créditos na próxima.
+        ResumeStore.shared.clear(key: item.origin.resumeKey)
+
+        if isShuffling, playlist.count > 1 {
+            goToNext()
+        } else if currentIndex + 1 < playlist.count {
+            goToNext()
+        }
     }
 
     private func switchTo(index: Int) {
@@ -491,6 +542,119 @@ final class PlayerViewController: UIViewController {
         scene.requestGeometryUpdate(.iOS(interfaceOrientations: alvo))
         setNeedsUpdateOfSupportedInterfaceOrientations()
         scheduleControlsHide()
+    }
+
+    // MARK: - Menu de ferramentas
+
+    private func buildToolsMenu() -> [UIMenuElement] {
+        var itens: [UIMenuElement] = []
+
+        itens.append(UIAction(title: engine.isMuted ? "Desativar mudo" : "Mudo",
+                              image: UIImage(systemName: engine.isMuted ? "speaker.slash.fill" : "speaker.wave.2"),
+                              state: engine.isMuted ? .on : .off) { [weak self] _ in
+            self?.engine.isMuted.toggle()
+        })
+
+        itens.append(UIAction(title: "Repetir este vídeo",
+                              image: UIImage(systemName: "repeat.1"),
+                              state: repeatMode == .one ? .on : .off) { [weak self] _ in
+            guard let self else { return }
+            self.repeatMode = self.repeatMode == .one ? .off : .one
+        })
+
+        if playlist.count > 1 {
+            itens.append(UIAction(title: "Aleatório",
+                                  image: UIImage(systemName: "shuffle"),
+                                  state: isShuffling ? .on : .off) { [weak self] _ in
+                self?.isShuffling.toggle()
+            })
+        }
+
+        itens.append(UIAction(title: "Captura de tela",
+                              image: UIImage(systemName: "camera")) { [weak self] _ in
+            self?.takeSnapshot()
+        })
+
+        if pip?.isSupported == true {
+            itens.append(UIAction(title: "Janela flutuante",
+                                  image: UIImage(systemName: "pip.enter")) { [weak self] _ in
+                self?.pip?.toggle()
+            })
+        }
+
+        itens.append(UIMenu(title: "Modo noturno", image: UIImage(systemName: "moon.stars"),
+                            children: nightModeActions()))
+        itens.append(UIMenu(title: sleepTimerTitle(), image: UIImage(systemName: "timer"),
+                            children: sleepTimerActions()))
+        return itens
+    }
+
+    private func nightModeActions() -> [UIAction] {
+        // O iOS já tem brilho mínimo; escurecer por cima vai além dele, que é
+        // o que serve para assistir no escuro sem incomodar os olhos.
+        let niveis: [(String, CGFloat)] = [("Desligado", 0), ("Leve", 0.25),
+                                           ("Médio", 0.45), ("Forte", 0.65)]
+        return niveis.map { nome, valor in
+            UIAction(title: nome, state: abs(dimView.alpha - valor) < 0.01 ? .on : .off) { [weak self] _ in
+                UIView.animate(withDuration: 0.2) { self?.dimView.alpha = valor }
+            }
+        }
+    }
+
+    private func sleepTimerTitle() -> String {
+        guard let sleepDeadline else { return "Tempo para dormir" }
+        let restante = max(0, sleepDeadline.timeIntervalSinceNow)
+        return "Dormir em \(Int(restante / 60) + 1) min"
+    }
+
+    private func sleepTimerActions() -> [UIAction] {
+        var acoes = [UIAction(title: "Desligado", state: sleepTimer == nil ? .on : .off) { [weak self] _ in
+            self?.cancelSleepTimer()
+        }]
+        for minutos in [15, 30, 45, 60] {
+            acoes.append(UIAction(title: "\(minutos) minutos") { [weak self] _ in
+                self?.startSleepTimer(minutes: minutos)
+            })
+        }
+        acoes.append(UIAction(title: "No fim do vídeo") { [weak self] _ in
+            guard let self else { return }
+            let restante = max(1, self.engine.duration - self.engine.currentTime)
+            self.startSleepTimer(minutes: nil, seconds: restante)
+        })
+        return acoes
+    }
+
+    private func startSleepTimer(minutes: Int?, seconds: Double? = nil) {
+        cancelSleepTimer()
+        let intervalo = seconds ?? Double((minutes ?? 30) * 60)
+        sleepDeadline = Date().addingTimeInterval(intervalo)
+        sleepTimer = Timer.scheduledTimer(withTimeInterval: intervalo, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                self?.engine.pause()
+                self?.cancelSleepTimer()
+                self?.hud.show(.text("Pausado pelo temporizador"))
+                self?.hud.hideAfterDelay(2.5)
+            }
+        }
+        hud.show(.text("Dormir em \(Int(intervalo / 60)) min"))
+        hud.hideAfterDelay(1.8)
+    }
+
+    private func cancelSleepTimer() {
+        sleepTimer?.invalidate()
+        sleepTimer = nil
+        sleepDeadline = nil
+    }
+
+    private func takeSnapshot() {
+        guard let imagem = engine.snapshot() else {
+            hud.show(.text("Nada para capturar"))
+            hud.hideAfterDelay(1.5)
+            return
+        }
+        UIImageWriteToSavedPhotosAlbum(imagem, nil, nil, nil)
+        hud.show(.text("Salvo em Fotos"))
+        hud.hideAfterDelay(1.8)
     }
 
     // MARK: - Faixas de áudio e legenda

@@ -50,6 +50,10 @@ protocol PlaybackEngine: AnyObject {
     var currentAudioTrack: Int32? { get }
     var currentSubtitleTrack: Int32? { get }
 
+    var isMuted: Bool { get set }
+    /// Quadro que está na tela agora, para captura de tela.
+    func snapshot() -> UIImage?
+
     func selectAudioTrack(_ id: Int32) async
     /// `nil` desliga a legenda.
     func selectSubtitleTrack(_ id: Int32?) async

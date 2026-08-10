@@ -32,6 +32,12 @@ final class AVPlayerEngine: NSObject, PlaybackEngine {
 
     // Este motor ficou como referência de comparação; seleção de faixa é
     // atribuição do motor FFmpeg, que enxerga todos os streams do contêiner.
+    var isMuted: Bool {
+        get { player.isMuted }
+        set { player.isMuted = newValue }
+    }
+    func snapshot() -> UIImage? { nil }
+
     var audioTracks: [MediaTrack] { [] }
     var subtitleTracks: [MediaTrack] { [] }
     var currentAudioTrack: Int32? { nil }

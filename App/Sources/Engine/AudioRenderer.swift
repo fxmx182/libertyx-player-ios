@@ -19,8 +19,14 @@ final class AudioRenderer {
     private var isRunning = false
 
     var volume: Float {
-        get { player.volume }
-        set { player.volume = max(0, min(1, newValue)) }
+        get { volumeBeforeMute }
+        set {
+            volumeBeforeMute = max(0, min(1, newValue))
+            // Mexer no volume durante o mudo desfaz o mudo — é o que o usuário
+            // espera ao deslizar o dedo para aumentar o som.
+            if isMuted { isMuted = false }
+            player.volume = volumeBeforeMute
+        }
     }
 
     /// Alterar a taxa altera o tom junto. Corrigir isso exige um `AVAudioUnit`
@@ -51,25 +57,46 @@ final class AudioRenderer {
         isRunning = true
     }
 
+    private var wantsPlay = false
+    private var hasScheduled = false
+
+    /// Não começa a tocar antes de existir som agendado.
+    ///
+    /// Esta é a correção do "áudio atrasado depois de adiantar": mandando o nó
+    /// tocar com a fila vazia, ele roda em silêncio mas o relógio dele já
+    /// avança — e como o vídeo segue esse relógio, a imagem corre à frente do
+    /// som que ainda vai chegar. Depois de uma busca, esse buraco é justamente
+    /// o tempo de ler do servidor.
     func play() {
         guard isRunning else { return }
-        player.play()
+        wantsPlay = true
+        if hasScheduled { player.play() }
     }
 
     func pause() {
+        wantsPlay = false
         player.pause()
     }
 
     func schedule(_ buffer: AVAudioPCMBuffer) {
         guard isRunning else { return }
         player.scheduleBuffer(buffer, completionHandler: nil)
+        hasScheduled = true
+        if wantsPlay, !player.isPlaying { player.play() }
     }
 
     /// Descarta o que estava agendado e reancora o relógio — usado ao buscar.
     func reset(to time: Double) {
         player.stop()
+        hasScheduled = false
         baseTime = time
     }
+
+    /// Silenciar sem perder o volume escolhido.
+    var isMuted = false {
+        didSet { player.volume = isMuted ? 0 : volumeBeforeMute }
+    }
+    private var volumeBeforeMute: Float = 1.0
 
     /// Posição atual da reprodução, em segundos do vídeo.
     ///

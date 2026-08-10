@@ -43,6 +43,10 @@
 	</array>
 
 	<!-- SMB no homelab: iOS 14+ exige permissão explícita de rede local. -->
+	<!-- Só para gravar a captura de tela do vídeo; o app não lê suas fotos. -->
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Para salvar a captura de tela do vídeo no seu álbum.</string>
+
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>O LabPlayer precisa da rede local para listar e reproduzir vídeos de compartilhamentos SMB do seu servidor.</string>
 	<key>NSBonjourServices</key>

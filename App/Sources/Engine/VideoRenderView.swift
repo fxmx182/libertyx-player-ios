@@ -10,7 +10,9 @@ import CoreVideo
 final class VideoRenderView: UIView, VideoGravityAdjustable {
 
     override class var layerClass: AnyClass { AVSampleBufferDisplayLayer.self }
-    private var displayLayer: AVSampleBufferDisplayLayer { layer as! AVSampleBufferDisplayLayer }
+    /// Exposta porque o Picture in Picture do iOS é construído sobre ela —
+    /// é o que permite a janela flutuante sem um segundo player.
+    var displayLayer: AVSampleBufferDisplayLayer { layer as! AVSampleBufferDisplayLayer }
 
     private var formatDescription: CMVideoFormatDescription?
     private var lastPixelBufferSize = CGSize.zero

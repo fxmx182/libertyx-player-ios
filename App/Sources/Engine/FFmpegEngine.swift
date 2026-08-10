@@ -58,6 +58,26 @@ final class FFmpegEngine: NSObject, PlaybackEngine {
         set { audio.volume = newValue }
     }
 
+    var isMuted: Bool {
+        get { audio.isMuted }
+        set { audio.isMuted = newValue }
+    }
+
+    /// Último quadro exibido, guardado para captura de tela e para o PiP saber
+    /// o tamanho do vídeo.
+    private var lastPixelBuffer: CVPixelBuffer?
+    private let ciContext = CIContext(options: [.useSoftwareRenderer: false])
+
+    func snapshot() -> UIImage? {
+        guard let lastPixelBuffer else { return nil }
+        let imagem = CIImage(cvPixelBuffer: lastPixelBuffer)
+        guard let cg = ciContext.createCGImage(imagem, from: imagem.extent) else { return nil }
+        return UIImage(cgImage: cg)
+    }
+
+    /// A camada onde o vídeo é desenhado — o PiP do iOS é montado sobre ela.
+    var displayLayer: AVSampleBufferDisplayLayer { renderView.displayLayer }
+
     // MARK: - Carga
 
     func load(_ item: MediaItem) async throws {
@@ -392,6 +412,7 @@ final class FFmpegEngine: NSObject, PlaybackEngine {
                 }
 
                 Task { @MainActor [weak self] in
+                    self?.lastPixelBuffer = pixelBuffer
                     self?.renderView.display(pixelBuffer)
                     self?.reportTime(instante)
                 }

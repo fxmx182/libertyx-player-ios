@@ -51,6 +51,11 @@ final class PlayerControlsView: UIView {
     private let closeButton = UIButton(type: .system)
     private let subtitleButton = UIButton(type: .system)
     private let audioButton = UIButton(type: .system)
+    private let moreButton = UIButton(type: .system)
+
+    /// Montado na hora de abrir, não uma vez só: os itens mostram estado
+    /// (mudo ligado, repetição ativa) que muda enquanto o player está aberto.
+    var moreMenuProvider: (() -> [UIMenuElement])?
 
     private let previousButton = UIButton(type: .system)
     private let rewindButton = UIButton(type: .system)
@@ -145,12 +150,24 @@ final class PlayerControlsView: UIView {
         configure(subtitleButton, symbol: "captions.bubble", action: #selector(subtitlesTapped))
         configure(audioButton, symbol: "waveform", action: #selector(audioTapped))
 
+        moreButton.setImage(UIImage(systemName: "ellipsis"), for: .normal)
+        moreButton.tintColor = .white
+        moreButton.setPreferredSymbolConfiguration(
+            UIImage.SymbolConfiguration(pointSize: 17, weight: .medium), forImageIn: .normal)
+        moreButton.translatesAutoresizingMaskIntoConstraints = false
+        moreButton.showsMenuAsPrimaryAction = true
+        moreButton.menu = UIMenu(children: [
+            UIDeferredMenuElement.uncached { [weak self] concluir in
+                concluir(self?.moreMenuProvider?() ?? [])
+            }
+        ])
+
         titleLabel.textColor = .white
         titleLabel.font = .systemFont(ofSize: 15, weight: .medium)
         titleLabel.lineBreakMode = .byTruncatingMiddle
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        [closeButton, titleLabel, subtitleButton, audioButton].forEach(topBar.addSubview)
+        [closeButton, titleLabel, subtitleButton, audioButton, moreButton].forEach(topBar.addSubview)
 
         NSLayoutConstraint.activate([
             topBar.topAnchor.constraint(equalTo: topAnchor),
@@ -163,7 +180,12 @@ final class PlayerControlsView: UIView {
             closeButton.widthAnchor.constraint(equalToConstant: 44),
             closeButton.heightAnchor.constraint(equalToConstant: 44),
 
-            audioButton.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -12),
+            moreButton.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -12),
+            moreButton.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor),
+            moreButton.widthAnchor.constraint(equalToConstant: 44),
+            moreButton.heightAnchor.constraint(equalToConstant: 44),
+
+            audioButton.trailingAnchor.constraint(equalTo: moreButton.leadingAnchor, constant: -4),
             audioButton.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor),
             audioButton.widthAnchor.constraint(equalToConstant: 44),
             audioButton.heightAnchor.constraint(equalToConstant: 44),
