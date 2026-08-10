@@ -447,6 +447,31 @@ final class FFmpegPlaybackSession {
         return buffer
     }
 
+    /// Decodifica o quadro correspondente a um instante e devolve só ele.
+    ///
+    /// É o coração da rolagem integral. Buscar leva ao keyframe ANTERIOR ao
+    /// alvo — que pode estar até dez segundos atrás — e é por isso que os
+    /// players que só fazem isso parecem pular. Aqui seguimos decodificando
+    /// para frente até alcançar o instante pedido.
+    ///
+    /// `limite` existe porque um GOP longo num arquivo pela rede pode custar
+    /// caro: passando dele, mostramos o quadro que temos. Melhor uma imagem
+    /// levemente adiantada, na hora, do que o dedo esperando o quadro exato.
+    func frame(at seconds: Double, limite: Int = 40) throws -> CVPixelBuffer? {
+        try seek(to: seconds)
+
+        var decodificados = 0
+        var ultimo: CVPixelBuffer?
+
+        while let unidade = try nextUnit() {
+            guard case .video(let buffer, let instante) = unidade else { continue }
+            decodificados += 1
+            ultimo = buffer
+            if instante >= seconds || decodificados >= limite { return buffer }
+        }
+        return ultimo
+    }
+
     // MARK: - Troca de faixas
 
     /// Fecha o decodificador de áudio atual e abre o da faixa pedida.

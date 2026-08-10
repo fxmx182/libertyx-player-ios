@@ -24,6 +24,9 @@ final class FFmpegEngine: NSObject, PlaybackEngine {
     private var wantsPlayback = false
     private var lastKnownTime: Double = 0
     private var isSeeking = false
+    private var scrubbingWasPlaying = false
+    private var scrubInFlight = false
+    private var pendingScrubTarget: Double?
 
     /// Avisa a interface que está buscando ou enchendo o buffer, para ela
     /// mostrar que a espera é carregamento e não travamento.
@@ -222,11 +225,59 @@ final class FFmpegEngine: NSObject, PlaybackEngine {
         await seek(to: lastKnownTime, precise: false)
     }
 
-    func beginScrub() { pause() }
+    // MARK: - Rolagem integral
+
+    /// Enquanto o dedo arrasta, a reprodução para e a tela passa a mostrar o
+    /// quadro do instante sob o dedo. Parar é essencial: o laço e a rolagem
+    /// usam a mesma sessão, e disputá-la embaralharia os dois.
+    func beginScrub() {
+        scrubbingWasPlaying = wantsPlayback
+        wantsPlayback = false
+        stopLoop()
+        audio.pause()
+        state = .paused
+    }
+
+    func scrub(to time: Double) {
+        guard let session else { return }
+        let alvo = max(0, min(time, duration))
+
+        // Só o destino mais recente importa: o dedo já se moveu enquanto o
+        // quadro anterior era decodificado. Sem esta coalescência a fila cresce
+        // e a imagem fica segundos atrás do dedo — exatamente o defeito que
+        // este projeto existe para não ter.
+        pendingScrubTarget = alvo
+        lastKnownTime = alvo
+        onTimeUpdate?(alvo)
+
+        guard !scrubInFlight else { return }
+        scrubInFlight = true
+
+        queue.async { [weak self] in
+            while true {
+                let destino: Double? = DispatchQueue.main.sync {
+                    guard let self else { return nil }
+                    defer { self.pendingScrubTarget = nil }
+                    return self.pendingScrubTarget
+                }
+                guard let destino else { break }
+
+                if let quadro = try? session.frame(at: destino) {
+                    DispatchQueue.main.async { self?.renderView.display(quadro) }
+                }
+            }
+            DispatchQueue.main.async { self?.scrubInFlight = false }
+        }
+    }
 
     func endScrub() {
-        guard state == .paused, wantsPlayback else { return }
-        play()
+        Task { @MainActor in
+            await seek(to: lastKnownTime, precise: true)
+            if scrubbingWasPlaying {
+                wantsPlayback = true
+                play()
+            }
+        }
     }
 
     func makeRenderView() -> UIView { renderView }

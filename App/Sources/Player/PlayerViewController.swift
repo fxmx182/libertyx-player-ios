@@ -46,7 +46,9 @@ final class PlayerViewController: UIViewController {
     private var panIsOnLeftHalf = true
 
     private var pendingSeekTarget: Double?
-    private var seekInFlight = false
+    /// A coalescência de destinos mudou de lugar: agora vive no motor, junto
+    /// do decodificador. Aqui só rastreamos o arrasto na barra.
+    private var isBarScrubbing = false
 
     private var rateBeforeHold: Float = 1.0
     private var controlsHideWorkItem: DispatchWorkItem?
@@ -619,26 +621,21 @@ final class PlayerViewController: UIViewController {
         requestScrubSeek(to: target)
     }
 
+    /// Durante o arrasto quem manda é `scrub`, não `seek`.
+    ///
+    /// `seek` para o áudio, esvazia filas e reinicia o laço — custo alto
+    /// demais para acontecer a cada movimento do dedo. `scrub` só decodifica e
+    /// desenha o quadro daquele instante, que é o que produz a rolagem
+    /// contínua em vez do salto de keyframe em keyframe.
     private func requestScrubSeek(to time: Double) {
         pendingSeekTarget = time
-        guard !seekInFlight else { return }
-        seekInFlight = true
-
-        Task { @MainActor in
-            while let target = pendingSeekTarget {
-                pendingSeekTarget = nil
-                await engine.seek(to: target, precise: true)
-            }
-            seekInFlight = false
-        }
+        engine.scrub(to: time)
     }
 
+    /// Ao soltar o dedo, `endScrub` já busca para o ponto final e retoma a
+    /// reprodução — buscar aqui também faria a mesma coisa duas vezes.
     private func commitSeekPan() {
-        let target = pendingSeekTarget ?? engine.currentTime
         pendingSeekTarget = nil
-        Task { @MainActor in
-            await engine.seek(to: target, precise: true)
-        }
     }
 
     private func updateVerticalPan(_ dy: CGFloat) {
@@ -659,13 +656,17 @@ final class PlayerViewController: UIViewController {
 
     // MARK: - Controles
 
+    /// A barra de progresso usa o mesmo caminho do arrasto na tela.
     private func handleControlScrub(to time: Double, finished: Bool) {
         if finished {
             engine.endScrub()
-            Task { await engine.seek(to: time, precise: true) }
+            isBarScrubbing = false
             scheduleControlsHide()
         } else {
-            if !seekInFlight { engine.beginScrub() }
+            if !isBarScrubbing {
+                isBarScrubbing = true
+                engine.beginScrub()
+            }
             requestScrubSeek(to: time)
         }
     }

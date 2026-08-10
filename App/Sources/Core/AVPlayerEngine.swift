@@ -201,6 +201,12 @@ final class AVPlayerEngine: NSObject, PlaybackEngine {
         onTimeUpdate?(currentTime)
     }
 
+    func scrub(to time: Double) {
+        // O AVPlayer não expõe decodificação avulsa; aqui a busca precisa é o
+        // mais próximo que dá para chegar.
+        Task { await seek(to: time, precise: true) }
+    }
+
     func beginScrub() {
         isScrubbing = true
         rateBeforeScrub = player.rate

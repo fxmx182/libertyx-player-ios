@@ -65,6 +65,13 @@ protocol PlaybackEngine: AnyObject {
     func beginScrub()
     func endScrub()
 
+    /// Mostra o quadro daquele instante enquanto o dedo arrasta.
+    ///
+    /// Separado de `seek` de propósito: buscar para valer reinicia áudio,
+    /// esvazia filas e recomeça o laço — caro demais para acontecer dezenas de
+    /// vezes por segundo. Isto só decodifica e desenha.
+    func scrub(to time: Double)
+
     /// Camada onde o vídeo é desenhado; a view controller insere na hierarquia.
     func makeRenderView() -> UIView
     func teardown()
