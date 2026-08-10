@@ -945,7 +945,9 @@ final class PlayerViewController: UIViewController {
             if !systemVolume.set(value) {
                 engine.volume = value
             }
-            hud.show(.volume(value))
+            // Mostra o que o aparelho tem agora, não o que pedimos: se algo
+            // limitar o valor, o número na tela seguiria mentindo.
+            hud.show(.volume(systemVolume.value))
         }
     }
 
