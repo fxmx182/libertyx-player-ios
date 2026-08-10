@@ -18,9 +18,10 @@ final class AVIOSource {
     private let seekBlock: SeekBlock
     private(set) var context: UnsafeMutablePointer<AVIOContext>?
 
-    /// 256 KB: um buffer pequeno demais transforma cada leitura de rede numa
-    /// ida e volta, e latência de SMB dói muito mais que memória.
-    private static let bufferSize = 256 * 1024
+    /// 1 MB. Cada leitura vira uma ida e volta pela rede, e num share SMB a
+    /// latência custa muito mais que a memória: menos leituras maiores batem
+    /// mais leituras menores com folga.
+    private static let bufferSize = 1024 * 1024
 
     init(read: @escaping ReadBlock, seek: @escaping SeekBlock) {
         self.readBlock = read

@@ -152,6 +152,9 @@ final class PlayerViewController: UIViewController {
             guard let self else { return }
             self.controls.update(currentTime: time, duration: self.engine.duration)
         }
+        engine.onBufferingChange = { [weak self] buffering in
+            self?.controls.setBuffering(buffering)
+        }
         engine.onStateChange = { [weak self] state in
             guard let self else { return }
             self.controls.apply(state: state)

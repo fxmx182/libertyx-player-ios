@@ -19,6 +19,32 @@ private func selecionarFormatoDeHardware(
     return formatos?.pointee ?? AV_PIX_FMT_NONE
 }
 
+/// Permite abortar leituras que o FFmpeg está fazendo agora.
+///
+/// Sem isto, pedir uma busca no meio de uma leitura de rede significa esperar
+/// aquela leitura terminar — que num share SMB lento é o tempo todo em que a
+/// barra fica travada.
+final class InterruptToken {
+    private let lock = NSLock()
+    private var aborted = false
+
+    var isAborted: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return aborted
+    }
+
+    func abort() { lock.lock(); aborted = true; lock.unlock() }
+    func clear() { lock.lock(); aborted = false; lock.unlock() }
+}
+
+/// O FFmpeg consulta esta função entre operações de I/O; devolver 1 faz ele
+/// desistir e retornar erro em vez de seguir bloqueado.
+private func verificarInterrupcao(_ opaque: UnsafeMutableRawPointer?) -> Int32 {
+    guard let opaque else { return 0 }
+    let token = Unmanaged<InterruptToken>.fromOpaque(opaque).takeUnretainedValue()
+    return token.isAborted ? 1 : 0
+}
+
 /// Demuxa e decodifica um arquivo, entregando quadros prontos para exibir e
 /// blocos de áudio prontos para tocar.
 ///
@@ -51,6 +77,7 @@ final class FFmpegPlaybackSession {
     private var pixelBufferPool: CVPixelBufferPool?
     private var pending: [Unit] = []
     private var finished = false
+    private let interrupt = InterruptToken()
 
     /// Mantida viva enquanto a sessão existir: o AVIOContext guarda só um
     /// ponteiro sem posse para a fonte de bytes do SMB.
@@ -95,6 +122,9 @@ final class FFmpegPlaybackSession {
         guard let formatContext else {
             throw FFmpegError(code: labp_averror_einval(), operation: "contexto vazio")
         }
+        formatContext.pointee.interrupt_callback.callback = verificarInterrupcao
+        formatContext.pointee.interrupt_callback.opaque = Unmanaged.passUnretained(interrupt).toOpaque()
+
         try ffCheck("ler faixas", avformat_find_stream_info(formatContext, nil))
 
         duration = formatContext.pointee.duration.isNoPTS
@@ -358,7 +388,13 @@ final class FFmpegPlaybackSession {
 
     // MARK: - Busca
 
+    /// Faz o FFmpeg desistir da leitura em andamento. Chamado de outra thread,
+    /// antes de pedir uma busca, para não ficar preso atrás de uma leitura de
+    /// rede que pode demorar segundos.
+    func requestInterrupt() { interrupt.abort() }
+
     func seek(to seconds: Double) throws {
+        interrupt.clear()
         guard let formatContext else { return }
         // O alvo volta para a régua do arquivo, que pode não começar em zero.
         let alvo = Int64((max(0, seconds) + startTime) * Double(AV_TIME_BASE))

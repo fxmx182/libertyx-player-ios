@@ -23,6 +23,11 @@ final class FFmpegEngine: NSObject, PlaybackEngine {
     private lazy var clock = PlaybackClock(audio: audio)
     private var wantsPlayback = false
     private var lastKnownTime: Double = 0
+    private var isSeeking = false
+
+    /// Avisa a interface que está buscando ou enchendo o buffer, para ela
+    /// mostrar que a espera é carregamento e não travamento.
+    var onBufferingChange: ((Bool) -> Void)?
 
     private(set) var state: PlaybackState = .idle {
         didSet {
@@ -124,7 +129,13 @@ final class FFmpegEngine: NSObject, PlaybackEngine {
         guard let session else { return }
         let alvo = max(0, min(time, duration))
 
+        // Aborta a leitura de rede em andamento antes de qualquer coisa: sem
+        // isso a busca fica na fila atrás de um download que pode levar
+        // segundos, e a barra parece travada.
+        session.requestInterrupt()
         stopLoop()
+        isSeeking = true
+        onBufferingChange?(true)
         renderView.flush()
         audio.reset(to: alvo)
 
@@ -138,6 +149,8 @@ final class FFmpegEngine: NSObject, PlaybackEngine {
         lastKnownTime = alvo
         clock.reset(to: alvo)
         onTimeUpdate?(alvo)
+        isSeeking = false
+        onBufferingChange?(false)
 
         if wantsPlayback {
             audio.play()
@@ -203,6 +216,13 @@ final class FFmpegEngine: NSObject, PlaybackEngine {
             }
 
             guard let unidade else {
+                // Leitura abortada por uma busca também devolve nil. Sem esta
+                // checagem, buscar no meio do filme seria interpretado como
+                // fim do arquivo e pularia para o próximo vídeo.
+                guard clock.generation == generation else {
+                    LabLog.loop("leitura interrompida por busca")
+                    return
+                }
                 LabLog.loop("fim do arquivo após \(quadrosExibidos) quadros e \(blocosDeAudio) blocos de áudio")
                 Task { @MainActor [weak self] in self?.state = .ended }
                 return
@@ -231,7 +251,12 @@ final class FFmpegEngine: NSObject, PlaybackEngine {
                     // inteiro o mais rápido possível e estouraria a memória.
                     let atraso = instante - clock.now
                     if atraso > 0 {
-                        Thread.sleep(forTimeInterval: min(atraso, 0.5))
+                        // Teto baixo de propósito. A busca é despachada na
+                        // mesma fila do laço e só roda quando ele sai; dormir
+                        // meio segundo significava meio segundo de barra
+                        // travada a cada arrasto. Em 100 ms o laço volta,
+                        // percebe a geração obsoleta e libera a fila.
+                        Thread.sleep(forTimeInterval: min(atraso, 0.1))
                     }
                     // Mais de 200 ms atrasado: descartar é melhor que exibir
                     // tarde e acumular atraso quadro a quadro.

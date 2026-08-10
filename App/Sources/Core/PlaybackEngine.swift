@@ -38,6 +38,10 @@ protocol PlaybackEngine: AnyObject {
 
     var onTimeUpdate: ((Double) -> Void)? { get set }
     var onStateChange: ((PlaybackState) -> Void)? { get set }
+    /// Buscando ou enchendo o buffer. A interface usa isto para mostrar que a
+    /// espera é carregamento — sem esse aviso, uma busca lenta pela rede é
+    /// indistinguível de um travamento.
+    var onBufferingChange: ((Bool) -> Void)? { get set }
 
     func load(_ item: MediaItem) async throws
     func play()

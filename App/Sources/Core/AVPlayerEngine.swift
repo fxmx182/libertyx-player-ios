@@ -27,6 +27,7 @@ final class AVPlayerEngine: NSObject, PlaybackEngine {
 
     var onTimeUpdate: ((Double) -> Void)?
     var onStateChange: ((PlaybackState) -> Void)?
+    var onBufferingChange: ((Bool) -> Void)?
 
     var currentTime: Double {
         let t = player.currentTime()

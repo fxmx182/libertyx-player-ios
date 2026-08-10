@@ -69,6 +69,7 @@ final class PlayerControlsView: UIView {
     private let rotateButton = UIButton(type: .system)
     /// Botão solto que aparece sozinho quando tudo está bloqueado.
     private let unlockButton = UIButton(type: .system)
+    private let spinner = UIActivityIndicatorView(style: .large)
 
     // MARK: - Ciclo de vida
 
@@ -79,6 +80,30 @@ final class PlayerControlsView: UIView {
         setupCenterControls()
         setupBottomBar()
         setupUnlockButton()
+        setupSpinner()
+    }
+
+    private func setupSpinner() {
+        spinner.color = .white
+        spinner.hidesWhenStopped = true
+        spinner.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(spinner)
+        NSLayoutConstraint.activate([
+            spinner.centerXAnchor.constraint(equalTo: centerXAnchor),
+            spinner.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+    }
+
+    /// Enquanto carrega, o play some e a roda aparece no lugar dele: sem esse
+    /// aviso, uma busca lenta pela rede é indistinguível de travamento.
+    func setBuffering(_ buffering: Bool) {
+        if buffering {
+            spinner.startAnimating()
+            centerStack.alpha = 0
+        } else {
+            spinner.stopAnimating()
+            centerStack.alpha = isVisible ? 1 : 0
+        }
     }
 
     @available(*, unavailable)
