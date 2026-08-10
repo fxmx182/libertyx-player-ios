@@ -52,6 +52,7 @@ final class PlayerViewController: UIViewController {
     private var controlsHideWorkItem: DispatchWorkItem?
     private var didPresentError = false
     private var playbackSpeed: Float = 1.0
+    private var lastSavedPosition: Double = 0
     /// Sondagem do FFmpeg, usada para listar faixas de áudio e legenda.
     private var mediaInfo: MediaInfo?
 
@@ -154,6 +155,7 @@ final class PlayerViewController: UIViewController {
         engine.onTimeUpdate = { [weak self] time in
             guard let self else { return }
             self.controls.update(currentTime: time, duration: self.engine.duration)
+            self.saveResumePoint(time)
         }
         engine.onBufferingChange = { [weak self] buffering in
             self?.controls.setBuffering(buffering)
@@ -166,10 +168,13 @@ final class PlayerViewController: UIViewController {
             guard let self else { return }
             self.controls.apply(state: state)
             if case .failed(let message) = state { self.presentError(message) }
-            // Emendar no próximo é o comportamento esperado numa pasta de
-            // episódios; sem isso o vídeo acaba e a tela fica parada.
-            if state == .ended, self.currentIndex + 1 < self.playlist.count {
-                self.goToNext()
+            if state == .ended {
+                // Quem assistiu até o fim não quer voltar para os créditos na
+                // próxima vez.
+                ResumeStore.shared.clear(key: self.item.origin.resumeKey)
+                // Emendar no próximo é o comportamento esperado numa pasta de
+                // episódios; sem isso o vídeo acaba e a tela fica parada.
+                if self.currentIndex + 1 < self.playlist.count { self.goToNext() }
             }
         }
     }
@@ -179,12 +184,32 @@ final class PlayerViewController: UIViewController {
             do {
                 try await engine.load(item)
                 controls.update(currentTime: 0, duration: engine.duration)
+
+                // Retomar antes de dar play: começar do zero e só depois
+                // saltar mostraria o início do filme por um instante e gastaria
+                // uma busca à toa — cara, num arquivo pela rede.
+                if let retomada = ResumeStore.shared.position(for: item.origin.resumeKey),
+                   retomada < engine.duration {
+                    await engine.seek(to: retomada, precise: false)
+                    hud.show(.text("Retomando de \(TimeFormat.clock(retomada))"))
+                    hud.hideAfterDelay(2.0)
+                }
+
                 engine.play()
                 scheduleControlsHide()
             } catch {
                 presentError(error.localizedDescription)
             }
         }
+    }
+
+    /// Guarda a posição de tempos em tempos, não a cada quadro: são ~30
+    /// gravações por segundo contra uma a cada cinco segundos.
+    private func saveResumePoint(_ time: Double) {
+        guard engine.duration > 0, abs(time - lastSavedPosition) >= 5 else { return }
+        lastSavedPosition = time
+        ResumeStore.shared.save(position: time, duration: engine.duration,
+                                for: item.origin.resumeKey)
     }
 
     private func presentError(_ message: String) {
@@ -256,6 +281,13 @@ final class PlayerViewController: UIViewController {
     }
 
     private func close() {
+        // Grava sem o intervalo de cinco segundos: sair é justamente quando a
+        // posição mais precisa estar certa.
+        if engine.duration > 0, engine.currentTime > 30 {
+            ResumeStore.shared.save(position: engine.currentTime,
+                                    duration: engine.duration,
+                                    for: item.origin.resumeKey)
+        }
         engine.teardown()
         dismiss(animated: true)
     }
@@ -289,6 +321,7 @@ final class PlayerViewController: UIViewController {
         // seriam as do arquivo errado.
         didPresentError = false
         mediaInfo = nil
+        lastSavedPosition = 0
 
         controls.title = item.title
         controls.update(currentTime: 0, duration: 0)
