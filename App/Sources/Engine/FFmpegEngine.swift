@@ -20,12 +20,8 @@ final class FFmpegEngine: NSObject, PlaybackEngine {
     private let renderView = VideoRenderView()
 
     private var session: FFmpegPlaybackSession?
-    private var loopGeneration = 0
+    private lazy var clock = PlaybackClock(audio: audio)
     private var wantsPlayback = false
-
-    /// Relógio de reserva para arquivos sem áudio.
-    private var wallClockOrigin: CFTimeInterval = 0
-    private var wallClockBase: Double = 0
     private var lastKnownTime: Double = 0
 
     private(set) var state: PlaybackState = .idle {
@@ -104,8 +100,7 @@ final class FFmpegEngine: NSObject, PlaybackEngine {
     func play() {
         guard session != nil else { return }
         wantsPlayback = true
-        wallClockOrigin = CACurrentMediaTime()
-        wallClockBase = lastKnownTime
+        clock.start(at: lastKnownTime, rate: Double(rate))
         audio.play()
         state = .playing
         startLoop()
@@ -113,6 +108,7 @@ final class FFmpegEngine: NSObject, PlaybackEngine {
 
     func pause() {
         wantsPlayback = false
+        clock.pause(at: lastKnownTime)
         audio.pause()
         state = .paused
     }
@@ -133,8 +129,7 @@ final class FFmpegEngine: NSObject, PlaybackEngine {
         }
 
         lastKnownTime = alvo
-        wallClockOrigin = CACurrentMediaTime()
-        wallClockBase = alvo
+        clock.reset(to: alvo)
         onTimeUpdate?(alvo)
 
         if wantsPlayback {
@@ -162,28 +157,32 @@ final class FFmpegEngine: NSObject, PlaybackEngine {
     // MARK: - Laço de reprodução
 
     private func startLoop() {
-        loopGeneration += 1
-        let geracao = loopGeneration
+        let geracao = clock.invalidate()
         guard let session else { return }
+        let relogio = clock
 
         queue.async { [weak self] in
-            self?.runLoop(session: session, generation: geracao)
+            self?.runLoop(session: session, clock: relogio, generation: geracao)
         }
     }
 
+    /// Não espera o laço terminar: ele percebe a geração obsoleta e sai
+    /// sozinho no próximo quadro.
     private func stopLoop() {
-        loopGeneration += 1
+        clock.invalidate()
     }
 
-    /// Roda fora da thread principal. `generation` é o que permite abandonar um
-    /// laço antigo depois de uma busca sem esperar por ele.
-    nonisolated private func runLoop(session: FFmpegPlaybackSession, generation: Int) {
-        while true {
-            let ainda = DispatchQueue.main.sync { [weak self] in
-                self?.loopGeneration == generation
-            }
-            guard ainda else { return }
-
+    /// Roda fora da thread principal.
+    ///
+    /// Nada aqui consulta a thread principal de forma síncrona. Uma versão
+    /// anterior fazia isso duas vezes por quadro — a 30 fps, 60 bloqueios por
+    /// segundo esperando a interface ficar livre, e o vídeo engasgava a cada
+    /// toque na tela. Relógio e geração vivem em objetos com trava própria,
+    /// consultáveis de qualquer thread.
+    nonisolated private func runLoop(session: FFmpegPlaybackSession,
+                                     clock: PlaybackClock,
+                                     generation: Int) {
+        while clock.generation == generation {
             let unidade: FFmpegPlaybackSession.Unit?
             do    { unidade = try session.nextUnit() }
             catch { unidade = nil }
@@ -195,6 +194,7 @@ final class FFmpegEngine: NSObject, PlaybackEngine {
 
             switch unidade {
             case .audio(let buffer, let instante):
+                clock.markAudioScheduled(until: instante)
                 Task { @MainActor [weak self] in
                     self?.audio.schedule(buffer)
                     self?.reportTime(instante)
@@ -204,9 +204,7 @@ final class FFmpegEngine: NSObject, PlaybackEngine {
                 // Espera o relógio alcançar o quadro. É também o freio da
                 // decodificação: sem esta pausa, o laço leria o arquivo inteiro
                 // o mais rápido possível e estouraria a memória.
-                let atraso = DispatchQueue.main.sync { [weak self] in
-                    (self?.clock).map { instante - $0 } ?? 0
-                }
+                let atraso = instante - clock.now
                 if atraso > 0 {
                     Thread.sleep(forTimeInterval: min(atraso, 0.5))
                 }
@@ -220,14 +218,6 @@ final class FFmpegEngine: NSObject, PlaybackEngine {
                 }
             }
         }
-    }
-
-    /// Posição atual: o áudio manda; o relógio de parede só cobre o intervalo
-    /// em que o áudio ainda não começou a render, ou arquivos mudos.
-    private var clock: Double {
-        if let doAudio = audio.currentTime { return doAudio }
-        guard state == .playing else { return lastKnownTime }
-        return wallClockBase + (CACurrentMediaTime() - wallClockOrigin) * Double(rate)
     }
 
     private func reportTime(_ time: Double) {
