@@ -18,8 +18,15 @@ final class VLCEngine: NSObject, PlaybackEngine {
 
     private let player = VLCMediaPlayer()
     private let container = VLCRenderView()
-    private var pendingSeekWork: DispatchWorkItem?
     private var savedVolume: Float = 1.0
+
+    /// Permissão de leitura do arquivo, mantida enquanto a reprodução durar.
+    ///
+    /// No iOS quem autoriza é a pasta escolhida no seletor, e o acesso só vale
+    /// com o escopo aberto. Sem isto o VLC recebe o caminho e não consegue ler
+    /// — o contêiner é reconhecido, mas nenhuma faixa aparece, que é o sintoma
+    /// exato de leitura barrada disfarçada de arquivo inválido.
+    private var access: ScopedAccess?
 
     private(set) var state: PlaybackState = .idle {
         didSet {
@@ -74,6 +81,15 @@ final class VLCEngine: NSObject, PlaybackEngine {
 
     func load(_ item: MediaItem) async throws {
         state = .loading
+
+        // Abre o escopo ANTES de entregar o caminho ao VLC, e o mantém: ele lê
+        // o arquivo durante todo o filme, não só na abertura.
+        if case .file(let fileURL, let bookmark) = item.origin {
+            access = ScopedAccess(url: fileURL, bookmark: bookmark)
+            guard access?.path != nil else { throw PlaybackError.securityScopeDenied }
+        } else {
+            access = nil
+        }
 
         guard let url = try Self.resolveURL(for: item.origin) else {
             throw PlaybackError.unsupportedOrigin
@@ -224,6 +240,9 @@ final class VLCEngine: NSObject, PlaybackEngine {
     func teardown() {
         player.stop()
         player.delegate = nil
+        // Solta a permissão só depois de parar: fechar antes deixaria o VLC
+        // lendo um arquivo que ele já não pode mais acessar.
+        access = nil
         state = .idle
     }
 }
