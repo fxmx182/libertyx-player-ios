@@ -75,6 +75,7 @@ final class PlayerControlsView: UIView {
     /// Botão solto que aparece sozinho quando tudo está bloqueado.
     private let unlockButton = UIButton(type: .system)
     private let spinner = UIActivityIndicatorView(style: .large)
+    let toolStrip = ToolStripView()
 
     // MARK: - Ciclo de vida
 
@@ -84,8 +85,22 @@ final class PlayerControlsView: UIView {
         setupTopBar()
         setupCenterControls()
         setupBottomBar()
+        setupToolStrip()
         setupUnlockButton()
         setupSpinner()
+    }
+
+    /// A fileira fica logo abaixo da barra superior, como no MX Player —
+    /// à mão enquanto se assiste, sem cobrir o centro da imagem.
+    private func setupToolStrip() {
+        toolStrip.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(toolStrip)
+        NSLayoutConstraint.activate([
+            toolStrip.topAnchor.constraint(equalTo: topBar.bottomAnchor, constant: 4),
+            toolStrip.leadingAnchor.constraint(equalTo: leadingAnchor),
+            toolStrip.trailingAnchor.constraint(equalTo: trailingAnchor),
+            toolStrip.heightAnchor.constraint(equalToConstant: 86),
+        ])
     }
 
     private func setupSpinner() {
@@ -123,6 +138,7 @@ final class PlayerControlsView: UIView {
         guard isVisible else { return false }
         return topBar.frame.contains(point)
             || bottomBar.frame.contains(point)
+            || toolStrip.frame.contains(point)
             || centerStack.frame.insetBy(dx: -20, dy: -20).contains(point)
     }
 
@@ -412,6 +428,7 @@ final class PlayerControlsView: UIView {
             self.topBar.alpha = alpha
             self.bottomBar.alpha = alpha
             self.centerStack.alpha = alpha
+            self.toolStrip.alpha = alpha
         }
         animated ? UIView.animate(withDuration: 0.22, animations: work) : work()
     }
@@ -429,6 +446,9 @@ final class PlayerControlsView: UIView {
     @objc private func subtitlesTapped() { onShowTracks?(.subtitle) }
     @objc private func audioTapped()     { onShowTracks?(.audio) }
 
+    /// Chamado também pela fileira de ferramentas.
+    func toggleLock() { lockTapped() }
+
     @objc private func lockTapped() {
         isLocked.toggle()
         lockButton.setImage(UIImage(systemName: isLocked ? "lock.fill" : "lock.open"), for: .normal)
@@ -438,6 +458,7 @@ final class PlayerControlsView: UIView {
             self.topBar.alpha = alpha
             self.bottomBar.alpha = alpha
             self.centerStack.alpha = alpha
+            self.toolStrip.alpha = alpha
             self.unlockButton.alpha = self.isLocked ? 0.85 : 0
         }
         isVisible = !isLocked

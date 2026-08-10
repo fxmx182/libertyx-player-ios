@@ -163,6 +163,7 @@ final class PlayerViewController: UIViewController {
         }
 
         controls.moreMenuProvider = { [weak self] in self?.buildToolsMenu() ?? [] }
+        refreshToolStrip()
         if let ffmpeg = engine as? FFmpegEngine {
             pip = PictureInPicture(engine: engine, layer: ffmpeg.displayLayer)
         }
@@ -545,6 +546,127 @@ final class PlayerViewController: UIViewController {
     }
 
     // MARK: - Menu de ferramentas
+
+    /// Monta a fileira de ferramentas sobre o vídeo.
+    ///
+    /// Refeita a cada mudança de estado para os destaques acompanharem — mudo
+    /// ligado, repetição ativa, modo noturno em uso.
+    private func refreshToolStrip() {
+        var ferramentas: [ToolStripView.Tool] = [
+            .init(id: "mudo",
+                  symbol: engine.isMuted ? "speaker.slash.fill" : "speaker.wave.2",
+                  title: "Mudo",
+                  isOn: engine.isMuted) { [weak self] in
+                      self?.engine.isMuted.toggle()
+                      self?.refreshToolStrip()
+                      self?.scheduleControlsHide()
+                  },
+            .init(id: "repetir", symbol: "repeat.1", title: "Repetir",
+                  isOn: repeatMode == .one) { [weak self] in
+                      guard let self else { return }
+                      self.repeatMode = self.repeatMode == .one ? .off : .one
+                      self.refreshToolStrip()
+                  },
+        ]
+
+        if playlist.count > 1 {
+            ferramentas.append(.init(id: "aleatorio", symbol: "shuffle", title: "Aleatório",
+                                     isOn: isShuffling) { [weak self] in
+                self?.isShuffling.toggle()
+                self?.refreshToolStrip()
+            })
+        }
+
+        ferramentas.append(contentsOf: [
+            .init(id: "velocidade", symbol: "speedometer", title: "Velocidade",
+                  isOn: playbackSpeed != 1.0) { [weak self] in self?.showSpeedSheet() },
+            .init(id: "legendas", symbol: "captions.bubble", title: "Legendas",
+                  isOn: engine.currentSubtitleTrack != nil) { [weak self] in
+                      self?.showTracks(.subtitle)
+                  },
+            .init(id: "audio", symbol: "waveform", title: "Áudio") { [weak self] in
+                self?.showTracks(.audio)
+            },
+            .init(id: "enquadramento", symbol: "rectangle.arrowtriangle.2.inward",
+                  title: "Enquadrar") { [weak self] in self?.cycleAspect() },
+            .init(id: "captura", symbol: "camera", title: "Captura") { [weak self] in
+                self?.takeSnapshot()
+            },
+            .init(id: "noturno", symbol: "moon.stars", title: "Modo noturno",
+                  isOn: dimView.alpha > 0) { [weak self] in self?.cycleNightMode() },
+            .init(id: "dormir", symbol: "timer", title: "Dormir",
+                  isOn: sleepTimer != nil) { [weak self] in self?.showSleepSheet() },
+            .init(id: "girar", symbol: "rotate.right", title: "Girar tela") { [weak self] in
+                self?.toggleOrientation()
+            },
+        ])
+
+        if pip?.isSupported == true {
+            ferramentas.append(.init(id: "pip", symbol: "pip.enter", title: "Janela flutuante") { [weak self] in
+                self?.pip?.toggle()
+            })
+        }
+
+        ferramentas.append(.init(id: "bloqueio", symbol: "lock", title: "Bloquear") { [weak self] in
+            self?.controls.toggleLock()
+        })
+
+        controls.toolStrip.configure(with: ferramentas)
+    }
+
+    /// Percorre os níveis em vez de abrir um menu: uma ferramenta de um toque
+    /// só, que é o ponto de ela estar na tela.
+    private func cycleNightMode() {
+        let niveis: [CGFloat] = [0, 0.25, 0.45, 0.65]
+        let atual = niveis.firstIndex { abs($0 - dimView.alpha) < 0.01 } ?? 0
+        let proximo = niveis[(atual + 1) % niveis.count]
+        UIView.animate(withDuration: 0.2) { self.dimView.alpha = proximo }
+        hud.show(.text(proximo == 0 ? "Modo noturno desligado"
+                                    : "Modo noturno \(Int(proximo * 100))%"))
+        hud.hideAfterDelay(1.2)
+        refreshToolStrip()
+    }
+
+    private func showSpeedSheet() {
+        let sheet = UIAlertController(title: "Velocidade", message: nil, preferredStyle: .actionSheet)
+        for valor: Float in [0.5, 0.75, 1.0, 1.25, 1.5, 2.0] {
+            let marca = abs(valor - playbackSpeed) < 0.01 ? "✓ " : ""
+            let titulo = valor == rintf(valor) ? "\(Int(valor))×" : String(format: "%.2g×", valor)
+            sheet.addAction(UIAlertAction(title: marca + titulo, style: .default) { [weak self] _ in
+                guard let self else { return }
+                self.playbackSpeed = valor
+                if self.engine.state == .playing { self.engine.rate = valor }
+                self.hud.show(.rate(valor))
+                self.hud.hideAfterDelay()
+                self.refreshToolStrip()
+            })
+        }
+        sheet.addAction(UIAlertAction(title: "Fechar", style: .cancel))
+        presentSheet(sheet)
+    }
+
+    private func showSleepSheet() {
+        let sheet = UIAlertController(title: sleepTimerTitle(), message: nil, preferredStyle: .actionSheet)
+        sheet.addAction(UIAlertAction(title: sleepTimer == nil ? "✓ Desligado" : "Desligado",
+                                      style: .default) { [weak self] _ in
+            self?.cancelSleepTimer()
+            self?.refreshToolStrip()
+        })
+        for minutos in [15, 30, 45, 60] {
+            sheet.addAction(UIAlertAction(title: "\(minutos) minutos", style: .default) { [weak self] _ in
+                self?.startSleepTimer(minutes: minutos)
+                self?.refreshToolStrip()
+            })
+        }
+        sheet.addAction(UIAlertAction(title: "No fim do vídeo", style: .default) { [weak self] _ in
+            guard let self else { return }
+            self.startSleepTimer(minutes: nil,
+                                 seconds: max(1, self.engine.duration - self.engine.currentTime))
+            self.refreshToolStrip()
+        })
+        sheet.addAction(UIAlertAction(title: "Fechar", style: .cancel))
+        presentSheet(sheet)
+    }
 
     private func buildToolsMenu() -> [UIMenuElement] {
         var itens: [UIMenuElement] = []

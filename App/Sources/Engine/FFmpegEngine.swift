@@ -150,6 +150,11 @@ final class FFmpegEngine: NSObject, PlaybackEngine {
 
     func pause() {
         wantsPlayback = false
+        // Parar o laço é o que faltava: sem isso ele segue decodificando, e
+        // como o relógio congelou todo quadro parece estar no futuro — o laço
+        // dorme o teto de 100 ms antes de cada um e o vídeo continua andando
+        // a 10 quadros por segundo. Câmera lenta em vez de pausa.
+        stopLoop()
         clock.pause(at: lastKnownTime)
         audio.pause()
         state = .paused
@@ -189,7 +194,7 @@ final class FFmpegEngine: NSObject, PlaybackEngine {
 
         if wantsPlayback {
             audio.play()
-            startLoop()
+            startLoop(discardBefore: alvo)
         }
     }
 
@@ -311,13 +316,21 @@ final class FFmpegEngine: NSObject, PlaybackEngine {
 
     // MARK: - Laço de reprodução
 
-    private func startLoop() {
+    /// `discardBefore` descarta o que vier antes desse instante.
+    ///
+    /// Depois de uma busca isso é essencial: o FFmpeg entrega a partir do
+    /// keyframe ANTERIOR ao alvo, então os primeiros blocos de áudio são de
+    /// antes do ponto pedido. Sem descartá-los, o som começa atrás do vídeo e
+    /// fica atrás pelo resto da reprodução — era a causa do "áudio atrasado ao
+    /// adiantar".
+    private func startLoop(discardBefore: Double? = nil) {
         let geracao = clock.invalidate()
         guard let session else { return }
         let relogio = clock
 
         queue.async { [weak self] in
-            self?.runLoop(session: session, clock: relogio, generation: geracao)
+            self?.runLoop(session: session, clock: relogio,
+                          generation: geracao, discardBefore: discardBefore)
         }
     }
 
@@ -336,10 +349,14 @@ final class FFmpegEngine: NSObject, PlaybackEngine {
     /// consultáveis de qualquer thread.
     nonisolated private func runLoop(session: FFmpegPlaybackSession,
                                      clock: PlaybackClock,
-                                     generation: Int) {
+                                     generation: Int,
+                                     discardBefore: Double? = nil) {
         var quadrosExibidos = 0
         var blocosDeAudio = 0
         var primeiroQuadro = true
+        // Tolerância pequena: um quadro de vídeo dura ~40 ms, e exigir
+        // igualdade exata descartaria o quadro certo por arredondamento.
+        let piso = discardBefore.map { $0 - 0.05 }
 
         while clock.generation == generation {
             let unidade: FFmpegPlaybackSession.Unit?
@@ -365,6 +382,9 @@ final class FFmpegEngine: NSObject, PlaybackEngine {
 
             switch unidade {
             case .audio(let buffer, let instante):
+                // Som de antes do ponto buscado não deve tocar: ele empurraria
+                // todo o áudio para trás do vídeo.
+                if let piso, instante < piso { continue }
                 blocosDeAudio += 1
                 if blocosDeAudio == 1 { LabLog.loop("primeiro áudio em \(String(format: "%.3f", instante))s") }
                 clock.markAudioScheduled(until: instante)
@@ -382,6 +402,7 @@ final class FFmpegEngine: NSObject, PlaybackEngine {
                 }
 
             case .video(let pixelBuffer, let instante):
+                if let piso, instante < piso { continue }
                 // O primeiro quadro vai para a tela sem esperar. Além de tirar
                 // o preto imediatamente, evita a armadilha de ficar esperando
                 // um relógio que só começa a andar quando o áudio toca.
