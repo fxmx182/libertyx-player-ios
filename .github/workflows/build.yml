@@ -211,9 +211,16 @@ jobs:
           import re, pathlib
           log = pathlib.Path("sim-build.log")
           texto = log.read_text(errors="replace") if log.exists() else ""
-          erros = [l.strip() for l in texto.splitlines()
-                   if re.search(r"(error:|\*\* BUILD FAILED)", l)]
-          corpo = "\n".join(list(dict.fromkeys(erros))[:40]) or "\n".join(texto.splitlines()[-40:])
+
+          # "error:" sozinho não basta: o que interessa num erro de link são as
+          # linhas de símbolo indefinido e as do ld, que não trazem essa marca.
+          # Filtrar só por "error:" devolvia "linker command failed" e nada mais.
+          padrao = re.compile(
+              r"(error:|\*\* BUILD FAILED|Undefined symbol|undefined symbol"
+              r"|symbol not found|^ld: |building for .* but linking"
+              r"|was built for newer|Could not find module)")
+          erros = [l.strip() for l in texto.splitlines() if padrao.search(l)]
+          corpo = "\n".join(list(dict.fromkeys(erros))[:60]) or "\n".join(texto.splitlines()[-60:])
           enc = corpo[:6000].replace("%", "%25").replace("\n", "%0A")
           print(f"::error title=Falha ao compilar para simulador::{enc}")
           PY
