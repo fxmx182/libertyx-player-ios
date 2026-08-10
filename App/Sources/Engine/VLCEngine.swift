@@ -257,6 +257,10 @@ extension VLCEngine: VLCMediaPlayerDelegate {
         case .buffering: onBufferingChange?(true)
         case .playing:
             onBufferingChange?(false)
+            // O objeto de áudio do VLC só existe depois que a saída sobe;
+            // reaplicar aqui garante que o ganho interno fique em 100% e o
+            // volume que vale seja o do aparelho.
+            player.audio?.volume = Int32(savedVolume * 100)
             state = .playing
         case .paused:    state = .paused
         case .stopped:   state = .idle

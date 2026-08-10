@@ -67,6 +67,7 @@ final class PlayerViewController: UIViewController {
     /// mínimo do sistema, útil para assistir no escuro sem queimar os olhos.
     private let dimView = UIView()
     private var pip: PictureInPicture?
+    private let systemVolume = SystemVolume()
     /// Sondagem do FFmpeg, usada para listar faixas de áudio e legenda.
     private var mediaInfo: MediaInfo?
 
@@ -119,6 +120,7 @@ final class PlayerViewController: UIViewController {
         view.addSubview(hud)
 
         setupSubtitleLabel()
+        systemVolume.attach(to: view)
 
         NSLayoutConstraint.activate([
             renderView.topAnchor.constraint(equalTo: view.topAnchor),
@@ -871,7 +873,9 @@ final class PlayerViewController: UIViewController {
             panAxis = .undecided
             panStartTime = engine.currentTime
             panStartBrightness = UIScreen.main.brightness
-            panStartVolume = engine.volume
+            // Parte do volume que o aparelho está de fato tocando, e não de um
+            // número interno — senão o gesto dá um salto ao começar.
+            panStartVolume = systemVolume.value
             panIsOnLeftHalf = gesture.location(in: view).x < view.bounds.midX
 
         case .changed:
@@ -950,7 +954,12 @@ final class PlayerViewController: UIViewController {
             hud.show(.brightness(Float(value)))
         } else {
             let value = max(0, min(1, panStartVolume + Float(fraction)))
-            engine.volume = value
+            // Volume do aparelho, o mesmo dos botões laterais. Se o controle do
+            // sistema não estiver acessível, cai no ganho interno do player
+            // para o gesto não ficar inerte.
+            if !systemVolume.set(value) {
+                engine.volume = value
+            }
             hud.show(.volume(value))
         }
     }
