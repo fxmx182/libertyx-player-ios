@@ -54,9 +54,8 @@ enum MediaProbe {
     static func probe(path: String) throws -> MediaInfo {
         var formatContext: UnsafeMutablePointer<AVFormatContext>?
 
-        try ffCheck("abrir arquivo") {
-            avformat_open_input(&formatContext, path, nil, nil)
-        }
+        try ffCheck("abrir arquivo",
+                    avformat_open_input(&formatContext, path, nil, nil))
         // A partir daqui há contexto alocado; qualquer saída precisa liberá-lo.
         defer { avformat_close_input(&formatContext) }
 
@@ -67,9 +66,8 @@ enum MediaProbe {
         // Sem isto, contêineres sem cabeçalho descritivo (MPEG-TS, por exemplo)
         // chegam sem codec identificado — o FFmpeg precisa decodificar um
         // pedaço para descobrir o que há dentro.
-        try ffCheck("ler informações das faixas") {
-            avformat_find_stream_info(context, nil)
-        }
+        try ffCheck("ler informações das faixas",
+                    avformat_find_stream_info(context, nil))
 
         var info = MediaInfo(
             formatName: string(from: context.pointee.iformat?.pointee.name) ?? "?",

@@ -22,9 +22,10 @@ struct FFmpegError: LocalizedError {
 /// Toda a API C sinaliza erro com inteiro negativo. Sem isto, cada chamada
 /// vira três linhas de `if ret < 0`, e é fácil esquecer uma — que é como
 /// nascem os bugs silenciosos de decodificação.
+/// Valor simples, não `@autoclosure`: com autoclosure o Swift proíbe a sintaxe
+/// de trailing closure e complica passar ponteiros com `&`.
 @discardableResult
-func ffCheck(_ operation: String, _ expression: @autoclosure () -> Int32) throws -> Int32 {
-    let result = expression()
+func ffCheck(_ operation: String, _ result: Int32) throws -> Int32 {
     guard result >= 0 else {
         throw FFmpegError(code: result, operation: operation)
     }
