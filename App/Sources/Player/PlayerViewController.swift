@@ -459,14 +459,25 @@ final class PlayerViewController: UIViewController {
     /// Com a tela bloqueada, todo gesto é ignorado — é para isso que serve.
     private var gesturesEnabled: Bool { !controls.isLocked }
 
-    @objc private func handleSingleTap() {
-        guard gesturesEnabled else { return }
+    /// Mostrar os controles acontece no instante em que o dedo encosta, e não
+    /// num gesto reconhecido.
+    ///
+    /// O toque único precisa esperar o sistema descartar a hipótese de toque
+    /// duplo — uns 0,3 s. Nesse intervalo parece que nada aconteceu, então o
+    /// usuário toca de novo, vira toque duplo e o vídeo pausa. Respondendo já
+    /// no toque, a barra aparece na hora e o gesto duplo continua valendo para
+    /// o que ele serve.
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        super.touchesBegan(touches, with: event)
+        guard gesturesEnabled, !controls.isVisible else { return }
+        controls.setVisible(true, animated: true)
+        scheduleControlsHide()
+    }
 
-        // Um toque alterna tudo junto: barra e ferramentas aparecem ou somem
-        // como um conjunto. É o que se espera de "tocar na tela".
-        let mostrar = !controls.isVisible
-        controls.setVisible(mostrar, animated: true)
-        if mostrar { scheduleControlsHide() }
+    /// Já visível, o toque simples esconde — o mostrar ficou no `touchesBegan`.
+    @objc private func handleSingleTap() {
+        guard gesturesEnabled, controls.isVisible else { return }
+        controls.setVisible(false, animated: true)
     }
 
     @objc private func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
