@@ -68,8 +68,6 @@ final class PlayerViewController: UIViewController {
     private let dimView = UIView()
     private var pip: PictureInPicture?
     private let systemVolume = SystemVolume()
-    /// Sondagem do FFmpeg, usada para listar faixas de áudio e legenda.
-    private var mediaInfo: MediaInfo?
 
     private let gravityModes: [AVLayerVideoGravity] = [.resizeAspect, .resizeAspectFill, .resize]
     private var gravityIndex = 0
@@ -175,7 +173,6 @@ final class PlayerViewController: UIViewController {
         bindEngine()
         updateNavigation()
         loadAndPlay()
-        probeMediaInfo()
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -377,7 +374,6 @@ final class PlayerViewController: UIViewController {
         // mostrado antes bloquearia o alerta do próximo, e as faixas listadas
         // seriam as do arquivo errado.
         didPresentError = false
-        mediaInfo = nil
         lastSavedPosition = 0
 
         controls.title = item.title
@@ -389,7 +385,6 @@ final class PlayerViewController: UIViewController {
         hud.hideAfterDelay(1.2)
 
         loadAndPlay()
-        probeMediaInfo()
     }
 
     private func updateNavigation() {
@@ -798,16 +793,6 @@ final class PlayerViewController: UIViewController {
 
     // MARK: - Faixas de áudio e legenda
 
-    private func probeMediaInfo() {
-        guard case .file = item.origin else { return }
-        let origin = item.origin
-        Task { [weak self] in
-            let resultado = await Task.detached(priority: .utility) {
-                try? FileAccess.withAccess(origin) { try MediaProbe.probe(path: $0) }
-            }.value
-            self?.mediaInfo = resultado ?? nil
-        }
-    }
 
     private func showTracks(_ kind: PlayerControlsView.TrackKind) {
         controlsHideWorkItem?.cancel()
