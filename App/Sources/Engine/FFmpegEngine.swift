@@ -351,6 +351,8 @@ final class FFmpegEngine: NSObject, PlaybackEngine {
                                      clock: PlaybackClock,
                                      generation: Int,
                                      discardBefore: Double? = nil) {
+        LabLog.loop("laço iniciado (geração \(generation), a partir de \(discardBefore.map { String(format: "%.1f", $0) } ?? "início"))")
+
         var quadrosExibidos = 0
         var blocosDeAudio = 0
         var primeiroQuadro = true
@@ -360,8 +362,16 @@ final class FFmpegEngine: NSObject, PlaybackEngine {
 
         while clock.generation == generation {
             let unidade: FFmpegPlaybackSession.Unit?
+            let comeco = CACurrentMediaTime()
             do {
                 unidade = try session.nextUnit()
+                // Uma unidade que demora mais que isso significa que o
+                // decodificador ficou esperando bytes — é o sintoma de
+                // travamento visto de dentro.
+                let gasto = CACurrentMediaTime() - comeco
+                if gasto > 1.0 {
+                    LabLog.loop(String(format: "nextUnit demorou %.1fs", gasto))
+                }
             } catch {
                 LabLog.problem("nextUnit falhou: \(error.localizedDescription)")
                 unidade = nil

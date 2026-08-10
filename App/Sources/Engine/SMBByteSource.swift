@@ -10,8 +10,16 @@ import SMBClient
 /// Uma fila própria dá ao FFmpeg uma thread que pode ser bloqueada à vontade.
 enum FFmpegRunner {
 
+    /// Concorrente, e não serial.
+    ///
+    /// Com uma fila serial, uma leitura de rede que nunca retorna bloqueia a
+    /// fila para sempre — e como todo trabalho de FFmpeg passa por aqui,
+    /// nenhum outro vídeo consegue abrir depois disso. Era exatamente o
+    /// sintoma: travou uma vez, não abre mais nada. Cada trabalho ganha sua
+    /// própria thread; se um ficar preso, os demais seguem.
     private static let queue = DispatchQueue(label: "com.mauricio.labplayer.ffmpeg",
-                                             qos: .userInitiated)
+                                             qos: .userInitiated,
+                                             attributes: .concurrent)
 
     static func run<T>(_ work: @escaping () throws -> T) async throws -> T {
         try await withCheckedThrowingContinuation { continuation in
@@ -159,19 +167,31 @@ final class SMBByteSource {
         }
     }
 
+    /// Prazo para a rede responder.
+    ///
+    /// Sem prazo, uma conexão que engasga deixa esta espera parada para
+    /// sempre, e com ela o decodificador. Vinte segundos é generoso para um
+    /// bloco de 4 MB numa rede doméstica e curto o bastante para o app se
+    /// recuperar em vez de morrer congelado.
+    private static let networkTimeout: DispatchTimeInterval = .seconds(20)
+
     private func buscarBloco(em inicio: Int64) -> (Int64, Data)? {
         let tamanho = UInt32(min(Self.chunkSize, size - inicio))
         guard tamanho > 0 else { return nil }
 
         let caixa = ResultBox()
         let semaforo = DispatchSemaphore(value: 0)
-        Task { [reader] in
+        let tarefa = Task { [reader] in
             do    { caixa.data = try await reader.read(offset: UInt64(inicio), length: tamanho) }
             catch { caixa.failed = true }
             semaforo.signal()
         }
-        semaforo.wait()
 
+        if semaforo.wait(timeout: .now() + Self.networkTimeout) == .timedOut {
+            tarefa.cancel()
+            LabLog.problem("leitura SMB estourou o prazo em \(inicio / 1_048_576) MB")
+            return nil
+        }
         guard !caixa.failed, let dados = caixa.data else { return nil }
         return (inicio, dados)
     }
@@ -183,7 +203,11 @@ final class SMBByteSource {
             caixa.resultado = await tarefa.value
             semaforo.signal()
         }
-        semaforo.wait()
+        if semaforo.wait(timeout: .now() + Self.networkTimeout) == .timedOut {
+            tarefa.cancel()
+            LabLog.problem("leitura antecipada estourou o prazo")
+            return nil
+        }
         return caixa.resultado
     }
 
