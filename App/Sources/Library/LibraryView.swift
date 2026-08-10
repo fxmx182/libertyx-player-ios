@@ -163,6 +163,7 @@ struct FolderBrowserView: View {
     @State private var listing = FolderScanner.Listing()
     @State private var resolvedRoot: URL?
     @State private var playing: MediaItem?
+    @State private var showingInfo: MediaItem?
     @State private var failedToResolve = false
 
     private var currentURL: URL? { subdirectory ?? resolvedRoot }
@@ -192,6 +193,13 @@ struct FolderBrowserView: View {
                     VideoRow(item: item)
                 }
                 .buttonStyle(.plain)
+                .contextMenu {
+                    Button {
+                        showingInfo = item
+                    } label: {
+                        Label("Detalhes do arquivo", systemImage: "info.circle")
+                    }
+                }
             }
         }
         .navigationTitle(currentURL?.lastPathComponent ?? folder.name)
@@ -203,6 +211,9 @@ struct FolderBrowserView: View {
         }
         .fullScreenCover(item: $playing) { item in
             PlayerScreen(item: item).ignoresSafeArea()
+        }
+        .sheet(item: $showingInfo) { item in
+            MediaInfoView(item: item)
         }
         .overlay {
             if listing.directories.isEmpty, listing.videos.isEmpty, !failedToResolve {

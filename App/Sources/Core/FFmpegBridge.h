@@ -18,4 +18,27 @@
 #include <libswresample/swresample.h>
 #include <libswscale/swscale.h>
 
+// --- Ponte para o que o Swift não enxerga ------------------------------------
+//
+// Boa parte da API de erro do FFmpeg são macros (AVERROR, AVERROR_EOF,
+// AV_NOPTS_VALUE, av_err2str). O Swift não importa macros com expressões, então
+// sem estes invólucros não há como comparar o retorno de avcodec_receive_frame
+// com EAGAIN — que é o caso normal do laço de decodificação, não um erro.
+// `static inline` é importado pelo Swift como função comum.
+
+static inline int labp_averror(int errnum) { return AVERROR(errnum); }
+static inline int labp_averror_eof(void)   { return AVERROR_EOF; }
+static inline int labp_averror_eagain(void){ return AVERROR(EAGAIN); }
+static inline int labp_averror_einval(void){ return AVERROR(EINVAL); }
+static inline int labp_averror_enomem(void){ return AVERROR(ENOMEM); }
+
+static inline int64_t labp_nopts_value(void) { return AV_NOPTS_VALUE; }
+static inline AVRational labp_time_base_q(void) { return AV_TIME_BASE_Q; }
+
+/// Descrição textual de um código de erro. `av_err2str` é macro com buffer
+/// temporário na pilha — inutilizável a partir do Swift.
+static inline void labp_strerror(int errnum, char *buf, size_t buflen) {
+    av_strerror(errnum, buf, buflen);
+}
+
 #endif /* FFmpegBridge_h */
