@@ -46,6 +46,9 @@ final class PlayerViewController: UIViewController {
     private var rateBeforeHold: Float = 1.0
     private var controlsHideWorkItem: DispatchWorkItem?
     private var didPresentError = false
+    private var playbackSpeed: Float = 1.0
+    /// Sondagem do FFmpeg, usada para listar faixas de áudio e legenda.
+    private var mediaInfo: MediaInfo?
 
     private let gravityModes: [AVLayerVideoGravity] = [.resizeAspect, .resizeAspectFill, .resize]
     private var gravityIndex = 0
@@ -101,10 +104,28 @@ final class PlayerViewController: UIViewController {
         controls.onScrub = { [weak self] time, finished in
             self?.handleControlScrub(to: time, finished: finished)
         }
+        controls.onSeekRelative = { [weak self] delta in self?.jump(by: delta) }
+        controls.onSpeedChange = { [weak self] speed in
+            guard let self else { return }
+            self.playbackSpeed = speed
+            if self.engine.state == .playing { self.engine.rate = speed }
+            self.hud.show(.rate(speed))
+            self.hud.hideAfterDelay()
+            self.scheduleControlsHide()
+        }
+        controls.onCycleAspect = { [weak self] in self?.cycleAspect() }
+        controls.onRotate = { [weak self] in self?.toggleOrientation() }
+        controls.onShowTracks = { [weak self] kind in self?.showTracks(kind) }
+        controls.onLockChange = { [weak self] locked in
+            // Com a tela bloqueada nada some sozinho: o usuário bloqueou
+            // justamente para nada mudar enquanto ele encosta na tela.
+            if locked { self?.controlsHideWorkItem?.cancel() } else { self?.scheduleControlsHide() }
+        }
 
         installGestures()
         bindEngine()
         loadAndPlay()
+        probeMediaInfo()
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -160,7 +181,14 @@ final class PlayerViewController: UIViewController {
     }
 
     private func togglePlayPause() {
-        if engine.state == .playing { engine.pause() } else { engine.play() }
+        if engine.state == .playing {
+            engine.pause()
+        } else {
+            engine.play()
+            // `play()` volta para 1×; sem isto a velocidade escolhida some a
+            // cada pausa.
+            if playbackSpeed != 1.0 { engine.rate = playbackSpeed }
+        }
         scheduleControlsHide()
     }
 
@@ -189,12 +217,17 @@ final class PlayerViewController: UIViewController {
         view.addGestureRecognizer(pinch)
     }
 
+    /// Com a tela bloqueada, todo gesto é ignorado — é para isso que serve.
+    private var gesturesEnabled: Bool { !controls.isLocked }
+
     @objc private func handleSingleTap() {
+        guard gesturesEnabled else { return }
         controls.setVisible(!controls.isVisible, animated: true)
         if controls.isVisible { scheduleControlsHide() }
     }
 
     @objc private func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
+        guard gesturesEnabled else { return }
         let x = gesture.location(in: view).x
         let third = view.bounds.width / 3
 
@@ -215,6 +248,7 @@ final class PlayerViewController: UIViewController {
     }
 
     @objc private func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
+        guard gesturesEnabled else { return }
         switch gesture.state {
         case .began:
             guard engine.state == .playing else { return }
@@ -231,14 +265,27 @@ final class PlayerViewController: UIViewController {
     }
 
     @objc private func handlePinch(_ gesture: UIPinchGestureRecognizer) {
-        guard gesture.state == .ended else { return }
+        guard gesturesEnabled, gesture.state == .ended else { return }
         // Espalhar avança o modo, juntar volta.
         gravityIndex = gesture.scale > 1
             ? min(gravityIndex + 1, gravityModes.count - 1)
             : max(gravityIndex - 1, 0)
+        applyGravity()
+    }
+
+    /// Mesma ação pelo botão da barra de ferramentas, aí sempre avançando.
+    private func cycleAspect() {
+        gravityIndex = (gravityIndex + 1) % gravityModes.count
+        applyGravity()
+        scheduleControlsHide()
+    }
+
+    private func applyGravity() {
         let mode = gravityModes[gravityIndex]
         (renderView as? PlayerLayerView)?.setGravity(mode)
-        hud.show(.text(label(for: mode)))
+        let texto = label(for: mode)
+        controls.setAspectLabel(texto)
+        hud.show(.text(texto))
         hud.hideAfterDelay()
     }
 
@@ -250,7 +297,80 @@ final class PlayerViewController: UIViewController {
         }
     }
 
+    /// Alterna retrato/paisagem à força, como o botão de girar do MX Player.
+    private func toggleOrientation() {
+        guard let scene = view.window?.windowScene else { return }
+        let alvo: UIInterfaceOrientationMask =
+            scene.interfaceOrientation.isLandscape ? .portrait : .landscapeRight
+        scene.requestGeometryUpdate(.iOS(interfaceOrientations: alvo))
+        setNeedsUpdateOfSupportedInterfaceOrientations()
+        scheduleControlsHide()
+    }
+
+    // MARK: - Faixas de áudio e legenda
+
+    private func probeMediaInfo() {
+        guard case .file(let url, _) = item.origin else { return }
+        let path = url.path
+        Task { [weak self] in
+            let resultado = await Task.detached(priority: .utility) {
+                try? MediaProbe.probe(path: path)
+            }.value
+            self?.mediaInfo = resultado
+        }
+    }
+
+    private func showTracks(_ kind: PlayerControlsView.TrackKind) {
+        controlsHideWorkItem?.cancel()
+
+        let titulo = kind == .audio ? "Faixas de áudio" : "Legendas"
+        let sheet = UIAlertController(title: titulo, message: nil, preferredStyle: .actionSheet)
+
+        guard let info = mediaInfo else {
+            sheet.message = "Ainda lendo o arquivo…"
+            sheet.addAction(UIAlertAction(title: "OK", style: .cancel))
+            presentSheet(sheet)
+            return
+        }
+
+        switch kind {
+        case .audio:
+            for faixa in info.audio {
+                let idioma = MediaInfo.languageName(faixa.language) ?? "Faixa \(faixa.id)"
+                let detalhe = "\(faixa.codec.uppercased()) · \(faixa.channelLayout)"
+                sheet.addAction(UIAlertAction(title: "\(idioma) — \(detalhe)", style: .default))
+            }
+        case .subtitle:
+            for faixa in info.subtitles {
+                let idioma = MediaInfo.languageName(faixa.language) ?? faixa.codec.uppercased()
+                let tipo = faixa.isBitmap ? "imagem" : "texto"
+                sheet.addAction(UIAlertAction(title: "\(idioma) — \(tipo)", style: .default))
+            }
+        }
+
+        if sheet.actions.isEmpty {
+            sheet.message = "Este arquivo não tem \(kind == .audio ? "outras faixas de áudio" : "legendas embutidas")."
+        } else {
+            // Honestidade acima de fachada: os itens aparecem porque a sondagem
+            // já funciona, mas trocar de faixa exige o motor FFmpeg tocando.
+            sheet.message = "A troca de faixa chega junto com o motor FFmpeg."
+        }
+        sheet.addAction(UIAlertAction(title: "Fechar", style: .cancel))
+        presentSheet(sheet)
+    }
+
+    private func presentSheet(_ sheet: UIAlertController) {
+        // Em iPad o action sheet exige âncora, senão o app quebra.
+        if let popover = sheet.popoverPresentationController {
+            popover.sourceView = view
+            popover.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 1, height: 1)
+            popover.permittedArrowDirections = []
+        }
+        present(sheet, animated: true)
+    }
+
     @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
+        guard gesturesEnabled else { return }
         let translation = gesture.translation(in: view)
 
         switch gesture.state {
