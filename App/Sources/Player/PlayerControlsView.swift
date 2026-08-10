@@ -1,10 +1,11 @@
 import UIKit
 
-/// Controles do player: barra superior, botões centrais e barra inferior com
-/// ferramentas — no espírito do MX Player.
+/// Controles do player.
 ///
-/// Nenhuma lógica de reprodução aqui: a view só emite intenções. Isso é o que
-/// permite ela sobreviver intacta à troca do AVPlayer pelo motor FFmpeg.
+/// Disposição: barra superior com título e acessos; fileira de ferramentas que
+/// abre sob demanda; e rodapé em duas linhas — tempo e barra em cima,
+/// transporte embaixo. Nenhuma lógica de reprodução aqui: a view só emite
+/// intenções, e é isso que permitiu trocar o motor sem tocar nela.
 final class PlayerControlsView: UIView {
 
     // MARK: - Intenções
@@ -18,6 +19,12 @@ final class PlayerControlsView: UIView {
     var onLockChange: ((Bool) -> Void)?
     var onPrevious: (() -> Void)?
     var onNext: (() -> Void)?
+    var onCycleAspect: (() -> Void)?
+    var onTogglePiP: (() -> Void)?
+
+    /// Montado na hora de abrir: os itens mostram estado que muda enquanto o
+    /// player está aberto.
+    var moreMenuProvider: (() -> [UIMenuElement])?
 
     enum TrackKind { case audio, subtitle }
 
@@ -25,8 +32,11 @@ final class PlayerControlsView: UIView {
 
     private(set) var isVisible = true
     /// Bloqueio: esconde tudo e desliga os gestos. Existe porque assistir
-    /// deitado na cama significa encostar na tela sem querer o tempo todo.
+    /// deitado significa encostar na tela sem querer o tempo todo.
     private(set) var isLocked = false
+    /// A fileira começa fechada: ferramenta boa de ter à mão não pode cobrir
+    /// o vídeo o tempo todo.
+    private(set) var isToolStripExpanded = false
 
     var title: String = "" {
         didSet { titleLabel.text = title }
@@ -38,38 +48,30 @@ final class PlayerControlsView: UIView {
     // MARK: - Views
 
     private let topBar = UIView()
-    private let centerStack = UIStackView()
     private let bottomBar = UIView()
     private let topGradient = CAGradientLayer()
     private let bottomGradient = CAGradientLayer()
 
     private let titleLabel = UILabel()
     private let closeButton = UIButton(type: .system)
+    private let toolsButton = UIButton(type: .system)
     private let subtitleButton = UIButton(type: .system)
     private let audioButton = UIButton(type: .system)
     private let moreButton = UIButton(type: .system)
-    private let toolsButton = UIButton(type: .system)
-
-    /// A fileira começa fechada: ferramentas boas de ter à mão não podem
-    /// cobrir o vídeo o tempo todo.
-    private(set) var isToolStripExpanded = false
-
-    /// Montado na hora de abrir, não uma vez só: os itens mostram estado
-    /// (mudo ligado, repetição ativa) que muda enquanto o player está aberto.
-    var moreMenuProvider: (() -> [UIMenuElement])?
-
-    private let previousButton = UIButton(type: .system)
-    private let rewindButton = UIButton(type: .system)
-    private let playButton = UIButton(type: .system)
-    private let forwardButton = UIButton(type: .system)
-    private let nextButton = UIButton(type: .system)
 
     private let elapsedLabel = UILabel()
-    private let remainingLabel = UILabel()
+    private let totalLabel = UILabel()
     private let slider = UISlider()
 
     private let lockButton = UIButton(type: .system)
-    /// Botão solto que aparece sozinho quando tudo está bloqueado.
+    private let previousButton = UIButton(type: .system)
+    private let playButton = UIButton(type: .system)
+    private let nextButton = UIButton(type: .system)
+    private let transport = UIStackView()
+    private let aspectButton = UIButton(type: .system)
+    private let pipButton = UIButton(type: .system)
+
+    /// Aparece sozinho quando tudo está bloqueado.
     private let unlockButton = UIButton(type: .system)
     private let spinner = UIActivityIndicatorView(style: .large)
     let toolStrip = ToolStripView()
@@ -80,63 +82,10 @@ final class PlayerControlsView: UIView {
         super.init(frame: frame)
         backgroundColor = .clear
         setupTopBar()
-        setupCenterControls()
         setupBottomBar()
         setupToolStrip()
         setupUnlockButton()
         setupSpinner()
-    }
-
-    /// A fileira fica logo abaixo da barra superior, como no MX Player —
-    /// à mão enquanto se assiste, sem cobrir o centro da imagem.
-    private func setupToolStrip() {
-        toolStrip.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(toolStrip)
-        NSLayoutConstraint.activate([
-            toolStrip.topAnchor.constraint(equalTo: topBar.bottomAnchor, constant: 4),
-            toolStrip.leadingAnchor.constraint(equalTo: leadingAnchor),
-            toolStrip.trailingAnchor.constraint(equalTo: trailingAnchor),
-            toolStrip.heightAnchor.constraint(equalToConstant: 86),
-        ])
-        toolStrip.alpha = 0
-        toolStrip.isHidden = true
-    }
-
-    @objc private func toolsTapped() {
-        isToolStripExpanded.toggle()
-        toolsButton.tintColor = isToolStripExpanded ? tintColor : .white
-
-        if isToolStripExpanded { toolStrip.isHidden = false }
-        UIView.animate(withDuration: 0.22) {
-            self.toolStrip.alpha = self.isToolStripExpanded ? 1 : 0
-        } completion: { _ in
-            // Escondida de verdade quando fechada: alpha zero ainda receberia
-            // toque e roubaria gestos da área do vídeo.
-            self.toolStrip.isHidden = !self.isToolStripExpanded
-        }
-    }
-
-    private func setupSpinner() {
-        spinner.color = .white
-        spinner.hidesWhenStopped = true
-        spinner.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(spinner)
-        NSLayoutConstraint.activate([
-            spinner.centerXAnchor.constraint(equalTo: centerXAnchor),
-            spinner.centerYAnchor.constraint(equalTo: centerYAnchor),
-        ])
-    }
-
-    /// Enquanto carrega, o play some e a roda aparece no lugar dele: sem esse
-    /// aviso, uma busca lenta pela rede é indistinguível de travamento.
-    func setBuffering(_ buffering: Bool) {
-        if buffering {
-            spinner.startAnimating()
-            centerStack.alpha = 0
-        } else {
-            spinner.stopAnimating()
-            centerStack.alpha = isVisible ? 1 : 0
-        }
     }
 
     @available(*, unavailable)
@@ -152,21 +101,15 @@ final class PlayerControlsView: UIView {
         return topBar.frame.contains(point)
             || bottomBar.frame.contains(point)
             || (isToolStripExpanded && toolStrip.frame.contains(point))
-            || centerStack.frame.insetBy(dx: -20, dy: -20).contains(point)
     }
 
-    // MARK: - Construção
-
-    private static func iconButton(_ symbol: String, size: CGFloat = 17,
-                                   weight: UIImage.SymbolWeight = .medium) -> UIButton {
-        let button = UIButton(type: .system)
-        button.setImage(UIImage(systemName: symbol), for: .normal)
-        button.tintColor = .white
-        button.setPreferredSymbolConfiguration(
-            UIImage.SymbolConfiguration(pointSize: size, weight: weight), forImageIn: .normal)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        return button
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        topGradient.frame = topBar.bounds
+        bottomGradient.frame = bottomBar.bounds
     }
+
+    // MARK: - Barra superior
 
     private func setupTopBar() {
         topBar.translatesAutoresizingMaskIntoConstraints = false
@@ -176,9 +119,9 @@ final class PlayerControlsView: UIView {
         topBar.layer.insertSublayer(topGradient, at: 0)
 
         configure(closeButton, symbol: "chevron.down", action: #selector(closeTapped))
+        configure(toolsButton, symbol: "square.grid.2x2", action: #selector(toolsTapped))
         configure(subtitleButton, symbol: "captions.bubble", action: #selector(subtitlesTapped))
         configure(audioButton, symbol: "waveform", action: #selector(audioTapped))
-        configure(toolsButton, symbol: "square.grid.2x2", action: #selector(toolsTapped))
 
         moreButton.setImage(UIImage(systemName: "ellipsis"), for: .normal)
         moreButton.tintColor = .white
@@ -197,7 +140,8 @@ final class PlayerControlsView: UIView {
         titleLabel.lineBreakMode = .byTruncatingMiddle
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        [closeButton, titleLabel, toolsButton, subtitleButton, audioButton, moreButton].forEach(topBar.addSubview)
+        [closeButton, titleLabel, toolsButton, subtitleButton, audioButton, moreButton]
+            .forEach(topBar.addSubview)
 
         NSLayoutConstraint.activate([
             topBar.topAnchor.constraint(equalTo: topAnchor),
@@ -236,43 +180,14 @@ final class PlayerControlsView: UIView {
         ])
     }
 
-    /// Play/pause no centro, com ±10 s dos lados. É o pedido mais direto de
-    /// quem vem do MX Player: a mão fica no meio da tela, não no rodapé.
-    private func setupCenterControls() {
-        configure(previousButton, symbol: "backward.end.fill", size: 22, action: #selector(previousTapped))
-        configure(rewindButton, symbol: "gobackward.10", size: 30, action: #selector(rewindTapped))
-        configure(playButton, symbol: "play.fill", size: 42, weight: .semibold, action: #selector(playTapped))
-        configure(forwardButton, symbol: "goforward.10", size: 30, action: #selector(forwardTapped))
-        configure(nextButton, symbol: "forward.end.fill", size: 22, action: #selector(nextTapped))
+    // MARK: - Rodapé
 
-        let botoes = [previousButton, rewindButton, playButton, forwardButton, nextButton]
-        for (indice, botao) in botoes.enumerated() {
-            // Anterior/próxima ficam menores: são ações de saltar arquivo, não
-            // de controlar o que está tocando, e não devem competir com o play.
-            let lado: CGFloat = (indice == 0 || indice == botoes.count - 1) ? 56 : 74
-            botao.widthAnchor.constraint(equalToConstant: lado).isActive = true
-            botao.heightAnchor.constraint(equalToConstant: lado).isActive = true
-            // Sombra em vez de fundo sólido: o vídeo continua visível atrás,
-            // e o ícone se destaca mesmo sobre cena clara.
-            botao.layer.shadowColor = UIColor.black.cgColor
-            botao.layer.shadowOpacity = 0.55
-            botao.layer.shadowRadius = 8
-            botao.layer.shadowOffset = .zero
-        }
-
-        centerStack.axis = .horizontal
-        centerStack.alignment = .center
-        centerStack.spacing = 16
-        centerStack.translatesAutoresizingMaskIntoConstraints = false
-        botoes.forEach(centerStack.addArrangedSubview)
-        addSubview(centerStack)
-
-        NSLayoutConstraint.activate([
-            centerStack.centerXAnchor.constraint(equalTo: centerXAnchor),
-            centerStack.centerYAnchor.constraint(equalTo: centerYAnchor),
-        ])
-    }
-
+    /// Duas linhas: tempo e barra em cima, transporte embaixo.
+    ///
+    /// O play fica centralizado no rodapé, e não no meio da tela: ali ele
+    /// cobre a imagem justamente onde a ação acontece. Tocar duas vezes no
+    /// centro continua pausando — o gesto cobre o caso de querer pausar sem
+    /// procurar botão.
     private func setupBottomBar() {
         bottomBar.translatesAutoresizingMaskIntoConstraints = false
         addSubview(bottomBar)
@@ -280,51 +195,90 @@ final class PlayerControlsView: UIView {
         bottomGradient.colors = [UIColor.clear.cgColor, UIColor.black.withAlphaComponent(0.85).cgColor]
         bottomBar.layer.insertSublayer(bottomGradient, at: 0)
 
-        [elapsedLabel, remainingLabel].forEach {
-            $0.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+        [elapsedLabel, totalLabel].forEach {
+            $0.font = .monospacedDigitSystemFont(ofSize: 13, weight: .regular)
             $0.textColor = .white
             $0.text = "--:--"
             $0.translatesAutoresizingMaskIntoConstraints = false
         }
 
         slider.minimumTrackTintColor = tintColor
-        slider.maximumTrackTintColor = UIColor.white.withAlphaComponent(0.3)
-        slider.setThumbImage(Self.thumbImage(diameter: 12), for: .normal)
-        slider.setThumbImage(Self.thumbImage(diameter: 20), for: .highlighted)
+        slider.maximumTrackTintColor = UIColor.white.withAlphaComponent(0.35)
+        slider.setThumbImage(Self.thumbImage(diameter: 14), for: .normal)
+        slider.setThumbImage(Self.thumbImage(diameter: 22), for: .highlighted)
         slider.translatesAutoresizingMaskIntoConstraints = false
         slider.addTarget(self, action: #selector(sliderChanged), for: .valueChanged)
         slider.addTarget(self, action: #selector(sliderTouchDown), for: .touchDown)
         slider.addTarget(self, action: #selector(sliderTouchUp),
                          for: [.touchUpInside, .touchUpOutside, .touchCancel])
 
-        // Só o cadeado permanece no rodapé. O resto virou redundante quando a
-        // fileira de ferramentas passou a oferecer as mesmas ações — e cadeado
-        // é ação de um toque, que perde o sentido escondida atrás de um menu.
         configure(lockButton, symbol: "lock.open", action: #selector(lockTapped))
+        configure(previousButton, symbol: "backward.end.fill", size: 22, action: #selector(previousTapped))
+        configure(playButton, symbol: "play.fill", size: 30, weight: .semibold, action: #selector(playTapped))
+        configure(nextButton, symbol: "forward.end.fill", size: 22, action: #selector(nextTapped))
+        configure(aspectButton, symbol: "arrow.left.and.right", action: #selector(aspectTapped))
+        configure(pipButton, symbol: "pip.enter", action: #selector(pipTapped))
+        pipButton.isHidden = true
 
-        [elapsedLabel, slider, remainingLabel, lockButton].forEach(bottomBar.addSubview)
+        transport.axis = .horizontal
+        transport.alignment = .center
+        transport.spacing = 34
+        transport.translatesAutoresizingMaskIntoConstraints = false
+        [previousButton, playButton, nextButton].forEach(transport.addArrangedSubview)
+
+        [elapsedLabel, slider, totalLabel, lockButton, transport, aspectButton, pipButton]
+            .forEach(bottomBar.addSubview)
 
         NSLayoutConstraint.activate([
             bottomBar.bottomAnchor.constraint(equalTo: bottomAnchor),
             bottomBar.leadingAnchor.constraint(equalTo: leadingAnchor),
             bottomBar.trailingAnchor.constraint(equalTo: trailingAnchor),
-            bottomBar.heightAnchor.constraint(equalToConstant: 110),
+            bottomBar.heightAnchor.constraint(equalToConstant: 128),
 
-            lockButton.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 12),
-            lockButton.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -6),
-            lockButton.widthAnchor.constraint(equalToConstant: 44),
-            lockButton.heightAnchor.constraint(equalToConstant: 44),
+            // Linha de baixo: bloqueio à esquerda, transporte no centro,
+            // enquadramento e janela flutuante à direita.
+            lockButton.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 10),
+            lockButton.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -8),
+            lockButton.widthAnchor.constraint(equalToConstant: 46),
+            lockButton.heightAnchor.constraint(equalToConstant: 46),
 
+            transport.centerXAnchor.constraint(equalTo: centerXAnchor),
+            transport.centerYAnchor.constraint(equalTo: lockButton.centerYAnchor),
+
+            pipButton.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -10),
+            pipButton.centerYAnchor.constraint(equalTo: lockButton.centerYAnchor),
+            pipButton.widthAnchor.constraint(equalToConstant: 46),
+            pipButton.heightAnchor.constraint(equalToConstant: 46),
+
+            aspectButton.trailingAnchor.constraint(equalTo: pipButton.leadingAnchor, constant: -2),
+            aspectButton.centerYAnchor.constraint(equalTo: lockButton.centerYAnchor),
+            aspectButton.widthAnchor.constraint(equalToConstant: 46),
+            aspectButton.heightAnchor.constraint(equalToConstant: 46),
+
+            // Linha de cima: tempo decorrido, barra, duração total.
             elapsedLabel.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 16),
-            elapsedLabel.bottomAnchor.constraint(equalTo: lockButton.topAnchor, constant: -8),
+            elapsedLabel.bottomAnchor.constraint(equalTo: lockButton.topAnchor, constant: -10),
 
-            remainingLabel.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -16),
-            remainingLabel.centerYAnchor.constraint(equalTo: elapsedLabel.centerYAnchor),
+            totalLabel.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -16),
+            totalLabel.centerYAnchor.constraint(equalTo: elapsedLabel.centerYAnchor),
 
-            slider.leadingAnchor.constraint(equalTo: elapsedLabel.trailingAnchor, constant: 10),
-            slider.trailingAnchor.constraint(equalTo: remainingLabel.leadingAnchor, constant: -10),
+            slider.leadingAnchor.constraint(equalTo: elapsedLabel.trailingAnchor, constant: 12),
+            slider.trailingAnchor.constraint(equalTo: totalLabel.leadingAnchor, constant: -12),
             slider.centerYAnchor.constraint(equalTo: elapsedLabel.centerYAnchor),
         ])
+    }
+
+    private func setupToolStrip() {
+        toolStrip.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(toolStrip)
+        NSLayoutConstraint.activate([
+            toolStrip.topAnchor.constraint(equalTo: topBar.bottomAnchor, constant: 4),
+            toolStrip.leadingAnchor.constraint(equalTo: leadingAnchor),
+            toolStrip.trailingAnchor.constraint(equalTo: trailingAnchor),
+            toolStrip.heightAnchor.constraint(equalToConstant: 86),
+        ])
+        toolStrip.alpha = 0
+        toolStrip.isHidden = true
     }
 
     private func setupUnlockButton() {
@@ -339,7 +293,18 @@ final class PlayerControlsView: UIView {
         ])
     }
 
-    private func configure(_ button: UIButton, symbol: String, size: CGFloat = 17,
+    private func setupSpinner() {
+        spinner.color = .white
+        spinner.hidesWhenStopped = true
+        spinner.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(spinner)
+        NSLayoutConstraint.activate([
+            spinner.centerXAnchor.constraint(equalTo: centerXAnchor),
+            spinner.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+    }
+
+    private func configure(_ button: UIButton, symbol: String, size: CGFloat = 18,
                            weight: UIImage.SymbolWeight = .medium, action: Selector) {
         button.setImage(UIImage(systemName: symbol), for: .normal)
         button.tintColor = .white
@@ -347,15 +312,6 @@ final class PlayerControlsView: UIView {
             UIImage.SymbolConfiguration(pointSize: size, weight: weight), forImageIn: .normal)
         button.translatesAutoresizingMaskIntoConstraints = false
         button.addTarget(self, action: action, for: .touchUpInside)
-    }
-
-
-
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        topGradient.frame = topBar.bounds
-        bottomGradient.frame = bottomBar.bounds
     }
 
     private static func thumbImage(diameter: CGFloat) -> UIImage {
@@ -366,14 +322,14 @@ final class PlayerControlsView: UIView {
         }
     }
 
-    // MARK: - Atualizações vindas do player
+    // MARK: - Atualizações
 
     func update(currentTime: Double, duration: Double) {
         self.duration = duration
         guard !isUserScrubbing else { return }
 
         elapsedLabel.text = TimeFormat.clock(currentTime)
-        remainingLabel.text = duration > 0 ? "−" + TimeFormat.clock(duration - currentTime) : "--:--"
+        totalLabel.text = duration > 0 ? TimeFormat.clock(duration) : "--:--"
         slider.value = duration > 0 ? Float(currentTime / duration) : 0
     }
 
@@ -388,11 +344,26 @@ final class PlayerControlsView: UIView {
     func setNavigation(hasPrevious: Bool, hasNext: Bool) {
         previousButton.isHidden = !hasPrevious && !hasNext
         nextButton.isHidden = previousButton.isHidden
-
         previousButton.isEnabled = hasPrevious
         nextButton.isEnabled = hasNext
         previousButton.alpha = hasPrevious ? 1 : 0.3
         nextButton.alpha = hasNext ? 1 : 0.3
+    }
+
+    func setPiPAvailable(_ available: Bool) {
+        pipButton.isHidden = !available
+    }
+
+    /// Enquanto carrega, o transporte some e a roda aparece: sem esse aviso,
+    /// espera pela rede é indistinguível de travamento.
+    func setBuffering(_ buffering: Bool) {
+        if buffering {
+            spinner.startAnimating()
+            transport.alpha = 0
+        } else {
+            spinner.stopAnimating()
+            transport.alpha = isVisible ? 1 : 0
+        }
     }
 
     func setVisible(_ visible: Bool, animated: Bool) {
@@ -402,25 +373,38 @@ final class PlayerControlsView: UIView {
         let work = {
             self.topBar.alpha = alpha
             self.bottomBar.alpha = alpha
-            self.centerStack.alpha = alpha
             self.toolStrip.alpha = self.isToolStripExpanded ? alpha : 0
         }
         animated ? UIView.animate(withDuration: 0.22, animations: work) : work()
     }
 
+    /// Chamado também pela fileira de ferramentas.
+    func toggleLock() { lockTapped() }
+
     // MARK: - Ações
 
     @objc private func closeTapped()     { onClose?() }
     @objc private func playTapped()      { onPlayPause?() }
-    @objc private func rewindTapped()    { onSeekRelative?(-10) }
-    @objc private func forwardTapped()   { onSeekRelative?(10) }
     @objc private func previousTapped()  { onPrevious?() }
     @objc private func nextTapped()      { onNext?() }
     @objc private func subtitlesTapped() { onShowTracks?(.subtitle) }
     @objc private func audioTapped()     { onShowTracks?(.audio) }
+    @objc private func aspectTapped()    { onCycleAspect?() }
+    @objc private func pipTapped()       { onTogglePiP?() }
 
-    /// Chamado também pela fileira de ferramentas.
-    func toggleLock() { lockTapped() }
+    @objc private func toolsTapped() {
+        isToolStripExpanded.toggle()
+        toolsButton.tintColor = isToolStripExpanded ? tintColor : .white
+
+        if isToolStripExpanded { toolStrip.isHidden = false }
+        UIView.animate(withDuration: 0.22) {
+            self.toolStrip.alpha = self.isToolStripExpanded ? 1 : 0
+        } completion: { _ in
+            // Escondida de verdade quando fechada: alpha zero ainda receberia
+            // toque e roubaria gestos da área do vídeo.
+            self.toolStrip.isHidden = !self.isToolStripExpanded
+        }
+    }
 
     @objc private func lockTapped() {
         isLocked.toggle()
@@ -430,8 +414,7 @@ final class PlayerControlsView: UIView {
             let alpha: CGFloat = self.isLocked ? 0 : 1
             self.topBar.alpha = alpha
             self.bottomBar.alpha = alpha
-            self.centerStack.alpha = alpha
-            self.toolStrip.alpha = alpha
+            self.toolStrip.alpha = (self.isLocked || !self.isToolStripExpanded) ? 0 : 1
             self.unlockButton.alpha = self.isLocked ? 0.85 : 0
         }
         isVisible = !isLocked
@@ -444,7 +427,6 @@ final class PlayerControlsView: UIView {
         guard duration > 0 else { return }
         let time = Double(slider.value) * duration
         elapsedLabel.text = TimeFormat.clock(time)
-        remainingLabel.text = "−" + TimeFormat.clock(duration - time)
         onScrub?(time, false)
     }
 

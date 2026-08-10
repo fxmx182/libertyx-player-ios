@@ -152,11 +152,18 @@ final class PlayerViewController: UIViewController {
             if locked { self?.controlsHideWorkItem?.cancel() } else { self?.scheduleControlsHide() }
         }
 
+        controls.onCycleAspect = { [weak self] in self?.cycleAspect() }
+        controls.onTogglePiP = { [weak self] in self?.pip?.toggle() }
         controls.moreMenuProvider = { [weak self] in self?.buildToolsMenu() ?? [] }
-        refreshToolStrip()
+
+        // A janela flutuante é montada sobre a camada de desenho do motor
+        // próprio. O VLC desenha do jeito dele, então o botão some quando ela
+        // não está disponível — em vez de existir e não fazer nada.
         if let ffmpeg = engine as? FFmpegEngine {
             pip = PictureInPicture(engine: engine, layer: ffmpeg.displayLayer)
         }
+        controls.setPiPAvailable(pip?.isSupported == true)
+        refreshToolStrip()
 
         installGestures()
         bindEngine()
