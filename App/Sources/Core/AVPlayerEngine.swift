@@ -28,6 +28,16 @@ final class AVPlayerEngine: NSObject, PlaybackEngine {
     var onTimeUpdate: ((Double) -> Void)?
     var onStateChange: ((PlaybackState) -> Void)?
     var onBufferingChange: ((Bool) -> Void)?
+    var onSubtitle: ((String?) -> Void)?
+
+    // Este motor ficou como referência de comparação; seleção de faixa é
+    // atribuição do motor FFmpeg, que enxerga todos os streams do contêiner.
+    var audioTracks: [MediaTrack] { [] }
+    var subtitleTracks: [MediaTrack] { [] }
+    var currentAudioTrack: Int32? { nil }
+    var currentSubtitleTrack: Int32? { nil }
+    func selectAudioTrack(_ id: Int32) async {}
+    func selectSubtitleTrack(_ id: Int32?) async {}
 
     var currentTime: Double {
         let t = player.currentTime()

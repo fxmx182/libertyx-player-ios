@@ -28,6 +28,10 @@ final class FFmpegEngine: NSObject, PlaybackEngine {
     /// Avisa a interface que está buscando ou enchendo o buffer, para ela
     /// mostrar que a espera é carregamento e não travamento.
     var onBufferingChange: ((Bool) -> Void)?
+    var onSubtitle: ((String?) -> Void)?
+    /// Instante em que a legenda atual deve sair da tela.
+    private var subtitleExpiry: Double = 0
+    private var pendingSubtitles: [(text: String?, start: Double, end: Double)] = []
 
     private(set) var state: PlaybackState = .idle {
         didSet {
@@ -71,10 +75,13 @@ final class FFmpegEngine: NSObject, PlaybackEngine {
         duration = nova.duration
         lastKnownTime = 0
 
+        clock.expectsAudio = nova.audioFormat != nil
+
         if let formato = nova.audioFormat {
             do {
                 try audio.prepare(sampleRate: formato.sampleRate, channels: formato.channelCount)
             } catch {
+                clock.expectsAudio = false
                 // Sem áudio o vídeo ainda serve; travar tudo por causa da
                 // saída de som seria pior. O relógio cai para o de parede.
                 LabLog.problem("saída de áudio indisponível: \(error.localizedDescription)")
@@ -139,6 +146,11 @@ final class FFmpegEngine: NSObject, PlaybackEngine {
         renderView.flush()
         audio.reset(to: alvo)
 
+        // Legendas do trecho antigo não valem mais nada depois de saltar.
+        pendingSubtitles.removeAll()
+        subtitleExpiry = 0
+        onSubtitle?(nil)
+
         await withCheckedContinuation { continuation in
             queue.async {
                 try? session.seek(to: alvo)
@@ -156,6 +168,58 @@ final class FFmpegEngine: NSObject, PlaybackEngine {
             audio.play()
             startLoop()
         }
+    }
+
+    // MARK: - Faixas
+
+    var audioTracks: [MediaTrack] { session?.audioTracks ?? [] }
+    var subtitleTracks: [MediaTrack] { session?.subtitleTracks ?? [] }
+    var currentAudioTrack: Int32? { session?.currentAudioTrack }
+    var currentSubtitleTrack: Int32? { session?.currentSubtitleTrack }
+
+    func selectAudioTrack(_ id: Int32) async {
+        guard let session, id != session.currentAudioTrack else { return }
+        let tocando = wantsPlayback
+        let posicao = lastKnownTime
+
+        session.requestInterrupt()
+        stopLoop()
+        onBufferingChange?(true)
+
+        // A faixa nova pode ter outra taxa e outro número de canais, então a
+        // saída de áudio é remontada do zero.
+        audio.stop()
+        let formato: AVAudioFormat? = await withCheckedContinuation { continuation in
+            queue.async {
+                continuation.resume(returning: try? session.selectAudio(id))
+            }
+        }
+        if let formato {
+            try? audio.prepare(sampleRate: formato.sampleRate, channels: formato.channelCount)
+            clock.expectsAudio = true
+        } else {
+            clock.expectsAudio = false
+        }
+
+        onBufferingChange?(false)
+        // Volta ao ponto onde estava: sem isso, trocar de idioma reiniciaria o
+        // filme, já que o decodificador novo começa do zero.
+        await seek(to: posicao, precise: false)
+        if tocando { play() }
+    }
+
+    func selectSubtitleTrack(_ id: Int32?) async {
+        guard let session else { return }
+        onSubtitle?(nil)
+        await withCheckedContinuation { continuation in
+            queue.async {
+                try? session.selectSubtitle(id)
+                continuation.resume()
+            }
+        }
+        // Sem reposicionar, a legenda só apareceria a partir do próximo pacote
+        // de legenda do arquivo — que pode estar minutos à frente.
+        await seek(to: lastKnownTime, precise: false)
     }
 
     func beginScrub() { pause() }
@@ -238,6 +302,14 @@ final class FFmpegEngine: NSObject, PlaybackEngine {
                     self?.reportTime(instante)
                 }
 
+            case .subtitle(let texto, let inicio, let fim):
+                // A legenda é decodificada bem antes da hora de aparecer. Quem
+                // decide quando exibir é o mesmo relógio do vídeo, no laço de
+                // quadros — aqui só guardamos.
+                Task { @MainActor [weak self] in
+                    self?.enqueueSubtitle(texto, start: inicio, end: fim)
+                }
+
             case .video(let pixelBuffer, let instante):
                 // O primeiro quadro vai para a tela sem esperar. Além de tirar
                 // o preto imediatamente, evita a armadilha de ficar esperando
@@ -280,6 +352,26 @@ final class FFmpegEngine: NSObject, PlaybackEngine {
     private func reportTime(_ time: Double) {
         lastKnownTime = time
         onTimeUpdate?(time)
+
+        // Tira a legenda da tela na hora certa. Sem isto, a última linha
+        // ficaria pendurada até a próxima aparecer — que pode ser minutos
+        // depois, num trecho sem diálogo.
+        if subtitleExpiry > 0, time >= subtitleExpiry {
+            subtitleExpiry = 0
+            onSubtitle?(nil)
+        }
+        if let proxima = pendingSubtitles.first, time >= proxima.start {
+            pendingSubtitles.removeFirst()
+            subtitleExpiry = proxima.end
+            onSubtitle?(proxima.text)
+        }
+    }
+
+    private func enqueueSubtitle(_ text: String?, start: Double, end: Double) {
+        pendingSubtitles.append((text, start, end))
+        // A fila é pequena por natureza; este teto só protege contra arquivos
+        // com legendas malformadas em rajada.
+        if pendingSubtitles.count > 64 { pendingSubtitles.removeFirst() }
     }
 }
 

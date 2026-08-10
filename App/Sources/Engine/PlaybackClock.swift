@@ -77,11 +77,20 @@ final class PlaybackClock {
         lock.unlock()
     }
 
+    /// Ligado quando o arquivo tem faixa de áudio.
+    ///
+    /// Faz diferença no arranque: enquanto o áudio não começa a render, o
+    /// relógio de parede já está correndo, e o vídeo dispara à frente do som.
+    /// Quando o áudio enfim entra, a imagem está adiantada — e isso é
+    /// percebido como áudio atrasado. Com esta trava, o vídeo espera o som.
+    var expectsAudio = false
+
     var now: Double {
         if let doAudio = audio?.currentTime { return doAudio }
 
         lock.lock(); defer { lock.unlock() }
         guard running else { return base }
+        if expectsAudio { return base }
         return base + (CACurrentMediaTime() - origin) * rateValue
     }
 }

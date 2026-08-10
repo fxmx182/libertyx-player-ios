@@ -56,6 +56,7 @@ final class FFmpegPlaybackSession {
     enum Unit {
         case video(CVPixelBuffer, time: Double)
         case audio(AVAudioPCMBuffer, time: Double)
+        case subtitle(text: String?, start: Double, end: Double)
     }
 
     // Contextos do FFmpeg
@@ -69,10 +70,18 @@ final class FFmpegPlaybackSession {
     private var packet: UnsafeMutablePointer<AVPacket>?
     private var frame: UnsafeMutablePointer<AVFrame>?
 
+    private var subtitleContext: UnsafeMutablePointer<AVCodecContext>?
     private var videoIndex: Int32 = -1
     private var audioIndex: Int32 = -1
+    private var subtitleIndex: Int32 = -1
     private var videoTimeBase = AVRational(num: 0, den: 1)
     private var audioTimeBase = AVRational(num: 0, den: 1)
+    private var subtitleTimeBase = AVRational(num: 0, den: 1)
+
+    private(set) var audioTracks: [MediaTrack] = []
+    private(set) var subtitleTracks: [MediaTrack] = []
+    var currentAudioTrack: Int32? { audioIndex >= 0 ? audioIndex : nil }
+    var currentSubtitleTrack: Int32? { subtitleIndex >= 0 ? subtitleIndex : nil }
 
     private var pixelBufferPool: CVPixelBufferPool?
     private var pending: [Unit] = []
@@ -146,6 +155,7 @@ final class FFmpegPlaybackSession {
             throw FFmpegError(code: labp_averror_enomem(), operation: "alocar buffers")
         }
 
+        collectTracks()
         try openVideo()
         try openAudio()
 
@@ -158,6 +168,45 @@ final class FFmpegPlaybackSession {
             áudio=\(hasAudio) duração=\(String(format: "%.1f", duration))s \
             início=\(String(format: "%.3f", startTime))s
             """)
+    }
+
+    /// Levanta as faixas do contêiner uma vez, na abertura.
+    ///
+    /// Vem daqui e não de uma sondagem à parte porque a sessão já tem o
+    /// arquivo aberto — abrir de novo só para listar custaria outra rodada de
+    /// leituras pela rede, e era o motivo de arquivos de SMB aparecerem sem
+    /// faixa nenhuma.
+    private func collectTracks() {
+        guard let formatContext else { return }
+
+        let bitmap: Set<String> = ["dvd_subtitle", "hdmv_pgs_subtitle", "dvb_subtitle", "xsub"]
+
+        for indice in 0..<Int(formatContext.pointee.nb_streams) {
+            guard let stream = formatContext.pointee.streams[indice],
+                  let params = stream.pointee.codecpar else { continue }
+
+            let codec = String(cString: avcodec_get_name(params.pointee.codec_id))
+            let faixa = MediaTrack(
+                id: stream.pointee.index,
+                codec: codec,
+                language: metadata(stream.pointee.metadata, "language"),
+                title: metadata(stream.pointee.metadata, "title"),
+                isBitmap: bitmap.contains(codec)
+            )
+
+            switch params.pointee.codec_type {
+            case AVMEDIA_TYPE_AUDIO:    audioTracks.append(faixa)
+            case AVMEDIA_TYPE_SUBTITLE: subtitleTracks.append(faixa)
+            default: continue
+            }
+        }
+    }
+
+    private func metadata(_ dicionario: OpaquePointer?, _ chave: String) -> String? {
+        guard let dicionario, let entrada = av_dict_get(dicionario, chave, nil, 0),
+              let valor = entrada.pointee.value else { return nil }
+        let texto = String(cString: valor)
+        return texto.isEmpty ? nil : texto
     }
 
     private func openVideo() throws {
@@ -191,10 +240,20 @@ final class FFmpegPlaybackSession {
         videoTimeBase = stream.pointee.time_base
     }
 
-    private func openAudio() throws {
+    private func openAudio(preferred: Int32? = nil) throws {
         guard let formatContext else { return }
         var decoder: UnsafePointer<AVCodec>?
-        let indice = av_find_best_stream(formatContext, AVMEDIA_TYPE_AUDIO, -1, -1, &decoder, 0)
+
+        let indice: Int32
+        if let preferred {
+            indice = preferred
+            guard let params = formatContext.pointee.streams[Int(preferred)]?.pointee.codecpar,
+                  let achado = avcodec_find_decoder(params.pointee.codec_id) else { return }
+            decoder = achado
+        } else {
+            indice = av_find_best_stream(formatContext, AVMEDIA_TYPE_AUDIO, -1, -1, &decoder, 0)
+        }
+
         guard indice >= 0, let decoder,
               let stream = formatContext.pointee.streams[Int(indice)],
               let params = stream.pointee.codecpar else { return }
@@ -252,6 +311,8 @@ final class FFmpegPlaybackSession {
                 decode(videoContext, packet: packet, isVideo: true)
             } else if packet.pointee.stream_index == audioIndex {
                 decode(audioContext, packet: packet, isVideo: false)
+            } else if packet.pointee.stream_index == subtitleIndex {
+                decodeSubtitle(packet)
             }
             av_packet_unref(packet)
         }
@@ -386,6 +447,106 @@ final class FFmpegPlaybackSession {
         return buffer
     }
 
+    // MARK: - Troca de faixas
+
+    /// Fecha o decodificador de áudio atual e abre o da faixa pedida.
+    ///
+    /// O formato de saída pode mudar (taxa, canais), então quem chama precisa
+    /// reconfigurar a saída de áudio — por isso o retorno diz qual é o novo.
+    @discardableResult
+    func selectAudio(_ streamIndex: Int32) throws -> AVAudioFormat? {
+        guard streamIndex != audioIndex else { return audioFormat }
+
+        var antigo = audioContext
+        avcodec_free_context(&antigo)
+        audioContext = nil
+        if resampler != nil { swr_free(&resampler) }
+        audioIndex = -1
+        audioFormat = nil
+
+        try openAudio(preferred: streamIndex)
+        pending.removeAll(where: { if case .audio = $0 { return true } else { return false } })
+        return audioFormat
+    }
+
+    /// `nil` desliga a legenda.
+    func selectSubtitle(_ streamIndex: Int32?) throws {
+        var antigo = subtitleContext
+        avcodec_free_context(&antigo)
+        subtitleContext = nil
+        subtitleIndex = -1
+
+        guard let streamIndex, let formatContext,
+              let stream = formatContext.pointee.streams[Int(streamIndex)],
+              let params = stream.pointee.codecpar,
+              let decoder = avcodec_find_decoder(params.pointee.codec_id),
+              let context = avcodec_alloc_context3(decoder) else { return }
+
+        try ffCheck("parâmetros de legenda", avcodec_parameters_to_context(context, params))
+        guard avcodec_open2(context, decoder, nil) >= 0 else {
+            var descartar: UnsafeMutablePointer<AVCodecContext>? = context
+            avcodec_free_context(&descartar)
+            return
+        }
+        subtitleContext = context
+        subtitleIndex = streamIndex
+        subtitleTimeBase = stream.pointee.time_base
+    }
+
+    /// Legendas usam a API antiga do FFmpeg (decode_subtitle2), não o par
+    /// send/receive — não é descuido, é como a biblioteca expõe até hoje.
+    private func decodeSubtitle(_ packet: UnsafeMutablePointer<AVPacket>) {
+        guard let subtitleContext else { return }
+
+        var legenda = AVSubtitle()
+        var obteve: Int32 = 0
+        guard avcodec_decode_subtitle2(subtitleContext, &legenda, &obteve, packet) >= 0,
+              obteve != 0 else { return }
+        defer { avsubtitle_free(&legenda) }
+
+        let pts = packet.pointee.pts
+        let bruto = pts.isNoPTS ? 0 : Double(pts) * av_q2d(subtitleTimeBase)
+        let inicio = max(0, bruto - startTime) + Double(legenda.start_display_time) / 1000
+        let fim = max(0, bruto - startTime) + Double(legenda.end_display_time) / 1000
+
+        var linhas: [String] = []
+        for indice in 0..<Int(legenda.num_rects) {
+            guard let rect = legenda.rects[indice] else { continue }
+            if let ass = rect.pointee.ass {
+                linhas.append(Self.textoDeASS(String(cString: ass)))
+            } else if let texto = rect.pointee.text {
+                linhas.append(String(cString: texto))
+            }
+        }
+
+        let texto = linhas.filter { !$0.isEmpty }.joined(separator: "\n")
+        pending.append(.subtitle(text: texto.isEmpty ? nil : texto, start: inicio, end: fim))
+    }
+
+    /// Extrai o texto de uma linha de diálogo ASS.
+    ///
+    /// O formato é `Camada,Início,Fim,Estilo,Ator,ML,MR,MV,Efeito,Texto` — o
+    /// texto é tudo depois da nona vírgula. Blocos `{...}` são comandos de
+    /// formatação e `\N` é quebra de linha; sem tratar isso, a legenda aparece
+    /// cheia de lixo na tela.
+    static func textoDeASS(_ linha: String) -> String {
+        var restante = Substring(linha)
+        for _ in 0..<9 {
+            guard let virgula = restante.firstIndex(of: ",") else { return "" }
+            restante = restante[restante.index(after: virgula)...]
+        }
+        var texto = String(restante)
+        while let abre = texto.firstIndex(of: "{"),
+              let fecha = texto[abre...].firstIndex(of: "}") {
+            texto.removeSubrange(abre...fecha)
+        }
+        return texto
+            .replacingOccurrences(of: "\\N", with: "\n")
+            .replacingOccurrences(of: "\\n", with: "\n")
+            .replacingOccurrences(of: "\\h", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     // MARK: - Busca
 
     /// Faz o FFmpeg desistir da leitura em andamento. Chamado de outra thread,
@@ -405,6 +566,7 @@ final class FFmpegPlaybackSession {
 
         if let videoContext { avcodec_flush_buffers(videoContext) }
         if let audioContext { avcodec_flush_buffers(audioContext) }
+        if let subtitleContext { avcodec_flush_buffers(subtitleContext) }
         pending.removeAll()
         finished = false
     }

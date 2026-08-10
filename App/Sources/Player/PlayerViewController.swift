@@ -37,6 +37,7 @@ final class PlayerViewController: UIViewController {
     private var renderView: UIView!
     private let hud = GestureHUDView()
     private let controls = PlayerControlsView()
+    private let subtitleLabel = UILabel()
 
     private var panAxis: PanAxis = .undecided
     private var panStartTime: Double = 0
@@ -91,6 +92,8 @@ final class PlayerViewController: UIViewController {
         hud.translatesAutoresizingMaskIntoConstraints = false
         hud.isUserInteractionEnabled = false
         view.addSubview(hud)
+
+        setupSubtitleLabel()
 
         NSLayoutConstraint.activate([
             renderView.topAnchor.constraint(equalTo: view.topAnchor),
@@ -154,6 +157,10 @@ final class PlayerViewController: UIViewController {
         }
         engine.onBufferingChange = { [weak self] buffering in
             self?.controls.setBuffering(buffering)
+        }
+        engine.onSubtitle = { [weak self] texto in
+            self?.subtitleLabel.text = texto
+            self?.subtitleLabel.isHidden = (texto == nil)
         }
         engine.onStateChange = { [weak self] state in
             guard let self else { return }
@@ -337,6 +344,30 @@ final class PlayerViewController: UIViewController {
         view.addGestureRecognizer(pinch)
     }
 
+    private func setupSubtitleLabel() {
+        subtitleLabel.numberOfLines = 0
+        subtitleLabel.textAlignment = .center
+        subtitleLabel.textColor = .white
+        subtitleLabel.font = .systemFont(ofSize: 19, weight: .semibold)
+        subtitleLabel.isHidden = true
+        subtitleLabel.isUserInteractionEnabled = false
+        // Contorno escuro em vez de fundo sólido: legenda sobre cena clara
+        // some sem isso, e uma tarja preta atravessada na imagem é pior.
+        subtitleLabel.layer.shadowColor = UIColor.black.cgColor
+        subtitleLabel.layer.shadowOpacity = 1
+        subtitleLabel.layer.shadowRadius = 3
+        subtitleLabel.layer.shadowOffset = .zero
+        subtitleLabel.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(subtitleLabel)
+
+        NSLayoutConstraint.activate([
+            subtitleLabel.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 24),
+            subtitleLabel.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -24),
+            // Acima da barra inferior, para os controles não taparem a fala.
+            subtitleLabel.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -70),
+        ])
+    }
+
     /// Com a tela bloqueada, todo gesto é ignorado — é para isso que serve.
     private var gesturesEnabled: Bool { !controls.isLocked }
 
@@ -446,34 +477,40 @@ final class PlayerViewController: UIViewController {
         let titulo = kind == .audio ? "Faixas de áudio" : "Legendas"
         let sheet = UIAlertController(title: titulo, message: nil, preferredStyle: .actionSheet)
 
-        guard let info = mediaInfo else {
-            sheet.message = "Ainda lendo o arquivo…"
-            sheet.addAction(UIAlertAction(title: "OK", style: .cancel))
-            presentSheet(sheet)
-            return
+        // As faixas vêm do motor, que já tem o arquivo aberto — e não de uma
+        // sondagem à parte, que só funcionava para arquivos locais e deixava
+        // os do servidor sem faixa nenhuma.
+        let faixas = kind == .audio ? engine.audioTracks : engine.subtitleTracks
+        let atual = kind == .audio ? engine.currentAudioTrack : engine.currentSubtitleTrack
+
+        if kind == .subtitle {
+            let acao = UIAlertAction(title: atual == nil ? "✓ Desligada" : "Desligada",
+                                     style: .default) { [weak self] _ in
+                Task { await self?.engine.selectSubtitleTrack(nil) }
+            }
+            sheet.addAction(acao)
         }
 
-        switch kind {
-        case .audio:
-            for faixa in info.audio {
-                let idioma = MediaInfo.languageName(faixa.language) ?? "Faixa \(faixa.id)"
-                let detalhe = "\(faixa.codec.uppercased()) · \(faixa.channelLayout)"
-                sheet.addAction(UIAlertAction(title: "\(idioma) — \(detalhe)", style: .default))
+        for faixa in faixas {
+            let marca = faixa.id == atual ? "✓ " : ""
+            let extra = faixa.isBitmap ? " (imagem)" : ""
+            let acao = UIAlertAction(title: "\(marca)\(faixa.label)\(extra)", style: .default) { [weak self] _ in
+                guard let self else { return }
+                Task {
+                    if kind == .audio {
+                        await self.engine.selectAudioTrack(faixa.id)
+                    } else {
+                        await self.engine.selectSubtitleTrack(faixa.id)
+                    }
+                }
             }
-        case .subtitle:
-            for faixa in info.subtitles {
-                let idioma = MediaInfo.languageName(faixa.language) ?? faixa.codec.uppercased()
-                let tipo = faixa.isBitmap ? "imagem" : "texto"
-                sheet.addAction(UIAlertAction(title: "\(idioma) — \(tipo)", style: .default))
-            }
+            sheet.addAction(acao)
         }
 
-        if sheet.actions.isEmpty {
-            sheet.message = "Este arquivo não tem \(kind == .audio ? "outras faixas de áudio" : "legendas embutidas")."
-        } else {
-            // Honestidade acima de fachada: os itens aparecem porque a sondagem
-            // já funciona, mas trocar de faixa exige o motor FFmpeg tocando.
-            sheet.message = "A troca de faixa chega junto com o motor FFmpeg."
+        if faixas.isEmpty {
+            sheet.message = kind == .audio
+                ? "Este arquivo tem só uma faixa de áudio."
+                : "Este arquivo não tem legendas embutidas."
         }
         sheet.addAction(UIAlertAction(title: "Fechar", style: .cancel))
         presentSheet(sheet)

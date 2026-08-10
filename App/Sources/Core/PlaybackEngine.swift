@@ -42,6 +42,17 @@ protocol PlaybackEngine: AnyObject {
     /// espera é carregamento — sem esse aviso, uma busca lenta pela rede é
     /// indistinguível de um travamento.
     var onBufferingChange: ((Bool) -> Void)? { get set }
+    /// Texto da legenda a exibir agora, ou `nil` para limpar.
+    var onSubtitle: ((String?) -> Void)? { get set }
+
+    var audioTracks: [MediaTrack] { get }
+    var subtitleTracks: [MediaTrack] { get }
+    var currentAudioTrack: Int32? { get }
+    var currentSubtitleTrack: Int32? { get }
+
+    func selectAudioTrack(_ id: Int32) async
+    /// `nil` desliga a legenda.
+    func selectSubtitleTrack(_ id: Int32?) async
 
     func load(_ item: MediaItem) async throws
     func play()
@@ -57,6 +68,28 @@ protocol PlaybackEngine: AnyObject {
     /// Camada onde o vídeo é desenhado; a view controller insere na hierarquia.
     func makeRenderView() -> UIView
     func teardown()
+}
+
+/// Uma faixa selecionável dentro do arquivo.
+struct MediaTrack: Identifiable, Hashable {
+    /// Índice do stream no contêiner — é por ele que a troca é pedida.
+    let id: Int32
+    var codec: String
+    var language: String?
+    var title: String?
+    /// Legenda em bitmap (PGS, DVD): imagem, não texto.
+    var isBitmap: Bool = false
+
+    /// Rótulo pronto para a lista: idioma quando existe, título quando não,
+    /// e o codec como último recurso.
+    var label: String {
+        if let idioma = MediaInfo.languageName(language) {
+            if let title, !title.isEmpty { return "\(idioma) — \(title)" }
+            return idioma
+        }
+        if let title, !title.isEmpty { return title }
+        return "Faixa \(id) (\(codec.uppercased()))"
+    }
 }
 
 /// Superfícies de vídeo que sabem mudar o enquadramento.
