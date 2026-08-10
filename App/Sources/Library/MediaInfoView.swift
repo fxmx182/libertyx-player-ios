@@ -41,16 +41,24 @@ struct MediaInfoView: View {
     }
 
     private func carregar() async {
-        guard case .file(let url, _) = item.origin else {
+        guard case .file = item.origin else {
             failure = "Só arquivos locais por enquanto."
             return
         }
 
-        // O FFmpeg bloqueia lendo disco; fora da thread principal.
-        let path = url.path
+        // O FFmpeg bloqueia lendo disco; fora da thread principal. E o escopo
+        // de segurança precisa estar aberto durante a leitura, não apenas
+        // quando esta tela apareceu.
+        let origin = item.origin
         let resultado = await Task.detached(priority: .userInitiated) { () -> Result<MediaInfo, Error> in
-            do    { return .success(try MediaProbe.probe(path: path)) }
-            catch { return .failure(error) }
+            do {
+                guard let lido = try FileAccess.withAccess(origin, { try MediaProbe.probe(path: $0) }) else {
+                    return .failure(PlaybackError.securityScopeDenied)
+                }
+                return .success(lido)
+            } catch {
+                return .failure(error)
+            }
         }.value
 
         switch resultado {

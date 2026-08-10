@@ -100,24 +100,28 @@ final class AVPlayerEngine: NSObject, PlaybackEngine {
     }
 
     private func resolveFile(_ url: URL, bookmark: Data?) throws -> URL {
-        // Um pendrive remontado ganha caminho novo; o bookmark é o que
-        // sobrevive. Tentamos o bookmark primeiro e caímos na URL crua depois.
+        // O bookmark é da PASTA que autoriza, não do arquivo. Abrimos o escopo
+        // dela aqui e o mantemos até `teardown()` — assim a reprodução não
+        // depende de a tela de navegação continuar viva, que é frágil: o
+        // SwiftUI dispara onDisappear nela ao apresentar o player em tela
+        // cheia, e o escopo morreria no meio da leitura.
         if let bookmark {
             var stale = false
-            if let resolved = try? URL(resolvingBookmarkData: bookmark,
-                                       options: [],
-                                       relativeTo: nil,
-                                       bookmarkDataIsStale: &stale),
-               resolved.startAccessingSecurityScopedResource() {
-                scopedURL = resolved
-                return resolved
+            if let pasta = try? URL(resolvingBookmarkData: bookmark,
+                                    options: [],
+                                    relativeTo: nil,
+                                    bookmarkDataIsStale: &stale),
+               pasta.startAccessingSecurityScopedResource() {
+                scopedURL = pasta
+                return url
             }
         }
+        // Arquivo escolhido avulso no seletor: o escopo é dele mesmo.
         if url.startAccessingSecurityScopedResource() {
             scopedURL = url
             return url
         }
-        // Arquivos dentro do próprio sandbox não precisam de escopo.
+        // Dentro do próprio sandbox do app, não há escopo a abrir.
         guard FileManager.default.isReadableFile(atPath: url.path) else {
             throw PlaybackError.securityScopeDenied
         }

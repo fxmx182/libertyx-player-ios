@@ -7,9 +7,14 @@ import Foundation
 /// ele só pede blocos. Quando o motor FFmpeg entrar, cada caso vira um
 /// `AVIOContext` com callbacks de read/seek, e nada acima disso muda.
 enum MediaOrigin: Equatable, Hashable {
-    /// Arquivo no sandbox do app, no iCloud, ou num volume externo (USB)
-    /// alcançado via document picker. `bookmark` guarda o acesso com escopo
-    /// de segurança para sobreviver a reinícios do app.
+    /// Arquivo no sandbox do app, no iCloud, ou num volume externo (USB).
+    ///
+    /// `bookmark`, quando presente, é da **pasta** que concede acesso — não do
+    /// arquivo. É assim que o iOS funciona: quem autoriza é a árvore escolhida
+    /// no seletor, e cada arquivo dentro dela só é legível enquanto o escopo
+    /// dessa pasta estiver ativo. Carregar o bookmark junto permite ao player
+    /// abrir o próprio escopo em vez de depender de a tela que o abriu
+    /// continuar viva.
     case file(url: URL, bookmark: Data?)
 
     /// Compartilhamento SMB do homelab.
@@ -52,6 +57,38 @@ struct MediaItem: Identifiable, Hashable {
 
     static func isVideo(_ url: URL) -> Bool {
         videoExtensions.contains(url.pathExtension.lowercased())
+    }
+}
+
+/// Abre o escopo de segurança necessário para ler um arquivo, roda o trabalho
+/// e fecha em seguida.
+///
+/// Existe para não repetir a dança de bookmark em cada lugar que toca disco —
+/// e porque esquecer de abrir o escopo produz um erro que aponta para o lugar
+/// errado: o iOS responde "não consegui ler" de um jeito que o FFmpeg e o
+/// AVFoundation traduzem como "formato inválido".
+enum FileAccess {
+
+    static func withAccess<T>(_ origin: MediaOrigin, _ body: (String) throws -> T) rethrows -> T? {
+        guard case .file(let url, let bookmark) = origin else { return nil }
+
+        var scoped: URL?
+        if let bookmark {
+            var stale = false
+            if let pasta = try? URL(resolvingBookmarkData: bookmark,
+                                    options: [],
+                                    relativeTo: nil,
+                                    bookmarkDataIsStale: &stale),
+               pasta.startAccessingSecurityScopedResource() {
+                scoped = pasta
+            }
+        }
+        if scoped == nil, url.startAccessingSecurityScopedResource() {
+            scoped = url
+        }
+        defer { scoped?.stopAccessingSecurityScopedResource() }
+
+        return try body(url.path)
     }
 }
 

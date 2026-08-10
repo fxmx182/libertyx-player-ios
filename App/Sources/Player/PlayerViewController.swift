@@ -180,12 +180,18 @@ final class PlayerViewController: UIViewController {
     }
 
     private func diagnose() async -> String? {
-        guard case .file(let url, _) = item.origin else { return nil }
-        let path = url.path
+        guard case .file = item.origin else { return nil }
+        let origin = item.origin
 
         let resultado = await Task.detached(priority: .userInitiated) { () -> Result<MediaInfo, Error> in
-            do    { return .success(try MediaProbe.probe(path: path)) }
-            catch { return .failure(error) }
+            do {
+                guard let info = try FileAccess.withAccess(origin, { try MediaProbe.probe(path: $0) }) else {
+                    return .failure(PlaybackError.securityScopeDenied)
+                }
+                return .success(info)
+            } catch {
+                return .failure(error)
+            }
         }.value
 
         switch resultado {
@@ -357,13 +363,13 @@ final class PlayerViewController: UIViewController {
     // MARK: - Faixas de áudio e legenda
 
     private func probeMediaInfo() {
-        guard case .file(let url, _) = item.origin else { return }
-        let path = url.path
+        guard case .file = item.origin else { return }
+        let origin = item.origin
         Task { [weak self] in
             let resultado = await Task.detached(priority: .utility) {
-                try? MediaProbe.probe(path: path)
+                try? FileAccess.withAccess(origin) { try MediaProbe.probe(path: $0) }
             }.value
-            self?.mediaInfo = resultado
+            self?.mediaInfo = resultado ?? nil
         }
     }
 

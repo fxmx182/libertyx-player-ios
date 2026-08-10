@@ -185,14 +185,14 @@ struct FolderBrowserView: View {
 
             ForEach(listing.videos) { item in
                 Button {
-                    playing = item
+                    playing = withFolderScope(item)
                 } label: {
                     VideoRow(item: item)
                 }
                 .buttonStyle(.plain)
                 .contextMenu {
                     Button {
-                        showingInfo = item
+                        showingInfo = withFolderScope(item)
                     } label: {
                         Label("Detalhes do arquivo", systemImage: "info.circle")
                     }
@@ -217,6 +217,19 @@ struct FolderBrowserView: View {
                 ContentUnavailableView("Nenhum vídeo aqui", systemImage: "film.stack")
             }
         }
+    }
+
+    /// Anexa ao item o bookmark da pasta que autoriza a leitura.
+    ///
+    /// Sem isto, o player herda apenas a URL e depende do escopo aberto por
+    /// esta tela — que o SwiftUI pode encerrar ao apresentar o player em tela
+    /// cheia. O sintoma seria "formato não suportado", que aponta para o lugar
+    /// errado: o arquivo está bem, o acesso a ele é que sumiu.
+    private func withFolderScope(_ item: MediaItem) -> MediaItem {
+        guard case .file(let url, _) = item.origin else { return item }
+        var copia = item
+        copia.origin = .file(url: url, bookmark: folder.bookmark)
+        return copia
     }
 
     private func refresh() {
