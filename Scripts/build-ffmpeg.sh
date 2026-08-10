@@ -18,12 +18,16 @@ RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TRABALHO="$RAIZ/.ffmpeg-build"
 SAIDA="$RAIZ/Vendor/FFmpeg.xcframework"
 
-# Duas fatias: aparelho e simulador.
+# Alvos no formato plataforma:arquitetura.
 #
-# A do simulador não é luxo — é o que permite rodar o app no CI, ver a tela e
-# pegar crash sem depender de instalar no celular a cada mudança. Sem ela,
-# qualquer build para simulador falha no link por falta de arquitetura.
-PLATAFORMAS=("iphoneos" "iphonesimulator")
+# A fatia de simulador não é luxo — é o que permite rodar o app no CI, ver a
+# tela e pegar crash sem instalar no celular a cada mudança.
+#
+# E ela precisa das DUAS arquiteturas: os runners do GitHub podem ser Intel ou
+# Apple Silicon, e o simulador segue a arquitetura do host. Com só uma, o
+# linker descarta a biblioteca inteira num dos casos, arquivo por arquivo, com
+# a mensagem "found architecture arm64, required architecture x86_64".
+ALVOS=("iphoneos:arm64" "iphonesimulator:arm64" "iphonesimulator:x86_64")
 
 # ---------------------------------------------------------------------------
 # Configuração: TODOS os decodificadores.
@@ -54,9 +58,10 @@ if [ ! -d "$FONTE" ]; then
   rm -f "$TRABALHO/ffmpeg.tar.xz"
 fi
 
-ARGUMENTOS_XCFRAMEWORK=()
+for ALVO in "${ALVOS[@]}"; do
+  PLATAFORMA="${ALVO%%:*}"
+  ARQUITETURA="${ALVO##*:}"
 
-for PLATAFORMA in "${PLATAFORMAS[@]}"; do
   SDK_PATH="$(xcrun --sdk "$PLATAFORMA" --show-sdk-path)"
   CC_BIN="$(xcrun --sdk "$PLATAFORMA" -f clang)"
 
@@ -68,12 +73,17 @@ for PLATAFORMA in "${PLATAFORMAS[@]}"; do
     FLAG_VERSAO="-mios-version-min=$MIN_IOS"
   fi
 
-  CONSTRUCAO="$TRABALHO/build-$PLATAFORMA"
-  PREFIXO="$TRABALHO/install-$PLATAFORMA"
+  # O assembly x86 do FFmpeg exige nasm, que não vem no runner. Desligá-lo
+  # custa desempenho que não importa: essa fatia só existe para o simulador.
+  EXTRA_CONFIG=()
+  [ "$ARQUITETURA" = "x86_64" ] && EXTRA_CONFIG+=(--disable-x86asm)
+
+  CONSTRUCAO="$TRABALHO/build-$PLATAFORMA-$ARQUITETURA"
+  PREFIXO="$TRABALHO/install-$PLATAFORMA-$ARQUITETURA"
   mkdir -p "$CONSTRUCAO"
 
   echo
-  echo "==> $PLATAFORMA"
+  echo "==> $PLATAFORMA / $ARQUITETURA"
   echo "    SDK: $SDK_PATH"
 
   # Compilação fora da árvore de fontes: os dois alvos compartilham o mesmo
@@ -86,12 +96,13 @@ for PLATAFORMA in "${PLATAFORMAS[@]}"; do
       --prefix="$PREFIXO" \
       --enable-cross-compile \
       --target-os=darwin \
-      --arch=arm64 \
+      --arch="$ARQUITETURA" \
       --cc="$CC_BIN" \
       --as="$CC_BIN" \
       --sysroot="$SDK_PATH" \
-      --extra-cflags="-arch arm64 $FLAG_VERSAO -fno-stack-check" \
-      --extra-ldflags="-arch arm64 $FLAG_VERSAO" \
+      --extra-cflags="-arch $ARQUITETURA $FLAG_VERSAO -fno-stack-check" \
+      --extra-ldflags="-arch $ARQUITETURA $FLAG_VERSAO" \
+      "${EXTRA_CONFIG[@]}" \
       --enable-static --disable-shared \
       --enable-pic \
       --disable-programs --disable-doc --disable-debug \
@@ -115,11 +126,37 @@ for PLATAFORMA in "${PLATAFORMAS[@]}"; do
     lib/libavformat.a lib/libavcodec.a lib/libavfilter.a \
     lib/libswresample.a lib/libswscale.a lib/libavutil.a
 
-  ARGUMENTOS_XCFRAMEWORK+=(-library "$PREFIXO/libffmpeg.a" -headers "$PREFIXO/include")
+done
+
+# ---------------------------------------------------------------------------
+# Uma biblioteca por PLATAFORMA — as arquiteturas da mesma plataforma são
+# unidas com lipo. O xcframework recusa duas entradas para a mesma plataforma,
+# então arm64 e x86_64 do simulador precisam virar um binário só.
+# ---------------------------------------------------------------------------
+ARGUMENTOS_XCFRAMEWORK=()
+
+for PLATAFORMA in iphoneos iphonesimulator; do
+  PARTES=()
+  for ALVO in "${ALVOS[@]}"; do
+    [ "${ALVO%%:*}" = "$PLATAFORMA" ] || continue
+    PARTES+=("$TRABALHO/install-$PLATAFORMA-${ALVO##*:}/libffmpeg.a")
+  done
+  [ ${#PARTES[@]} -gt 0 ] || continue
+
+  FINAL="$TRABALHO/libffmpeg-$PLATAFORMA.a"
+  if [ ${#PARTES[@]} -eq 1 ]; then
+    cp "${PARTES[0]}" "$FINAL"
+  else
+    lipo -create "${PARTES[@]}" -output "$FINAL"
+  fi
+  echo "    $PLATAFORMA: $(lipo -archs "$FINAL")"
+
+  # Os cabeçalhos são idênticos entre arquiteturas; bastam os da primeira.
+  ARGUMENTOS_XCFRAMEWORK+=(-library "$FINAL" -headers "$(dirname "${PARTES[0]}")/include")
 done
 
 echo
-echo "==> empacotando xcframework com ${#PLATAFORMAS[@]} plataformas…"
+echo "==> empacotando xcframework…"
 rm -rf "$SAIDA"
 mkdir -p "$(dirname "$SAIDA")"
 xcodebuild -create-xcframework "${ARGUMENTOS_XCFRAMEWORK[@]}" -output "$SAIDA"
