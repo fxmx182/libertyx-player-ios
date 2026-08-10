@@ -207,7 +207,10 @@ struct FolderBrowserView: View {
             if subdirectory == nil { resolvedRoot?.stopAccessingSecurityScopedResource() }
         }
         .fullScreenCover(item: $playing) { item in
-            PlayerScreen(item: item).ignoresSafeArea()
+            // A pasta inteira vira a lista: é o que faz "próxima" ir para o
+            // episódio seguinte em vez de não ter para onde ir.
+            PlayerScreen(item: item, playlist: listing.videos.map(withFolderScope))
+                .ignoresSafeArea()
         }
         .sheet(item: $showingInfo) { item in
             MediaInfoView(item: item)

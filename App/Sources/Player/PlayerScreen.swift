@@ -8,9 +8,13 @@ import SwiftUI
 struct PlayerScreen: UIViewControllerRepresentable {
 
     let item: MediaItem
+    /// Os demais vídeos da mesma pasta, para pular de faixa e emendar no fim.
+    var playlist: [MediaItem] = []
 
     func makeUIViewController(context: Context) -> PlayerViewController {
-        PlayerViewController(engine: Self.makeEngine(for: item), item: item)
+        PlayerViewController(engine: Self.makeEngine(for: item),
+                             item: item,
+                             playlist: playlist)
     }
 
     func updateUIViewController(_ controller: PlayerViewController, context: Context) {}

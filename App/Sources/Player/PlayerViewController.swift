@@ -28,7 +28,11 @@ final class PlayerViewController: UIViewController {
     // MARK: - Estado
 
     private let engine: PlaybackEngine
-    private let item: MediaItem
+    /// Muda ao pular de faixa — daí não ser constante.
+    private var item: MediaItem
+    /// Os outros vídeos da mesma pasta, para anterior/próxima.
+    private let playlist: [MediaItem]
+    private var currentIndex: Int
 
     private var renderView: UIView!
     private let hud = GestureHUDView()
@@ -55,9 +59,14 @@ final class PlayerViewController: UIViewController {
 
     // MARK: - Ciclo de vida
 
-    init(engine: PlaybackEngine, item: MediaItem) {
+    init(engine: PlaybackEngine, item: MediaItem, playlist: [MediaItem] = []) {
         self.engine = engine
         self.item = item
+        // Sem lista, o próprio vídeo é a lista — assim o resto do código não
+        // precisa tratar o caso vazio em todo lugar.
+        let lista = playlist.isEmpty ? [item] : playlist
+        self.playlist = lista
+        self.currentIndex = lista.firstIndex { $0.id == item.id } ?? 0
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -116,6 +125,8 @@ final class PlayerViewController: UIViewController {
         controls.onCycleAspect = { [weak self] in self?.cycleAspect() }
         controls.onRotate = { [weak self] in self?.toggleOrientation() }
         controls.onShowTracks = { [weak self] kind in self?.showTracks(kind) }
+        controls.onPrevious = { [weak self] in self?.goToPrevious() }
+        controls.onNext = { [weak self] in self?.goToNext() }
         controls.onLockChange = { [weak self] locked in
             // Com a tela bloqueada nada some sozinho: o usuário bloqueou
             // justamente para nada mudar enquanto ele encosta na tela.
@@ -124,6 +135,7 @@ final class PlayerViewController: UIViewController {
 
         installGestures()
         bindEngine()
+        updateNavigation()
         loadAndPlay()
         probeMediaInfo()
     }
@@ -144,6 +156,11 @@ final class PlayerViewController: UIViewController {
             guard let self else { return }
             self.controls.apply(state: state)
             if case .failed(let message) = state { self.presentError(message) }
+            // Emendar no próximo é o comportamento esperado numa pasta de
+            // episódios; sem isso o vídeo acaba e a tela fica parada.
+            if state == .ended, self.currentIndex + 1 < self.playlist.count {
+                self.goToNext()
+            }
         }
     }
 
@@ -231,6 +248,53 @@ final class PlayerViewController: UIViewController {
     private func close() {
         engine.teardown()
         dismiss(animated: true)
+    }
+
+    // MARK: - Anterior / próxima
+
+    /// Convenção de player: com o vídeo já andando, "anterior" volta ao começo
+    /// dele; só nos primeiros segundos é que salta para o arquivo anterior.
+    /// Sem isso, quem quer reiniciar acaba pulando de faixa sem querer.
+    private func goToPrevious() {
+        if engine.currentTime > 3 {
+            Task { await engine.seek(to: 0, precise: false) }
+            scheduleControlsHide()
+            return
+        }
+        switchTo(index: currentIndex - 1)
+    }
+
+    private func goToNext() {
+        switchTo(index: currentIndex + 1)
+    }
+
+    private func switchTo(index: Int) {
+        guard playlist.indices.contains(index) else { return }
+
+        currentIndex = index
+        item = playlist[index]
+
+        // Estado do vídeo anterior não pode vazar para o novo: um erro
+        // mostrado antes bloquearia o alerta do próximo, e as faixas listadas
+        // seriam as do arquivo errado.
+        didPresentError = false
+        mediaInfo = nil
+
+        controls.title = item.title
+        controls.update(currentTime: 0, duration: 0)
+        controls.setVisible(true, animated: true)
+        updateNavigation()
+
+        hud.show(.text(item.title))
+        hud.hideAfterDelay(1.2)
+
+        loadAndPlay()
+        probeMediaInfo()
+    }
+
+    private func updateNavigation() {
+        controls.setNavigation(hasPrevious: currentIndex > 0,
+                               hasNext: currentIndex + 1 < playlist.count)
     }
 
     private func togglePlayPause() {

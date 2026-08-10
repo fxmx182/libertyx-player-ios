@@ -19,6 +19,8 @@ final class PlayerControlsView: UIView {
     var onRotate: (() -> Void)?
     var onShowTracks: ((TrackKind) -> Void)?
     var onLockChange: ((Bool) -> Void)?
+    var onPrevious: (() -> Void)?
+    var onNext: (() -> Void)?
 
     enum TrackKind { case audio, subtitle }
 
@@ -50,9 +52,11 @@ final class PlayerControlsView: UIView {
     private let subtitleButton = UIButton(type: .system)
     private let audioButton = UIButton(type: .system)
 
+    private let previousButton = UIButton(type: .system)
     private let rewindButton = UIButton(type: .system)
     private let playButton = UIButton(type: .system)
     private let forwardButton = UIButton(type: .system)
+    private let nextButton = UIButton(type: .system)
 
     private let elapsedLabel = UILabel()
     private let remainingLabel = UILabel()
@@ -153,26 +157,32 @@ final class PlayerControlsView: UIView {
     /// Play/pause no centro, com ±10 s dos lados. É o pedido mais direto de
     /// quem vem do MX Player: a mão fica no meio da tela, não no rodapé.
     private func setupCenterControls() {
+        configure(previousButton, symbol: "backward.end.fill", size: 22, action: #selector(previousTapped))
         configure(rewindButton, symbol: "gobackward.10", size: 30, action: #selector(rewindTapped))
         configure(playButton, symbol: "play.fill", size: 42, weight: .semibold, action: #selector(playTapped))
         configure(forwardButton, symbol: "goforward.10", size: 30, action: #selector(forwardTapped))
+        configure(nextButton, symbol: "forward.end.fill", size: 22, action: #selector(nextTapped))
 
-        [rewindButton, playButton, forwardButton].forEach {
-            $0.widthAnchor.constraint(equalToConstant: 74).isActive = true
-            $0.heightAnchor.constraint(equalToConstant: 74).isActive = true
+        let botoes = [previousButton, rewindButton, playButton, forwardButton, nextButton]
+        for (indice, botao) in botoes.enumerated() {
+            // Anterior/próxima ficam menores: são ações de saltar arquivo, não
+            // de controlar o que está tocando, e não devem competir com o play.
+            let lado: CGFloat = (indice == 0 || indice == botoes.count - 1) ? 56 : 74
+            botao.widthAnchor.constraint(equalToConstant: lado).isActive = true
+            botao.heightAnchor.constraint(equalToConstant: lado).isActive = true
             // Sombra em vez de fundo sólido: o vídeo continua visível atrás,
             // e o ícone se destaca mesmo sobre cena clara.
-            $0.layer.shadowColor = UIColor.black.cgColor
-            $0.layer.shadowOpacity = 0.55
-            $0.layer.shadowRadius = 8
-            $0.layer.shadowOffset = .zero
+            botao.layer.shadowColor = UIColor.black.cgColor
+            botao.layer.shadowOpacity = 0.55
+            botao.layer.shadowRadius = 8
+            botao.layer.shadowOffset = .zero
         }
 
         centerStack.axis = .horizontal
         centerStack.alignment = .center
-        centerStack.spacing = 28
+        centerStack.spacing = 16
         centerStack.translatesAutoresizingMaskIntoConstraints = false
-        [rewindButton, playButton, forwardButton].forEach(centerStack.addArrangedSubview)
+        botoes.forEach(centerStack.addArrangedSubview)
         addSubview(centerStack)
 
         NSLayoutConstraint.activate([
@@ -329,6 +339,18 @@ final class PlayerControlsView: UIView {
         if state == .paused || state == .ended { setVisible(true, animated: true) }
     }
 
+    /// Some com os saltos de faixa quando não há para onde ir — botão inerte
+    /// na tela é pior que botão ausente.
+    func setNavigation(hasPrevious: Bool, hasNext: Bool) {
+        previousButton.isHidden = !hasPrevious && !hasNext
+        nextButton.isHidden = previousButton.isHidden
+
+        previousButton.isEnabled = hasPrevious
+        nextButton.isEnabled = hasNext
+        previousButton.alpha = hasPrevious ? 1 : 0.3
+        nextButton.alpha = hasNext ? 1 : 0.3
+    }
+
     func setAspectLabel(_ text: String) {
         aspectButton.setTitle(nil, for: .normal)
         // O rótulo aparece no HUD central; aqui só o ícone muda de ênfase.
@@ -353,6 +375,8 @@ final class PlayerControlsView: UIView {
     @objc private func playTapped()      { onPlayPause?() }
     @objc private func rewindTapped()    { onSeekRelative?(-10) }
     @objc private func forwardTapped()   { onSeekRelative?(10) }
+    @objc private func previousTapped()  { onPrevious?() }
+    @objc private func nextTapped()      { onNext?() }
     @objc private func aspectTapped()    { onCycleAspect?() }
     @objc private func rotateTapped()    { onRotate?() }
     @objc private func subtitlesTapped() { onShowTracks?(.subtitle) }
