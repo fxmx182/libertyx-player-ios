@@ -28,6 +28,14 @@ final class AudioRenderer {
     var rate: Float = 1.0
 
     func prepare(sampleRate: Double, channels: AVAudioChannelCount) throws {
+        // Sem uma sessão de áudio ativa na categoria de reprodução, o
+        // AVAudioEngine simplesmente não roda — e, como ele é o relógio do
+        // player, o vídeo fica esperando um tempo que nunca avança. O sintoma
+        // é tela congelada sem erro nenhum, que foi exatamente o que apareceu.
+        let sessao = AVAudioSession.sharedInstance()
+        try sessao.setCategory(.playback, mode: .moviePlayback)
+        try sessao.setActive(true)
+
         // Float32 não-intercalado é o formato nativo do AVAudioEngine; pedir
         // qualquer outro faz o sistema converter a cada buffer.
         guard let formato = AVAudioFormat(standardFormatWithSampleRate: sampleRate,
