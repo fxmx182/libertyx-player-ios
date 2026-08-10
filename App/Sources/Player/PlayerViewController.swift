@@ -167,8 +167,55 @@ final class PlayerViewController: UIViewController {
         didPresentError = true
 
         controls.setVisible(true, animated: true)
+
+        // "Formato não suportado" sozinho não diz nada acionável: pode ser
+        // codec que a Apple recusa, ou o arquivo nem estar sendo lido por
+        // falta de permissão — problemas opostos. O FFmpeg já está no app,
+        // então perguntamos a ele antes de mostrar o alerta.
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let diagnostico = await self.diagnose()
+            self.showAlert(message: message, diagnosis: diagnostico)
+        }
+    }
+
+    private func diagnose() async -> String? {
+        guard case .file(let url, _) = item.origin else { return nil }
+        let path = url.path
+
+        let resultado = await Task.detached(priority: .userInitiated) { () -> Result<MediaInfo, Error> in
+            do    { return .success(try MediaProbe.probe(path: path)) }
+            catch { return .failure(error) }
+        }.value
+
+        switch resultado {
+        case .success(let info):
+            let video = info.video.first.map { "\($0.codec.uppercased()) \($0.resolution)" } ?? "sem vídeo"
+            let audio = info.audio.first.map { $0.codec.uppercased() } ?? "sem áudio"
+            return """
+
+            O FFmpeg lê este arquivo normalmente:
+            \(info.formatName.uppercased()) · \(video) · \(audio)
+
+            Ou seja, o arquivo está íntegro e legível — quem recusa é o \
+            motor da Apple. É exatamente o caso que o motor FFmpeg resolve.
+            """
+        case .failure(let erro):
+            return """
+
+            O FFmpeg também não conseguiu abrir:
+            \(erro.localizedDescription)
+
+            Isso aponta para permissão de leitura, não para codec. Tente \
+            adicionar a pasta de novo em Pastas.
+            """
+        }
+    }
+
+    private func showAlert(message: String, diagnosis: String?) {
         let alert = UIAlertController(title: "Não deu para tocar",
-                                      message: message, preferredStyle: .alert)
+                                      message: message + (diagnosis ?? ""),
+                                      preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "Voltar", style: .default) { [weak self] _ in
             self?.close()
         })
