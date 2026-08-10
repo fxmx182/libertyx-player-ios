@@ -16,11 +16,14 @@ MIN_IOS="${MIN_IOS:-17.0}"
 
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TRABALHO="$RAIZ/.ffmpeg-build"
-PREFIXO="$TRABALHO/install"
 SAIDA="$RAIZ/Vendor/FFmpeg.xcframework"
 
-SDK_PATH="$(xcrun --sdk iphoneos --show-sdk-path)"
-CC_BIN="$(xcrun --sdk iphoneos -f clang)"
+# Duas fatias: aparelho e simulador.
+#
+# A do simulador não é luxo — é o que permite rodar o app no CI, ver a tela e
+# pegar crash sem depender de instalar no celular a cada mudança. Sem ela,
+# qualquer build para simulador falha no link por falta de arquitetura.
+PLATAFORMAS=("iphoneos" "iphonesimulator")
 
 # ---------------------------------------------------------------------------
 # Configuração: TODOS os decodificadores.
@@ -40,69 +43,88 @@ CC_BIN="$(xcrun --sdk iphoneos -f clang)"
 # ---------------------------------------------------------------------------
 
 echo "==> FFmpeg $FFMPEG_VERSION | iOS mínimo $MIN_IOS"
-echo "    SDK: $SDK_PATH"
 
 mkdir -p "$TRABALHO"
-cd "$TRABALHO"
+FONTE="$TRABALHO/ffmpeg-$FFMPEG_VERSION"
 
-FONTE="ffmpeg-$FFMPEG_VERSION"
 if [ ! -d "$FONTE" ]; then
   echo "==> baixando fontes…"
-  curl -fsSL "https://ffmpeg.org/releases/ffmpeg-$FFMPEG_VERSION.tar.xz" -o ffmpeg.tar.xz
-  tar xf ffmpeg.tar.xz
-  rm -f ffmpeg.tar.xz
+  curl -fsSL "https://ffmpeg.org/releases/ffmpeg-$FFMPEG_VERSION.tar.xz" -o "$TRABALHO/ffmpeg.tar.xz"
+  tar xf "$TRABALHO/ffmpeg.tar.xz" -C "$TRABALHO"
+  rm -f "$TRABALHO/ffmpeg.tar.xz"
 fi
 
-cd "$FONTE"
+ARGUMENTOS_XCFRAMEWORK=()
 
-if [ ! -f config.h ]; then
-  echo "==> configurando…"
-  # shellcheck disable=SC2046
-  ./configure \
-    --prefix="$PREFIXO" \
-    --enable-cross-compile \
-    --target-os=darwin \
-    --arch=arm64 \
-    --cc="$CC_BIN" \
-    --as="$CC_BIN" \
-    --sysroot="$SDK_PATH" \
-    --extra-cflags="-arch arm64 -mios-version-min=$MIN_IOS -fembed-bitcode-marker -fno-stack-check" \
-    --extra-ldflags="-arch arm64 -mios-version-min=$MIN_IOS" \
-    --enable-static --disable-shared \
-    --enable-pic \
-    --disable-programs --disable-doc --disable-debug \
-    --disable-gpl --disable-nonfree \
-    --disable-avdevice --disable-postproc \
-    --disable-encoders --disable-muxers \
-    --enable-avformat --enable-avcodec --enable-avutil \
-    --enable-swresample --enable-swscale --enable-avfilter \
-    --enable-videotoolbox \
-    --enable-securetransport
-fi
+for PLATAFORMA in "${PLATAFORMAS[@]}"; do
+  SDK_PATH="$(xcrun --sdk "$PLATAFORMA" --show-sdk-path)"
+  CC_BIN="$(xcrun --sdk "$PLATAFORMA" -f clang)"
 
-echo "==> compilando…"
-make -j"$(sysctl -n hw.ncpu)"
-make install
+  # A flag de versão mínima tem nome diferente em cada plataforma; usar a
+  # errada faz o linker rejeitar a biblioteca depois, sem dizer o porquê.
+  if [ "$PLATAFORMA" = "iphonesimulator" ]; then
+    FLAG_VERSAO="-mios-simulator-version-min=$MIN_IOS"
+  else
+    FLAG_VERSAO="-mios-version-min=$MIN_IOS"
+  fi
 
-# ---------------------------------------------------------------------------
-# Empacotamento
-#
-# Juntamos as libs numa só antes do xcframework: seis .a separadas obrigariam
-# o alvo a listar todas na ordem certa de link, o que quebra em silêncio.
-# ---------------------------------------------------------------------------
-echo "==> empacotando xcframework…"
-cd "$PREFIXO"
-libtool -static -o libffmpeg.a \
-  lib/libavformat.a lib/libavcodec.a lib/libavfilter.a \
-  lib/libswresample.a lib/libswscale.a lib/libavutil.a
+  CONSTRUCAO="$TRABALHO/build-$PLATAFORMA"
+  PREFIXO="$TRABALHO/install-$PLATAFORMA"
+  mkdir -p "$CONSTRUCAO"
 
+  echo
+  echo "==> $PLATAFORMA"
+  echo "    SDK: $SDK_PATH"
+
+  # Compilação fora da árvore de fontes: os dois alvos compartilham o mesmo
+  # código-fonte e mantêm config.h separados. Compilar no diretório de fontes
+  # obrigaria a limpar tudo entre as plataformas.
+  cd "$CONSTRUCAO"
+  if [ ! -f config.h ]; then
+    echo "    configurando…"
+    "$FONTE/configure" \
+      --prefix="$PREFIXO" \
+      --enable-cross-compile \
+      --target-os=darwin \
+      --arch=arm64 \
+      --cc="$CC_BIN" \
+      --as="$CC_BIN" \
+      --sysroot="$SDK_PATH" \
+      --extra-cflags="-arch arm64 $FLAG_VERSAO -fno-stack-check" \
+      --extra-ldflags="-arch arm64 $FLAG_VERSAO" \
+      --enable-static --disable-shared \
+      --enable-pic \
+      --disable-programs --disable-doc --disable-debug \
+      --disable-gpl --disable-nonfree \
+      --disable-avdevice --disable-postproc \
+      --disable-encoders --disable-muxers \
+      --enable-avformat --enable-avcodec --enable-avutil \
+      --enable-swresample --enable-swscale --enable-avfilter \
+      --enable-videotoolbox \
+      --enable-securetransport
+  fi
+
+  echo "    compilando…"
+  make -j"$(sysctl -n hw.ncpu)" >/dev/null
+  make install >/dev/null
+
+  # Uma biblioteca só por plataforma: seis .a separadas obrigariam o alvo a
+  # listar todas na ordem certa de link, o que quebra em silêncio.
+  cd "$PREFIXO"
+  libtool -static -o libffmpeg.a \
+    lib/libavformat.a lib/libavcodec.a lib/libavfilter.a \
+    lib/libswresample.a lib/libswscale.a lib/libavutil.a
+
+  ARGUMENTOS_XCFRAMEWORK+=(-library "$PREFIXO/libffmpeg.a" -headers "$PREFIXO/include")
+done
+
+echo
+echo "==> empacotando xcframework com ${#PLATAFORMAS[@]} plataformas…"
 rm -rf "$SAIDA"
 mkdir -p "$(dirname "$SAIDA")"
-xcodebuild -create-xcframework \
-  -library "$PREFIXO/libffmpeg.a" \
-  -headers "$PREFIXO/include" \
-  -output "$SAIDA"
+xcodebuild -create-xcframework "${ARGUMENTOS_XCFRAMEWORK[@]}" -output "$SAIDA"
 
 echo
 echo "pronto: $SAIDA"
 du -sh "$SAIDA"
+ls "$SAIDA"
