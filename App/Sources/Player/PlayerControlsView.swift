@@ -52,6 +52,11 @@ final class PlayerControlsView: UIView {
     private let subtitleButton = UIButton(type: .system)
     private let audioButton = UIButton(type: .system)
     private let moreButton = UIButton(type: .system)
+    private let toolsButton = UIButton(type: .system)
+
+    /// A fileira começa fechada: ferramentas boas de ter à mão não podem
+    /// cobrir o vídeo o tempo todo.
+    private(set) var isToolStripExpanded = false
 
     /// Montado na hora de abrir, não uma vez só: os itens mostram estado
     /// (mudo ligado, repetição ativa) que muda enquanto o player está aberto.
@@ -101,6 +106,22 @@ final class PlayerControlsView: UIView {
             toolStrip.trailingAnchor.constraint(equalTo: trailingAnchor),
             toolStrip.heightAnchor.constraint(equalToConstant: 86),
         ])
+        toolStrip.alpha = 0
+        toolStrip.isHidden = true
+    }
+
+    @objc private func toolsTapped() {
+        isToolStripExpanded.toggle()
+        toolsButton.tintColor = isToolStripExpanded ? tintColor : .white
+
+        if isToolStripExpanded { toolStrip.isHidden = false }
+        UIView.animate(withDuration: 0.22) {
+            self.toolStrip.alpha = self.isToolStripExpanded ? 1 : 0
+        } completion: { _ in
+            // Escondida de verdade quando fechada: alpha zero ainda receberia
+            // toque e roubaria gestos da área do vídeo.
+            self.toolStrip.isHidden = !self.isToolStripExpanded
+        }
     }
 
     private func setupSpinner() {
@@ -138,7 +159,7 @@ final class PlayerControlsView: UIView {
         guard isVisible else { return false }
         return topBar.frame.contains(point)
             || bottomBar.frame.contains(point)
-            || toolStrip.frame.contains(point)
+            || (isToolStripExpanded && toolStrip.frame.contains(point))
             || centerStack.frame.insetBy(dx: -20, dy: -20).contains(point)
     }
 
@@ -165,6 +186,7 @@ final class PlayerControlsView: UIView {
         configure(closeButton, symbol: "chevron.down", action: #selector(closeTapped))
         configure(subtitleButton, symbol: "captions.bubble", action: #selector(subtitlesTapped))
         configure(audioButton, symbol: "waveform", action: #selector(audioTapped))
+        configure(toolsButton, symbol: "square.grid.2x2", action: #selector(toolsTapped))
 
         moreButton.setImage(UIImage(systemName: "ellipsis"), for: .normal)
         moreButton.tintColor = .white
@@ -183,7 +205,7 @@ final class PlayerControlsView: UIView {
         titleLabel.lineBreakMode = .byTruncatingMiddle
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        [closeButton, titleLabel, subtitleButton, audioButton, moreButton].forEach(topBar.addSubview)
+        [closeButton, titleLabel, toolsButton, subtitleButton, audioButton, moreButton].forEach(topBar.addSubview)
 
         NSLayoutConstraint.activate([
             topBar.topAnchor.constraint(equalTo: topAnchor),
@@ -211,8 +233,13 @@ final class PlayerControlsView: UIView {
             subtitleButton.widthAnchor.constraint(equalToConstant: 44),
             subtitleButton.heightAnchor.constraint(equalToConstant: 44),
 
+            toolsButton.trailingAnchor.constraint(equalTo: subtitleButton.leadingAnchor, constant: -4),
+            toolsButton.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor),
+            toolsButton.widthAnchor.constraint(equalToConstant: 44),
+            toolsButton.heightAnchor.constraint(equalToConstant: 44),
+
             titleLabel.leadingAnchor.constraint(equalTo: closeButton.trailingAnchor, constant: 6),
-            titleLabel.trailingAnchor.constraint(equalTo: subtitleButton.leadingAnchor, constant: -8),
+            titleLabel.trailingAnchor.constraint(equalTo: toolsButton.leadingAnchor, constant: -8),
             titleLabel.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor),
         ])
     }
@@ -428,7 +455,7 @@ final class PlayerControlsView: UIView {
             self.topBar.alpha = alpha
             self.bottomBar.alpha = alpha
             self.centerStack.alpha = alpha
-            self.toolStrip.alpha = alpha
+            self.toolStrip.alpha = self.isToolStripExpanded ? alpha : 0
         }
         animated ? UIView.animate(withDuration: 0.22, animations: work) : work()
     }

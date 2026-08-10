@@ -97,6 +97,12 @@ final class ToolStripView: UIView {
 
         NSLayoutConstraint.activate([
             container.widthAnchor.constraint(equalToConstant: 66),
+            // Altura explícita, e não deduzida do conteúdo: sem ela o
+            // contêiner fica com altura zero. Os botões continuariam
+            // VISÍVEIS — o iOS desenha fora dos limites — mas não receberiam
+            // toque nenhum, porque o teste de toque respeita os limites. Era
+            // por isso que nenhuma ferramenta respondia.
+            container.heightAnchor.constraint(equalToConstant: 80),
 
             circulo.topAnchor.constraint(equalTo: container.topAnchor),
             circulo.centerXAnchor.constraint(equalTo: container.centerXAnchor),
@@ -106,6 +112,7 @@ final class ToolStripView: UIView {
             rotulo.topAnchor.constraint(equalTo: circulo.bottomAnchor, constant: 6),
             rotulo.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             rotulo.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            rotulo.bottomAnchor.constraint(lessThanOrEqualTo: container.bottomAnchor),
         ])
         return container
     }

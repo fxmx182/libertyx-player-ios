@@ -429,7 +429,12 @@ final class FFmpegEngine: NSObject, PlaybackEngine {
 
                 quadrosExibidos += 1
                 if quadrosExibidos % 120 == 0 {
-                    LabLog.loop("quadro \(quadrosExibidos) em \(String(format: "%.1f", instante))s, relógio \(String(format: "%.1f", clock.now))s")
+                    // Desvio entre o quadro e o relógio do áudio: é o número
+                    // que diz se imagem e som estão juntos. Positivo = imagem
+                    // à frente do som.
+                    let desvio = instante - clock.now
+                    LabLog.loop(String(format: "quadro %d em %.1fs · desvio %+.3fs · %d blocos de áudio",
+                                       quadrosExibidos, instante, desvio, blocosDeAudio))
                 }
 
                 Task { @MainActor [weak self] in

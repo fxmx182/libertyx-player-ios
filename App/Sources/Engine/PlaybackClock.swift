@@ -86,7 +86,26 @@ final class PlaybackClock {
     var expectsAudio = false
 
     var now: Double {
-        if let doAudio = audio?.currentTime { return doAudio }
+        if let doAudio = audio?.currentTime {
+            lock.lock(); defer { lock.unlock() }
+            // Teto no áudio já entregue.
+            //
+            // Este é o ponto que faltava. O nó de áudio continua "tocando"
+            // quando fica sem som agendado — ele renderiza silêncio, e o
+            // relógio dele avança do mesmo jeito. Numa leitura lenta pela rede,
+            // que é exatamente o que acontece logo depois de adiantar, o
+            // relógio corre durante o silêncio, o vídeo o segue, e quando o som
+            // enfim chega a imagem já está à frente. O sintoma é "áudio
+            // atrasado", mas a causa é o relógio adiantado.
+            //
+            // Limitando ao que de fato foi entregue, o vídeo espera o som em
+            // vez de disparar na frente dele.
+            //
+            // A folga de 0,25 s evita travar a imagem no fim do arquivo, quando
+            // o áudio acaba antes do vídeo — sem ela, os últimos quadros
+            // ficariam presos esperando um som que não vem mais.
+            return min(doAudio, audioScheduledUntil + 0.25)
+        }
 
         lock.lock(); defer { lock.unlock() }
         guard running else { return base }
