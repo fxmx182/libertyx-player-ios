@@ -34,13 +34,9 @@ final class PlayerControlsView: UIView {
     /// Bloqueio: esconde tudo e desliga os gestos. Existe porque assistir
     /// deitado significa encostar na tela sem querer o tempo todo.
     private(set) var isLocked = false
-    /// A fileira aparece junto com a barra e some junto com ela.
-    ///
-    /// Deixá-la fechada por padrão escondia as ferramentas atrás de um segundo
-    /// toque — e o vídeo já fica limpo quando os controles se escondem
-    /// sozinhos. O botão de grade continua ali para quem quiser tirá-la de
-    /// vista sem esconder a barra.
-    private(set) var isToolStripExpanded = true
+    /// Preferência do usuário, preservada entre aparições dos controles.
+    /// Começa fechada para não cobrir o vídeo; o botão de grade abre.
+    private(set) var isToolStripExpanded = false
 
     var title: String = "" {
         didSet { titleLabel.text = title }
@@ -283,7 +279,8 @@ final class PlayerControlsView: UIView {
             toolStrip.trailingAnchor.constraint(equalTo: trailingAnchor),
             toolStrip.heightAnchor.constraint(equalToConstant: 86),
         ])
-        toolsButton.tintColor = tintColor
+        toolStrip.alpha = 0
+        toolStrip.isHidden = true
     }
 
     private func setupUnlockButton() {
@@ -374,25 +371,42 @@ final class PlayerControlsView: UIView {
     func setVisible(_ visible: Bool, animated: Bool) {
         guard !isLocked, visible != isVisible else { return }
         isVisible = visible
+        applyVisibility(animated: animated)
+    }
 
-        // Mostrar traz a fileira de volta junto, sem depender de estado
-        // guardado. O comportamento anterior dependia de um sinalizador que
-        // podia ficar dessincronizado dos controles — e o sintoma era a barra
-        // voltar sozinha, sem as ferramentas.
-        if visible {
-            isToolStripExpanded = true
+    /// Ponto único que decide o que aparece.
+    ///
+    /// Antes, cada ação mexia direto na transparência de cada peça, e os
+    /// estados saíam de sincronia — o sintoma era a barra voltar sem as
+    /// ferramentas. Calculando tudo a partir de `isVisible`, `isLocked` e
+    /// `isToolStripExpanded` num lugar só, essa classe de bug deixa de existir.
+    private func applyVisibility(animated: Bool) {
+        let barras: CGFloat = (isVisible && !isLocked) ? 1 : 0
+        let fileira: CGFloat = (isVisible && !isLocked && isToolStripExpanded) ? 1 : 0
+
+        toolsButton.tintColor = isToolStripExpanded ? tintColor : .white
+        if fileira > 0 {
             toolStrip.isHidden = false
-            toolsButton.tintColor = tintColor
             bringSubviewToFront(toolStrip)
         }
 
-        let alpha: CGFloat = visible ? 1 : 0
-        let work = {
-            self.topBar.alpha = alpha
-            self.bottomBar.alpha = alpha
-            self.toolStrip.alpha = alpha
+        let trabalho = {
+            self.topBar.alpha = barras
+            self.bottomBar.alpha = barras
+            self.toolStrip.alpha = fileira
+            self.unlockButton.alpha = self.isLocked ? 0.85 : 0
         }
-        animated ? UIView.animate(withDuration: 0.22, animations: work) : work()
+        let depois = { (_: Bool) in
+            // Transparente ainda receberia toque e roubaria gestos da área do
+            // vídeo; escondida de verdade, não.
+            self.toolStrip.isHidden = fileira == 0
+        }
+        if animated {
+            UIView.animate(withDuration: 0.22, animations: trabalho, completion: depois)
+        } else {
+            trabalho()
+            depois(true)
+        }
     }
 
     /// Chamado também pela fileira de ferramentas.
@@ -411,30 +425,14 @@ final class PlayerControlsView: UIView {
 
     @objc private func toolsTapped() {
         isToolStripExpanded.toggle()
-        toolsButton.tintColor = isToolStripExpanded ? tintColor : .white
-
-        if isToolStripExpanded { toolStrip.isHidden = false }
-        UIView.animate(withDuration: 0.22) {
-            self.toolStrip.alpha = self.isToolStripExpanded ? 1 : 0
-        } completion: { _ in
-            // Escondida de verdade quando fechada: alpha zero ainda receberia
-            // toque e roubaria gestos da área do vídeo.
-            self.toolStrip.isHidden = !self.isToolStripExpanded
-        }
+        applyVisibility(animated: true)
     }
 
     @objc private func lockTapped() {
         isLocked.toggle()
         lockButton.setImage(UIImage(systemName: isLocked ? "lock.fill" : "lock.open"), for: .normal)
-
-        UIView.animate(withDuration: 0.25) {
-            let alpha: CGFloat = self.isLocked ? 0 : 1
-            self.topBar.alpha = alpha
-            self.bottomBar.alpha = alpha
-            self.toolStrip.alpha = (self.isLocked || !self.isToolStripExpanded) ? 0 : 1
-            self.unlockButton.alpha = self.isLocked ? 0.85 : 0
-        }
         isVisible = !isLocked
+        applyVisibility(animated: true)
         onLockChange?(isLocked)
     }
 

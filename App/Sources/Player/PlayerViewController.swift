@@ -969,7 +969,12 @@ final class PlayerViewController: UIViewController {
     private func scheduleControlsHide() {
         controlsHideWorkItem?.cancel()
         let work = DispatchWorkItem { [weak self] in
-            guard let self, self.engine.state == .playing else { return }
+            guard let self else { return }
+            // Só o pausado segura os controles na tela — ali o usuário quer ver
+            // o botão de play. Exigir `== .playing` deixava a barra presa para
+            // sempre quando o motor reportava qualquer outro estado, como
+            // "carregando", e nunca mais reagendava.
+            guard self.engine.state != .paused else { return }
             self.controls.setVisible(false, animated: true)
         }
         controlsHideWorkItem = work
