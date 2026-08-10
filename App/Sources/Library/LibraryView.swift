@@ -118,18 +118,15 @@ struct LibraryView: View {
 
     private var networkSection: some View {
         Section {
-            Label {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("SMB — em construção").foregroundStyle(.secondary)
-                    Text("Chega junto com o motor FFmpeg")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                }
-            } icon: {
-                Image(systemName: "server.rack").foregroundStyle(.secondary)
+            NavigationLink {
+                SMBServersView()
+            } label: {
+                Label("Servidores SMB", systemImage: "server.rack")
             }
         } header: {
             Text("Rede")
+        } footer: {
+            Text("Navegar pelos compartilhamentos já funciona. Reproduzir direto do servidor depende do motor FFmpeg — o AVFoundation não fala SMB.")
         }
     }
 
