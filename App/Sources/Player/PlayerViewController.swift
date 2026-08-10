@@ -68,6 +68,7 @@ final class PlayerViewController: UIViewController {
     private let dimView = UIView()
     private var pip: PictureInPicture?
     private let systemVolume = SystemVolume()
+    private var volumeObservation: NSKeyValueObservation?
 
     private let gravityModes: [AVLayerVideoGravity] = [.resizeAspect, .resizeAspectFill, .resize]
     private var gravityIndex = 0
@@ -119,6 +120,7 @@ final class PlayerViewController: UIViewController {
 
         setupSubtitleLabel()
         systemVolume.attach(to: view)
+        observeHardwareVolume()
 
         NSLayoutConstraint.activate([
             renderView.topAnchor.constraint(equalTo: view.topAnchor),
@@ -179,6 +181,8 @@ final class PlayerViewController: UIViewController {
         super.viewWillDisappear(animated)
         // Sair com a janela flutuante aberta é legítimo: o vídeo continua nela.
         guard pip?.isActive != true else { return }
+        volumeObservation?.invalidate()
+        volumeObservation = nil
         cancelSleepTimer()
         engine.teardown()
     }
@@ -455,6 +459,24 @@ final class PlayerViewController: UIViewController {
 
     /// Com a tela bloqueada, todo gesto é ignorado — é para isso que serve.
     private var gesturesEnabled: Bool { !controls.isLocked }
+
+    /// Faz os botões físicos de volume mostrarem o nosso indicador.
+    ///
+    /// O iOS esconde o indicador dele quando existe um `MPVolumeView` na tela —
+    /// e é ele que nos permite controlar o volume pelo gesto. Em vez de perder
+    /// o retorno visual, os botões passam a usar o mesmo balão do gesto: um só
+    /// indicador para as duas formas de mexer no volume.
+    private func observeHardwareVolume() {
+        let sessao = AVAudioSession.sharedInstance()
+        volumeObservation = sessao.observe(\.outputVolume, options: [.new]) { [weak self] _, mudanca in
+            guard let novo = mudanca.newValue else { return }
+            Task { @MainActor in
+                guard let self else { return }
+                self.hud.show(.volume(novo))
+                self.hud.hideAfterDelay(1.0)
+            }
+        }
+    }
 
     /// Mostrar os controles acontece no instante em que o dedo encosta, e não
     /// num gesto reconhecido.
