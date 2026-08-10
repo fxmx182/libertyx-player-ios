@@ -1,29 +1,43 @@
 import SwiftUI
 
-/// Tela inicial: as fontes de mídia.
+/// Tela inicial: todos os vídeos que o app encontra, agrupados por pasta.
 ///
-/// Três origens previstas — pastas autorizadas (pendrive USB / iCloud / app),
-/// servidores SMB do homelab, e arquivos soltos. A aba SMB ainda está
-/// desligada porque depende do motor FFmpeg para ler os bytes pela rede.
+/// A varredura é automática. O usuário autoriza uma pasta uma vez — pendrive,
+/// iCloud, o que for — e a partir daí não precisa navegar pasta por pasta a
+/// cada vez que abre o app.
 struct LibraryView: View {
 
     @EnvironmentObject private var bookmarks: BookmarkStore
+    @StateObject private var library = MediaLibrary()
 
     @State private var showingFolderPicker = false
     @State private var showingFilePicker = false
+    @State private var managingFolders = false
     @State private var playing: MediaItem?
+    @State private var playlist: [MediaItem] = []
+    @State private var showingInfo: MediaItem?
     @State private var errorMessage: String?
 
     var body: some View {
         NavigationStack {
-            List {
-                foldersSection
-                networkSection
-                quickOpenSection
+            Group {
+                if library.groups.isEmpty {
+                    vazio
+                } else {
+                    lista
+                }
             }
-            .listStyle(.insetGrouped)
-            .navigationTitle("LabPlayer")
+            .navigationTitle("Vídeos")
             .toolbar {
+                // SMB à esquerda, separado das ações locais: são dois mundos
+                // diferentes, e misturá-los num menu só esconderia a rede.
+                ToolbarItem(placement: .topBarLeading) {
+                    NavigationLink {
+                        SMBServersView()
+                    } label: {
+                        Image(systemName: "server.rack")
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         Button {
@@ -36,32 +50,54 @@ struct LibraryView: View {
                         } label: {
                             Label("Abrir arquivo…", systemImage: "doc.badge.plus")
                         }
+                        Divider()
+                        Button {
+                            managingFolders = true
+                        } label: {
+                            Label("Pastas autorizadas", systemImage: "folder.badge.gearshape")
+                        }
+                        Button {
+                            Task { await library.refresh(bookmarks: bookmarks) }
+                        } label: {
+                            Label("Varrer de novo", systemImage: "arrow.clockwise")
+                        }
                     } label: {
                         Image(systemName: "plus")
                     }
                 }
             }
+            .refreshable { await library.refresh(bookmarks: bookmarks) }
+            .task { await library.refresh(bookmarks: bookmarks) }
             .sheet(isPresented: $showingFolderPicker) {
                 DocumentPicker(mode: .folder) { urls in
                     guard let url = urls.first else { return }
-                    do { try bookmarks.add(url: url) }
-                    catch { errorMessage = error.localizedDescription }
+                    do {
+                        try bookmarks.add(url: url)
+                        Task { await library.refresh(bookmarks: bookmarks) }
+                    } catch {
+                        errorMessage = error.localizedDescription
+                    }
                 }
                 .ignoresSafeArea()
             }
             .sheet(isPresented: $showingFilePicker) {
                 DocumentPicker(mode: .videos) { urls in
                     guard let url = urls.first else { return }
+                    playlist = []
                     playing = MediaItem(title: url.lastPathComponent,
                                         origin: .file(url: url, bookmark: nil))
                 }
                 .ignoresSafeArea()
             }
-            .fullScreenCover(item: $playing) { item in
-                PlayerScreen(item: item).ignoresSafeArea()
+            .sheet(isPresented: $managingFolders) {
+                ManageFoldersView()
             }
-            // Binding real em vez de `.constant`: com constant o alerta nunca
-            // se fecha de verdade e volta a aparecer no próximo redesenho.
+            .sheet(item: $showingInfo) { item in
+                MediaInfoView(item: item)
+            }
+            .fullScreenCover(item: $playing) { item in
+                PlayerScreen(item: item, playlist: playlist).ignoresSafeArea()
+            }
             .alert("Ops", isPresented: Binding(
                 get: { errorMessage != nil },
                 set: { if !$0 { errorMessage = nil } }
@@ -73,183 +109,110 @@ struct LibraryView: View {
         }
     }
 
-    // MARK: - Seções
+    // MARK: - Conteúdo
 
-    private var foldersSection: some View {
-        Section {
-            if bookmarks.folders.isEmpty {
-                emptyFoldersHint
-            } else {
-                ForEach(bookmarks.folders) { folder in
-                    NavigationLink {
-                        FolderBrowserView(folder: folder)
-                    } label: {
-                        Label(folder.name, systemImage: "folder.fill")
+    private var lista: some View {
+        List {
+            ForEach(library.groups) { grupo in
+                Section {
+                    ForEach(grupo.items) { item in
+                        Button {
+                            playlist = grupo.items
+                            playing = item
+                        } label: {
+                            VideoRow(item: item)
+                        }
+                        .buttonStyle(.plain)
+                        .contextMenu {
+                            Button {
+                                showingInfo = item
+                            } label: {
+                                Label("Detalhes do arquivo", systemImage: "info.circle")
+                            }
+                        }
+                    }
+                } header: {
+                    HStack {
+                        Image(systemName: "folder.fill").font(.caption2)
+                        Text(grupo.name)
+                        Spacer()
+                        Text("\(grupo.items.count)")
                     }
                 }
-                .onDelete { indexSet in
-                    indexSet.map { bookmarks.folders[$0] }.forEach(bookmarks.remove)
-                }
             }
-        } header: {
-            Text("Pastas")
-        } footer: {
-            Text("Pendrives ligados na USB-C aparecem no seletor do iOS em “Procurar”. Autorize a pasta uma vez e o LabPlayer lembra dela.")
+        }
+        .listStyle(.insetGrouped)
+        .overlay(alignment: .bottom) {
+            if library.isScanning {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Procurando vídeos…").font(.caption)
+                }
+                .padding(.horizontal, 14).padding(.vertical, 8)
+                .background(.regularMaterial, in: Capsule())
+                .padding(.bottom, 12)
+            }
         }
     }
 
-    private var emptyFoldersHint: some View {
-        Button {
-            showingFolderPicker = true
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: "externaldrive.badge.plus")
-                    .font(.title2)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Adicionar uma pasta").fontWeight(.medium)
-                    Text("Pendrive USB, iCloud ou local")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .padding(.vertical, 4)
-        }
-    }
-
-    private var networkSection: some View {
-        Section {
+    private var vazio: some View {
+        ContentUnavailableView {
+            Label("Nenhum vídeo ainda", systemImage: "film.stack")
+        } description: {
+            // A limitação do iOS explicada onde ela é sentida, em vez de o
+            // usuário concluir que o app não funciona.
+            Text("O iOS não deixa um app varrer o aparelho inteiro. Autorize uma pasta uma vez — pendrive na USB-C, iCloud ou local — e o LabPlayer varre ela sozinho daí em diante, incluindo as subpastas.")
+        } actions: {
+            Button("Adicionar pasta") { showingFolderPicker = true }
+                .buttonStyle(.borderedProminent)
+            Button("Abrir um arquivo avulso") { showingFilePicker = true }
             NavigationLink {
                 SMBServersView()
             } label: {
-                Label("Servidores SMB", systemImage: "server.rack")
+                Text("Conectar a um servidor SMB")
             }
-        } header: {
-            Text("Rede")
-        } footer: {
-            Text("Navegue pelos compartilhamentos e toque direto do servidor, sem baixar o arquivo.")
-        }
-    }
-
-    private var quickOpenSection: some View {
-        Section {
-            Button {
-                showingFilePicker = true
-            } label: {
-                Label("Abrir um arquivo avulso", systemImage: "play.rectangle")
-            }
-        } footer: {
-            // Prova de linkagem e de identidade: confirma que o FFmpeg está
-            // vivo e diz exatamente qual build está instalado — sem isso não
-            // dá para distinguir "não mudou nada" de ".ipa antigo".
-            Text("LabPlayer \(AppBuild.version) (\(AppBuild.commit)) · FFmpeg \(FFmpegRuntime.version) · \(FFmpegRuntime.demuxerCount) contêineres")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
         }
     }
 }
 
-/// Navegação dentro de uma pasta autorizada.
-struct FolderBrowserView: View {
+/// Gerenciar as pastas autorizadas.
+struct ManageFoldersView: View {
 
     @EnvironmentObject private var bookmarks: BookmarkStore
-
-    let folder: SavedFolder
-    /// Quando não-nulo, estamos numa subpasta e o escopo já está aberto acima.
-    var subdirectory: URL?
-
-    @State private var listing = FolderScanner.Listing()
-    @State private var resolvedRoot: URL?
-    @State private var playing: MediaItem?
-    @State private var showingInfo: MediaItem?
-    @State private var failedToResolve = false
-
-    private var currentURL: URL? { subdirectory ?? resolvedRoot }
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        List {
-            if failedToResolve {
-                ContentUnavailableView(
-                    "Pasta indisponível",
-                    systemImage: "externaldrive.badge.xmark",
-                    description: Text("O pendrive pode ter sido removido. Adicione a pasta de novo.")
-                )
-            }
-
-            ForEach(listing.directories, id: \.self) { url in
-                NavigationLink {
-                    FolderBrowserView(folder: folder, subdirectory: url)
-                } label: {
-                    Label(url.lastPathComponent, systemImage: "folder")
-                }
-            }
-
-            ForEach(listing.videos) { item in
-                Button {
-                    playing = withFolderScope(item)
-                } label: {
-                    VideoRow(item: item)
-                }
-                .buttonStyle(.plain)
-                .contextMenu {
-                    Button {
-                        showingInfo = withFolderScope(item)
-                    } label: {
-                        Label("Detalhes do arquivo", systemImage: "info.circle")
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(bookmarks.folders) { pasta in
+                        Label(pasta.name, systemImage: "folder")
                     }
+                    .onDelete { indices in
+                        indices.map { bookmarks.folders[$0] }.forEach(bookmarks.remove)
+                    }
+                } footer: {
+                    Text("Remover uma pasta só tira a autorização — nenhum arquivo é apagado.")
+                }
+            }
+            .navigationTitle("Pastas autorizadas")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Fechar") { dismiss() }
+                }
+            }
+            .overlay {
+                if bookmarks.folders.isEmpty {
+                    ContentUnavailableView("Nenhuma pasta autorizada",
+                                           systemImage: "folder.badge.questionmark")
                 }
             }
         }
-        .navigationTitle(currentURL?.lastPathComponent ?? folder.name)
-        .navigationBarTitleDisplayMode(.inline)
-        .onAppear(perform: refresh)
-        .onDisappear {
-            // Só a raiz abriu o escopo; subpastas herdam e não devem fechá-lo.
-            if subdirectory == nil { resolvedRoot?.stopAccessingSecurityScopedResource() }
-        }
-        .fullScreenCover(item: $playing) { item in
-            // A pasta inteira vira a lista: é o que faz "próxima" ir para o
-            // episódio seguinte em vez de não ter para onde ir.
-            PlayerScreen(item: item, playlist: listing.videos.map(withFolderScope))
-                .ignoresSafeArea()
-        }
-        .sheet(item: $showingInfo) { item in
-            MediaInfoView(item: item)
-        }
-        .overlay {
-            if listing.directories.isEmpty, listing.videos.isEmpty, !failedToResolve {
-                ContentUnavailableView("Nenhum vídeo aqui", systemImage: "film.stack")
-            }
-        }
-    }
-
-    /// Anexa ao item o bookmark da pasta que autoriza a leitura.
-    ///
-    /// Sem isto, o player herda apenas a URL e depende do escopo aberto por
-    /// esta tela — que o SwiftUI pode encerrar ao apresentar o player em tela
-    /// cheia. O sintoma seria "formato não suportado", que aponta para o lugar
-    /// errado: o arquivo está bem, o acesso a ele é que sumiu.
-    private func withFolderScope(_ item: MediaItem) -> MediaItem {
-        guard case .file(let url, _) = item.origin else { return item }
-        var copia = item
-        copia.origin = .file(url: url, bookmark: folder.bookmark)
-        return copia
-    }
-
-    private func refresh() {
-        if let subdirectory {
-            listing = FolderScanner.scan(subdirectory)
-            return
-        }
-        guard let root = bookmarks.resolve(folder) else {
-            failedToResolve = true
-            return
-        }
-        resolvedRoot = root
-        listing = FolderScanner.scan(root)
     }
 }
 
-private struct VideoRow: View {
+struct VideoRow: View {
     let item: MediaItem
 
     var body: some View {
@@ -261,9 +224,19 @@ private struct VideoRow: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.title).lineLimit(2)
-                if let size = FolderScanner.humanSize(item.fileSize) {
-                    Text(size).font(.caption).foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    if let tamanho = FolderScanner.humanSize(item.fileSize) {
+                        Text(tamanho)
+                    }
+                    // Mostrar que há retomada guardada evita a dúvida de "será
+                    // que ele volta de onde parei?".
+                    if let retomada = ResumeStore.shared.position(for: item.origin.resumeKey) {
+                        Text("· parou em \(TimeFormat.clock(retomada))")
+                            .foregroundStyle(.tint)
+                    }
                 }
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
         }
         .padding(.vertical, 2)
