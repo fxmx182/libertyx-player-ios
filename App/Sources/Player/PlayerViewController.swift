@@ -171,6 +171,12 @@ final class PlayerViewController: UIViewController {
         controls.setPiPAvailable(pip?.isSupported == true)
         refreshToolStrip()
 
+        // Diz qual motor está em uso: sem isso não dá para comparar os dois na
+        // prática, que é justamente o ponto de eles conviverem.
+        let nome = (engine is FFmpegEngine) ? "Próprio" : "VLC"
+        hud.show(.text("Motor: \(nome)"))
+        hud.hideAfterDelay(1.4)
+
         installGestures()
         bindEngine()
         updateNavigation()
@@ -769,11 +775,31 @@ final class PlayerViewController: UIViewController {
             })
         }
 
+        itens.append(UIMenu(title: "Motor de vídeo", image: UIImage(systemName: "cpu"),
+                            children: engineActions()))
         itens.append(UIMenu(title: "Modo noturno", image: UIImage(systemName: "moon.stars"),
                             children: nightModeActions()))
         itens.append(UIMenu(title: sleepTimerTitle(), image: UIImage(systemName: "timer"),
                             children: sleepTimerActions()))
         return itens
+    }
+
+    /// Trocar o motor vale para o próximo vídeo aberto.
+    ///
+    /// Trocar no meio da reprodução exigiria derrubar e remontar tudo — a tela,
+    /// a posição, as faixas — e o ganho não paga o risco. Reabrir o vídeo é um
+    /// gesto barato.
+    private func engineActions() -> [UIAction] {
+        EnginePreference.allCases.map { opcao in
+            UIAction(title: opcao.label,
+                     subtitle: opcao.detail,
+                     state: opcao == EnginePreference.current ? .on : .off) { [weak self] _ in
+                EnginePreference.current = opcao
+                self?.hud.show(.text("Motor: \(opcao.label)\nvale ao reabrir o vídeo"))
+                self?.hud.hideAfterDelay(2.5)
+                self?.scheduleControlsHide()
+            }
+        }
     }
 
     private func nightModeActions() -> [UIAction] {
