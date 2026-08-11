@@ -214,13 +214,11 @@ struct ManageFoldersView: View {
 
 struct VideoRow: View {
     let item: MediaItem
+    @State private var miniatura: UIImage?
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "film")
-                .font(.title3)
-                .foregroundStyle(.tint)
-                .frame(width: 28)
+            ThumbnailView(item: item, image: $miniatura)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.title).lineLimit(2)
@@ -240,5 +238,46 @@ struct VideoRow: View {
             }
         }
         .padding(.vertical, 2)
+    }
+}
+
+/// Miniatura da lista: mostra o quadro quando existe, e um espaço reservado
+/// enquanto não existe.
+///
+/// O espaço tem o mesmo tamanho da imagem final para a lista não pular quando
+/// as miniaturas chegam — nada mais desagradável que a linha que você ia tocar
+/// se mexer no instante do toque.
+struct ThumbnailView: View {
+    let item: MediaItem
+    @Binding var image: UIImage?
+
+    private let largura: CGFloat = 64
+    private let altura: CGFloat = 40
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .fill(Color.secondary.opacity(0.18))
+
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+            } else {
+                Image(systemName: "film")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: largura, height: altura)
+        .clipped()
+        .task(id: item.id) {
+            if let pronta = ThumbnailStore.shared.cached(item) {
+                image = pronta
+                return
+            }
+            image = await ThumbnailStore.shared.load(item)
+        }
     }
 }

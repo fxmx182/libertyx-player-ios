@@ -274,14 +274,9 @@ struct SMBDirectoryView: View {
                     Button {
                         playing = mediaItem(for: entry)
                     } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: "film").foregroundStyle(.tint).frame(width: 24)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(entry.name).lineLimit(2)
-                                Text(FolderScanner.humanSize(Int64(entry.size)) ?? "")
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
-                        }
+                        // Mesma linha da biblioteca local, para o servidor não
+                        // parecer um lugar de segunda classe dentro do app.
+                        VideoRow(item: mediaItem(for: entry))
                     }
                     .buttonStyle(.plain)
                     .contextMenu {

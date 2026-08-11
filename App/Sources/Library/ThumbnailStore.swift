@@ -1,0 +1,125 @@
+import UIKit
+import CryptoKit
+
+/// Gera e guarda as miniaturas dos vídeos.
+///
+/// Usa o `FrameExtractor` — o mesmo decodificador de quadro exato do motor
+/// próprio. Ele decodifica um quadro do meio do início do vídeo, e não o
+/// primeiro: abertura costuma ser tela preta ou logotipo.
+///
+/// Cache em disco não é otimização, é requisito: no SMB cada miniatura custa
+/// leitura pela rede, e regerar a lista toda a cada abertura do app seria
+/// inaceitável.
+@MainActor
+final class ThumbnailStore: ObservableObject {
+
+    static let shared = ThumbnailStore()
+
+    /// Ligado enquanto um vídeo está aberto.
+    ///
+    /// Decodificar com FFmpeg ao mesmo tempo que a reprodução acontece já
+    /// derrubou o app uma vez — dois leitores disputando o mesmo arquivo. Uma
+    /// miniatura pode esperar; a reprodução, não.
+    static var isSuspended = false
+
+    /// Instante do quadro: cedo o bastante para não custar busca longa em
+    /// arquivo de rede, e tarde o bastante para passar da tela preta inicial.
+    private static let momento: Double = 12
+
+    private let memoria = NSCache<NSString, UIImage>()
+    private var conexoes: [UUID: SMBConnection] = [:]
+    private var emCurso: Set<String> = []
+
+    private lazy var pasta: URL = {
+        let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        let destino = base.appendingPathComponent("miniaturas", isDirectory: true)
+        try? FileManager.default.createDirectory(at: destino, withIntermediateDirectories: true)
+        return destino
+    }()
+
+    private init() {
+        memoria.countLimit = 300
+    }
+
+    // MARK: - Acesso
+
+    /// Resposta imediata, sem gerar nada — para a lista desenhar sem esperar.
+    func cached(_ item: MediaItem) -> UIImage? {
+        let chave = Self.chave(for: item)
+        if let imagem = memoria.object(forKey: chave as NSString) { return imagem }
+        guard let dados = try? Data(contentsOf: arquivo(chave)),
+              let imagem = UIImage(data: dados) else { return nil }
+        memoria.setObject(imagem, forKey: chave as NSString)
+        return imagem
+    }
+
+    func load(_ item: MediaItem) async -> UIImage? {
+        if let pronta = cached(item) { return pronta }
+
+        let chave = Self.chave(for: item)
+        // Duas linhas da lista pedindo o mesmo arquivo não devem gerar duas
+        // vezes — no SMB isso dobraria o tráfego à toa.
+        guard !emCurso.contains(chave), !Self.isSuspended else { return nil }
+        emCurso.insert(chave)
+        defer { emCurso.remove(chave) }
+
+        guard let imagem = await gerar(item) else { return nil }
+        memoria.setObject(imagem, forKey: chave as NSString)
+        if let dados = imagem.jpegData(compressionQuality: 0.7) {
+            try? dados.write(to: arquivo(chave), options: .atomic)
+        }
+        return imagem
+    }
+
+    // MARK: - Geração
+
+    private func gerar(_ item: MediaItem) async -> UIImage? {
+        switch item.origin {
+        case .file:
+            let origem = item.origin
+            let cg = try? await FFmpegRunner.run {
+                try FileAccess.withAccess(origem) { caminho in
+                    try FrameExtractor.image(path: caminho, at: Self.momento,
+                                             maxWidth: FrameExtractor.listWidth)
+                }
+            }
+            return (cg ?? nil).map { UIImage(cgImage: $0) }
+
+        case .smb(let referencia, let caminho):
+            guard let conexao = conexao(para: referencia) else { return nil }
+            let cg = try? await conexao.thumbnail(share: referencia.share, path: caminho,
+                                                  at: Self.momento,
+                                                  maxWidth: FrameExtractor.listWidth)
+            return cg.map { UIImage(cgImage: $0) }
+
+        case .remote:
+            return nil
+        }
+    }
+
+    /// Uma conexão por servidor, reaproveitada: abrir sessão SMB a cada
+    /// miniatura custaria mais que gerar a imagem.
+    private func conexao(para referencia: SMBShareRef) -> SMBConnection? {
+        if let viva = conexoes[referencia.serverID] { return viva }
+        guard let servidor = SMBServerStore.shared.servers.first(where: { $0.id == referencia.serverID }) else {
+            return nil
+        }
+        let nova = SMBConnection(server: servidor, password: SMBServerStore.shared.password(for: servidor))
+        conexoes[referencia.serverID] = nova
+        return nova
+    }
+
+    // MARK: - Chaves
+
+    /// Identidade estável do arquivo, não do caminho: pendrive remontado muda
+    /// de caminho e o servidor pode ser alcançado por endereços diferentes.
+    private static func chave(for item: MediaItem) -> String {
+        let bruto = "\(item.origin.resumeKey)|\(item.fileSize ?? 0)"
+        let resumo = SHA256.hash(data: Data(bruto.utf8))
+        return resumo.compactMap { String(format: "%02x", $0) }.joined()
+    }
+
+    private func arquivo(_ chave: String) -> URL {
+        pasta.appendingPathComponent("\(chave).jpg")
+    }
+}

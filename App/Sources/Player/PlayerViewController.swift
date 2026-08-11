@@ -173,6 +173,8 @@ final class PlayerViewController: UIViewController {
         controls.setPiPAvailable(pip?.isSupported == true)
         refreshToolStrip()
 
+        ThumbnailStore.isSuspended = true
+
         installGestures()
         bindEngine()
         updateNavigation()
@@ -185,6 +187,7 @@ final class PlayerViewController: UIViewController {
         guard pip?.isActive != true else { return }
         volumeObservation?.invalidate()
         volumeObservation = nil
+        ThumbnailStore.isSuspended = false
         cancelSleepTimer()
         engine.teardown()
     }
@@ -938,6 +941,8 @@ final class PlayerViewController: UIViewController {
                 let dx = abs(translation.x), dy = abs(translation.y)
                 guard max(dx, dy) > Tuning.axisLockThreshold else { return }
                 panAxis = dx > dy ? .horizontal : .vertical
+                // Qualquer gesto em curso segura os controles na tela.
+                controlsHideWorkItem?.cancel()
                 if panAxis == .horizontal { engine.beginScrub() }
             }
 
@@ -953,6 +958,7 @@ final class PlayerViewController: UIViewController {
                 engine.endScrub()
             }
             panAxis = .undecided
+            scheduleControlsHide()
             hud.hideAfterDelay()
 
         default:
@@ -1034,6 +1040,9 @@ final class PlayerViewController: UIViewController {
                 isBarScrubbing = true
                 engine.beginScrub()
             }
+            // Com o dedo na barra, esconder no meio do arrasto é o pior
+            // momento possível: o cronômetro só volta a correr ao soltar.
+            controlsHideWorkItem?.cancel()
             requestScrubSeek(to: time)
         }
     }
