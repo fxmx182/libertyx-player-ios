@@ -204,13 +204,13 @@ final class PlayerControlsView: UIView {
             $0.translatesAutoresizingMaskIntoConstraints = false
         }
 
-        slider.minimumTrackTintColor = tintColor
-        slider.maximumTrackTintColor = UIColor.white.withAlphaComponent(0.35)
+        // Trilha desenhada, e não escalada: escalar o controle inteiro
+        // engrossava a barra mas esticava o marcador junto, deixando-o oval.
+        slider.setMinimumTrackImage(Self.trackImage(color: tintColor), for: .normal)
+        slider.setMaximumTrackImage(Self.trackImage(color: UIColor.white.withAlphaComponent(0.3)),
+                                    for: .normal)
         slider.setThumbImage(Self.thumbImage(diameter: 15), for: .normal)
-        slider.setThumbImage(Self.thumbImage(diameter: 24), for: .highlighted)
-        // Escalar na vertical engrossa a trilha sem precisar desenhar imagens
-        // próprias para ela — o UISlider não expõe espessura.
-        slider.transform = CGAffineTransform(scaleX: 1, y: 1.8)
+        slider.setThumbImage(Self.thumbImage(diameter: 22), for: .highlighted)
         slider.translatesAutoresizingMaskIntoConstraints = false
         slider.addTarget(self, action: #selector(sliderChanged), for: .valueChanged)
         slider.addTarget(self, action: #selector(sliderTouchDown), for: .touchDown)
@@ -319,6 +319,19 @@ final class PlayerControlsView: UIView {
         button.addTarget(self, action: action, for: .touchUpInside)
     }
 
+    /// Trilha com altura própria. O UISlider não expõe espessura, mas aceita
+    /// uma imagem esticável — que é o jeito de engrossar sem deformar o resto.
+    private static func trackImage(color: UIColor, height: CGFloat = 7) -> UIImage {
+        let tamanho = CGSize(width: height, height: height)
+        let imagem = UIGraphicsImageRenderer(size: tamanho).image { _ in
+            color.setFill()
+            UIBezierPath(roundedRect: CGRect(origin: .zero, size: tamanho),
+                         cornerRadius: height / 2).fill()
+        }
+        return imagem.resizableImage(
+            withCapInsets: UIEdgeInsets(top: 0, left: height / 2, bottom: 0, right: height / 2))
+    }
+
     private static func thumbImage(diameter: CGFloat) -> UIImage {
         let size = CGSize(width: diameter, height: diameter)
         return UIGraphicsImageRenderer(size: size).image { context in
@@ -362,13 +375,10 @@ final class PlayerControlsView: UIView {
     /// Enquanto carrega, o transporte some e a roda aparece: sem esse aviso,
     /// espera pela rede é indistinguível de travamento.
     func setBuffering(_ buffering: Bool) {
-        if buffering {
-            spinner.startAnimating()
-            transport.alpha = 0
-        } else {
-            spinner.stopAnimating()
-            transport.alpha = isVisible ? 1 : 0
-        }
+        // Só a roda aparece e some. Antes o transporte era escondido junto, e
+        // como o carregamento oscila durante a rolagem, os botões piscavam. A
+        // roda fica no centro e o transporte no rodapé; não se atrapalham.
+        buffering ? spinner.startAnimating() : spinner.stopAnimating()
     }
 
     func setVisible(_ visible: Bool, animated: Bool) {

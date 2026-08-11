@@ -12,7 +12,12 @@ final class GestureHUDView: UIView {
         case text(String)
     }
 
-    private let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterialDark))
+    /// Fundo translúcido em vez de desfoque opaco.
+    ///
+    /// O balão aparece no meio da tela justamente enquanto o usuário ajusta o
+    /// vídeo — e tapar a imagem no momento em que ele quer vê-la derrota o
+    /// propósito. O texto ganha sombra para continuar legível sobre cena clara.
+    private let fundo = UIView()
     private let icon = UIImageView()
     private let primary = UILabel()
     private let secondary = UILabel()
@@ -31,12 +36,14 @@ final class GestureHUDView: UIView {
 
     private func setup() {
         alpha = 0
-        layer.cornerRadius = 14
-        layer.cornerCurve = .continuous
-        clipsToBounds = true
-
-        blur.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(blur)
+        // O arredondamento vai no fundo, não no contêiner: recortar o
+        // contêiner cortaria junto as sombras do texto, que são o que mantém
+        // a leitura possível agora que o fundo é translúcido.
+        fundo.layer.cornerRadius = 14
+        fundo.layer.cornerCurve = .continuous
+        fundo.backgroundColor = UIColor.black.withAlphaComponent(0.32)
+        fundo.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(fundo)
 
         icon.tintColor = .white
         icon.contentMode = .scaleAspectFit
@@ -45,6 +52,12 @@ final class GestureHUDView: UIView {
         primary.font = .monospacedDigitSystemFont(ofSize: 22, weight: .semibold)
         primary.textColor = .white
         primary.textAlignment = .center
+        [primary, secondary, icon].forEach { view in
+            view.layer.shadowColor = UIColor.black.cgColor
+            view.layer.shadowOpacity = 0.9
+            view.layer.shadowRadius = 3
+            view.layer.shadowOffset = .zero
+        }
 
         secondary.font = .monospacedDigitSystemFont(ofSize: 13, weight: .regular)
         secondary.textColor = UIColor.white.withAlphaComponent(0.65)
@@ -61,10 +74,10 @@ final class GestureHUDView: UIView {
         addSubview(stack)
 
         NSLayoutConstraint.activate([
-            blur.topAnchor.constraint(equalTo: topAnchor),
-            blur.bottomAnchor.constraint(equalTo: bottomAnchor),
-            blur.leadingAnchor.constraint(equalTo: leadingAnchor),
-            blur.trailingAnchor.constraint(equalTo: trailingAnchor),
+            fundo.topAnchor.constraint(equalTo: topAnchor),
+            fundo.bottomAnchor.constraint(equalTo: bottomAnchor),
+            fundo.leadingAnchor.constraint(equalTo: leadingAnchor),
+            fundo.trailingAnchor.constraint(equalTo: trailingAnchor),
 
             stack.topAnchor.constraint(equalTo: topAnchor, constant: 16),
             stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -16),
