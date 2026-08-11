@@ -4,12 +4,16 @@ import SwiftUI
 struct SMBServersView: View {
 
     @EnvironmentObject private var store: SMBServerStore
+    @StateObject private var discovery = SMBDiscovery()
     @State private var editing: SMBServer?
     @State private var pendingDeletion: SMBServer?
     @State private var addingNew = false
+    @State private var prefilled: SMBServer?
 
     var body: some View {
         List {
+            procuraAutomatica
+
             if store.servers.isEmpty {
                 ContentUnavailableView {
                     Label("Nenhum servidor", systemImage: "server.rack")
@@ -75,6 +79,8 @@ struct SMBServersView: View {
             Text("Remove “\(server.name)” da lista e apaga a senha guardada no Keychain do aparelho.")
         }
         .navigationTitle("Servidores")
+        .task { discovery.start() }
+        .onDisappear { discovery.stop() }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button { addingNew = true } label: { Image(systemName: "plus") }
@@ -86,6 +92,51 @@ struct SMBServersView: View {
         .sheet(item: $editing) { server in
             SMBServerEditView(server: server)
         }
+        .sheet(item: $prefilled) { server in
+            SMBServerEditView(server: server, isNew: true)
+        }
+    }
+
+    /// Servidores achados na rede, com o que já está salvo filtrado fora —
+    /// oferecer de novo o que o usuário já cadastrou só polui a lista.
+    @ViewBuilder
+    private var procuraAutomatica: some View {
+        let novos = discovery.results.filter { achado in
+            !store.servers.contains { $0.host.caseInsensitiveCompare(achado.host) == .orderedSame }
+        }
+
+        if discovery.isSearching || !novos.isEmpty {
+            Section {
+                ForEach(novos) { achado in
+                    Button {
+                        // Abre o formulário já preenchido: o endereço é a parte
+                        // chata de descobrir, o usuário só completa o acesso.
+                        prefilled = SMBServer(name: achado.name, host: achado.host, username: "")
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "globe")
+                                .foregroundStyle(.tint)
+                                .frame(width: 26)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(achado.name).foregroundStyle(.primary)
+                                Text("SMB").font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "plus.circle").foregroundStyle(.tint)
+                        }
+                    }
+                }
+
+                if discovery.isSearching {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("Procurando na rede…").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            } header: {
+                Text("Procura automática")
+            }
+        }
     }
 }
 
@@ -96,6 +147,9 @@ struct SMBServerEditView: View {
     @Environment(\.dismiss) private var dismiss
 
     let server: SMBServer?
+    /// Vindo da procura automática o formulário chega preenchido, mas ainda é
+    /// um cadastro novo — o título precisa dizer isso.
+    var isNew = false
 
     @State private var name = ""
     @State private var host = ""
@@ -138,7 +192,7 @@ struct SMBServerEditView: View {
                     Text("A senha fica no Keychain do aparelho, não junto das outras configurações.")
                 }
             }
-            .navigationTitle(server == nil ? "Novo servidor" : "Editar servidor")
+            .navigationTitle((server == nil || isNew) ? "Novo servidor" : "Editar servidor")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
