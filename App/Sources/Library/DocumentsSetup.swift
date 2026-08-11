@@ -16,8 +16,16 @@ enum DocumentsSetup {
             return
         }
 
-        let conteudo = (try? gerenciador.contentsOfDirectory(atPath: documentos.path)) ?? []
-        guard conteudo.isEmpty else { return }
+        // Basta UM arquivo de verdade para o iOS mostrar o app no Arquivos —
+        // pasta vazia, ou só com subpastas vazias, ele esconde. Verificar isso
+        // a cada abertura, e não só quando tudo está vazio, evita a pasta
+        // sumir depois que o usuário apaga o aviso que deixamos.
+        let conteudo = (try? gerenciador.contentsOfDirectory(at: documentos,
+                                                            includingPropertiesForKeys: [.isDirectoryKey])) ?? []
+        let temArquivo = conteudo.contains { url in
+            (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == false
+        }
+        guard !temArquivo else { return }
 
         // Uma pasta óbvia para arrastar arquivos, e um aviso explicando o
         // porquê de ela existir — para não parecer lixo deixado pelo app.

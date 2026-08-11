@@ -197,6 +197,17 @@ final class PlayerViewController: UIViewController {
     private func bindEngine() {
         engine.onTimeUpdate = { [weak self] time in
             guard let self else { return }
+
+            // Aplica a retomada no primeiro sinal de que a reprodução começou
+            // DE VERDADE. `play()` marca o estado como tocando na hora, antes
+            // de o VLC posicionar o arquivo — buscar ali é ignorado, e o vídeo
+            // seguia do zero. Atualização de tempo só chega com ele rodando.
+            if let alvo = self.pendingResume, self.engine.duration > 0 {
+                self.pendingResume = nil
+                Task { @MainActor in await self.engine.seek(to: alvo, precise: false) }
+                return
+            }
+
             self.controls.update(currentTime: time, duration: self.engine.duration)
             self.saveResumePoint(time)
         }
@@ -212,10 +223,6 @@ final class PlayerViewController: UIViewController {
             self.controls.apply(state: state)
             if case .failed(let message) = state { self.presentError(message) }
 
-            if state == .playing, let alvo = self.pendingResume {
-                self.pendingResume = nil
-                Task { @MainActor in await self.engine.seek(to: alvo, precise: false) }
-            }
             if state == .ended { self.handlePlaybackEnded() }
         }
     }
