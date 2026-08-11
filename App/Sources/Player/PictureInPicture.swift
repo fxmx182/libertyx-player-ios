@@ -25,9 +25,10 @@ final class PictureInPicture: NSObject {
         self.engine = engine
         super.init()
 
-        guard AVPictureInPictureController.isPictureInPictureSupported() else { return }
-
-        let novo = AVPictureInPictureController(playerLayer: playerLayer)
+        // `init(playerLayer:)` é falível: devolve nil quando o sistema recusa
+        // montar o controlador para aquela camada.
+        guard AVPictureInPictureController.isPictureInPictureSupported(),
+              let novo = AVPictureInPictureController(playerLayer: playerLayer) else { return }
         novo.delegate = self
         novo.canStartPictureInPictureAutomaticallyFromInline = true
         controller = novo
