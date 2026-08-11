@@ -126,7 +126,10 @@ struct SMBMediaInfoView: View {
                 let lido = try await connection.probe(share: share, path: path)
                 info = lido
                 let instante = lido.duration > 0 ? lido.duration * 0.1 : 0
-                thumbnail = try? await connection.thumbnail(share: share, path: path, at: instante)
+                // O método passou a devolver quadro + duração; aqui só o quadro
+                // interessa, já que a duração veio da sondagem acima.
+                thumbnail = (try? await connection.thumbnail(share: share, path: path,
+                                                            at: instante))?.image
             } catch {
                 failure = error.localizedDescription
             }
