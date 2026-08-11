@@ -962,7 +962,10 @@ final class PlayerViewController: UIViewController {
                 panAxis = dx > dy ? .horizontal : .vertical
                 // Qualquer gesto em curso segura os controles na tela.
                 controlsHideWorkItem?.cancel()
-                if panAxis == .horizontal { engine.beginScrub() }
+                if panAxis == .horizontal {
+                    controls.suppressBuffering = true
+                    engine.beginScrub()
+                }
             }
 
             switch panAxis {
@@ -975,6 +978,7 @@ final class PlayerViewController: UIViewController {
             if panAxis == .horizontal {
                 commitSeekPan()
                 engine.endScrub()
+                controls.suppressBuffering = false
             }
             panAxis = .undecided
             scheduleControlsHide()
@@ -996,9 +1000,8 @@ final class PlayerViewController: UIViewController {
         let delta = Double(dx) * secondsPerPoint
         let target = max(0, min(panStartTime + delta, engine.duration))
 
-        // Sem balão central aqui: ele aparece bem no meio da imagem justamente
-        // enquanto o usuário procura uma cena. A barra embaixo já mostra o
-        // tempo de destino, e não cobre nada.
+        // Só o tempo, sem caixa em volta: informa o destino sem tapar a cena.
+        hud.show(.time(target))
         controls.update(currentTime: target, duration: engine.duration)
 
         // É aqui que mora a "rolagem integral": em vez de só mostrar um rótulo e
@@ -1055,10 +1058,12 @@ final class PlayerViewController: UIViewController {
         if finished {
             engine.endScrub()
             isBarScrubbing = false
+            controls.suppressBuffering = false
             scheduleControlsHide()
         } else {
             if !isBarScrubbing {
                 isBarScrubbing = true
+                controls.suppressBuffering = true
                 engine.beginScrub()
             }
             // Com o dedo na barra, esconder no meio do arrasto é o pior

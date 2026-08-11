@@ -383,7 +383,15 @@ final class PlayerControlsView: UIView {
 
     /// Enquanto carrega, o transporte some e a roda aparece: sem esse aviso,
     /// espera pela rede é indistinguível de travamento.
+    /// Enquanto o dedo arrasta, nenhum indicador aparece no centro — foi o
+    /// pedido explícito, e faz sentido: ali o usuário quer ver a imagem, não
+    /// um aviso de que ela está carregando.
+    var suppressBuffering = false {
+        didSet { if suppressBuffering { spinner.stopAnimating() } }
+    }
+
     func setBuffering(_ buffering: Bool) {
+        guard !suppressBuffering else { return }
         // Só a roda aparece e some. Antes o transporte era escondido junto, e
         // como o carregamento oscila durante a rolagem, os botões piscavam. A
         // roda fica no centro e o transporte no rodapé; não se atrapalham.

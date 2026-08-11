@@ -10,6 +10,9 @@ final class GestureHUDView: UIView {
         case seek(delta: Double, target: Double, duration: Double)
         case rate(Float)
         case text(String)
+        /// Só o tempo de destino, sem caixa em volta. Usado durante o arrasto,
+        /// quando o usuário está justamente tentando enxergar a imagem.
+        case time(Double)
     }
 
     /// Fundo translúcido em vez de desfoque opaco.
@@ -130,6 +133,28 @@ final class GestureHUDView: UIView {
             primary.text = value
             secondary.isHidden = true
             bar.isHidden = true
+
+        case .time(let instante):
+            icon.isHidden = true
+            primary.text = TimeFormat.clock(instante)
+            secondary.isHidden = true
+            bar.isHidden = true
+        }
+
+        // Sem caixa nem barra, o número é a única referência na tela — e
+        // precisa ser lido de relance, com o dedo em movimento.
+        if case .time = content {
+            primary.font = .monospacedDigitSystemFont(ofSize: 34, weight: .bold)
+        } else {
+            primary.font = .monospacedDigitSystemFont(ofSize: 22, weight: .semibold)
+        }
+
+        // O fundo some no modo tempo: a sombra do texto basta para ele ficar
+        // legível, e nada cobre a cena que se está procurando.
+        if case .time = content {
+            fundo.alpha = 0
+        } else {
+            fundo.alpha = 1
         }
 
         guard alpha < 1 else { return }
