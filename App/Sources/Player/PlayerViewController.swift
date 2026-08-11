@@ -55,6 +55,8 @@ final class PlayerViewController: UIViewController {
     private var didPresentError = false
     private var playbackSpeed: Float = 1.0
     private var lastSavedPosition: Double = 0
+    /// Instante a retomar assim que a reprodução começar de fato.
+    private var pendingResume: Double?
 
     // MARK: - Ferramentas
 
@@ -206,6 +208,11 @@ final class PlayerViewController: UIViewController {
             guard let self else { return }
             self.controls.apply(state: state)
             if case .failed(let message) = state { self.presentError(message) }
+
+            if state == .playing, let alvo = self.pendingResume {
+                self.pendingResume = nil
+                Task { @MainActor in await self.engine.seek(to: alvo, precise: false) }
+            }
             if state == .ended { self.handlePlaybackEnded() }
         }
     }
@@ -219,8 +226,11 @@ final class PlayerViewController: UIViewController {
                 // Retomar é pergunta, não regra: às vezes se quer rever o
                 // filme desde o começo, e voltar sozinho ao meio obriga a
                 // desfazer na mão toda vez.
-                if let retomada = ResumeStore.shared.position(for: item.origin.resumeKey),
-                   retomada < engine.duration {
+                // Sem comparar com a duração: o VLC só a conhece depois de
+                // começar a tocar, então a condição nunca passava e a pergunta
+                // nunca aparecia. Quem valida a marca é o próprio ResumeStore,
+                // que guardou a duração junto.
+                if let retomada = ResumeStore.shared.position(for: item.origin.resumeKey) {
                     perguntarRetomada(de: retomada)
                 } else {
                     engine.play()
@@ -248,11 +258,12 @@ final class PlayerViewController: UIViewController {
         alerta.addAction(UIAlertAction(title: "Continuar de \(TimeFormat.clock(instante))",
                                        style: .default) { [weak self] _ in
             guard let self else { return }
-            Task { @MainActor in
-                await self.engine.seek(to: instante, precise: false)
-                self.engine.play()
-                self.scheduleControlsHide()
-            }
+            // Buscar antes de a reprodução começar é ignorado pelo VLC — ele
+            // ainda não tem o arquivo posicionado. A marca fica guardada e é
+            // aplicada assim que ele começa a tocar.
+            self.pendingResume = instante
+            self.engine.play()
+            self.scheduleControlsHide()
         })
 
         alerta.addAction(UIAlertAction(title: "Começar do início", style: .default) { [weak self] _ in
