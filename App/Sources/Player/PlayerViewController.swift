@@ -20,7 +20,6 @@ final class PlayerViewController: UIViewController {
         static let axisLockThreshold: CGFloat = 12
         static let doubleTapSeconds: Double = 10
         static let holdToSpeedRate: Float = 2.0
-        static let controlsAutoHideDelay: TimeInterval = 4.0
     }
 
     private enum PanAxis { case undecided, horizontal, vertical }
@@ -697,6 +696,10 @@ final class PlayerViewController: UIViewController {
             .init(id: "girar", symbol: "rotate.right", title: "Girar tela") { [weak self] in
                 self?.toggleOrientation()
             },
+            .init(id: "interface", symbol: "clock.arrow.circlepath", title: "Ocultar barra",
+                  isOn: PlayerPreferences.autoHide == .nunca) { [weak self] in
+                      self?.showAutoHideSheet()
+                  },
         ])
 
         if pip?.isSupported == true {
@@ -762,6 +765,25 @@ final class PlayerViewController: UIViewController {
                                  seconds: max(1, self.engine.duration - self.engine.currentTime))
             self.refreshToolStrip()
         })
+        sheet.addAction(UIAlertAction(title: "Fechar", style: .cancel))
+        presentSheet(sheet)
+    }
+
+    /// Quanto tempo a barra fica na tela — o "Interface auto hide" do MX Player.
+    private func showAutoHideSheet() {
+        let atual = PlayerPreferences.autoHide
+        let sheet = UIAlertController(title: "Ocultar barra depois de",
+                                      message: nil, preferredStyle: .actionSheet)
+        for opcao in PlayerPreferences.AutoHide.allCases {
+            let marca = opcao == atual ? "✓ " : ""
+            sheet.addAction(UIAlertAction(title: marca + opcao.title, style: .default) { [weak self] _ in
+                PlayerPreferences.autoHide = opcao
+                self?.refreshToolStrip()
+                // Reagenda já com o valor novo, para o efeito ser sentido
+                // nesta mesma vez em vez de só no próximo toque.
+                self?.scheduleControlsHide()
+            })
+        }
         sheet.addAction(UIAlertAction(title: "Fechar", style: .cancel))
         presentSheet(sheet)
     }
@@ -1084,7 +1106,13 @@ final class PlayerViewController: UIViewController {
             guard self.engine.state != .paused else { return }
             self.controls.setVisible(false, animated: true)
         }
+        // Em "Nunca" a barra fica até o usuário tocar na tela — o agendamento
+        // simplesmente não acontece.
+        guard let atraso = PlayerPreferences.autoHide.delay else {
+            controlsHideWorkItem = nil
+            return
+        }
         controlsHideWorkItem = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + Tuning.controlsAutoHideDelay, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + atraso, execute: work)
     }
 }
