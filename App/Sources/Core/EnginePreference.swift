@@ -29,8 +29,8 @@ enum EnginePreference: String, CaseIterable {
 
     var detail: String {
         switch self {
-        case .automatic: return "Próprio nos arquivos, VLC na rede"
-        case .own:       return "Rolagem quadro a quadro e janela flutuante"
+        case .automatic: return "VLC — o mais confiável hoje"
+        case .own:       return "Experimental: rolagem quadro a quadro e PiP"
         case .vlc:       return "Mais robusto em rede e formatos raros"
         }
     }
@@ -52,10 +52,14 @@ enum EnginePreference: String, CaseIterable {
         case .own: return .own
         case .vlc: return .vlc
         case .automatic:
-            switch origin {
-            case .file:              return .own
-            case .smb, .remote:      return .vlc
-            }
+            // VLC em tudo.
+            //
+            // A ideia de mandar arquivos locais para o motor próprio custou
+            // regressões imediatas: um vídeo que fechava o app e um filme que
+            // deixou de abrir. Enquanto o motor próprio não estiver estável, o
+            // padrão não pode ser ele — quem escolhe experimentar aceita o
+            // risco; quem só quer assistir, não.
+            return .vlc
         }
     }
 
