@@ -19,6 +19,19 @@ final class VLCEngine: NSObject, PlaybackEngine {
     private let player = VLCMediaPlayer()
     private let container = VLCRenderView()
     private var savedVolume: Float = 1.0
+    /// Avisa a interface só na mudança.
+    ///
+    /// Emitir a cada atualização de tempo fazia o transporte piscar; emitir só
+    /// quando o VLC anuncia "tocando" deixava o indicador aceso para sempre,
+    /// porque ele emite "carregando" durante a reprodução normal e nem sempre
+    /// volta a anunciar. Reagir à transição resolve os dois.
+    private var buffering = false {
+        didSet {
+            guard buffering != oldValue else { return }
+            onBufferingChange?(buffering)
+        }
+    }
+
     private var pendingScrub: Double?
     private var scrubWork: DispatchWorkItem?
     private var lastScrubApplied: CFTimeInterval = 0
@@ -290,9 +303,9 @@ extension VLCEngine: VLCMediaPlayerDelegate {
     func mediaPlayerStateChanged(_ notification: Notification) {
         switch player.state {
         case .opening:   state = .loading
-        case .buffering: onBufferingChange?(true)
+        case .buffering: buffering = true
         case .playing:
-            onBufferingChange?(false)
+            buffering = false
             // O objeto de áudio do VLC só existe depois que a saída sobe;
             // reaplicar aqui garante que o ganho interno fique em 100% e o
             // volume que vale seja o do aparelho.
@@ -307,10 +320,10 @@ extension VLCEngine: VLCMediaPlayerDelegate {
     }
 
     func mediaPlayerTimeChanged(_ notification: Notification) {
-        // Nada de mexer no indicador de carregamento aqui: isto dispara
-        // várias vezes por segundo, e ligar/desligar a roda a cada disparo
-        // fazia o transporte piscar durante a busca. O carregamento é
-        // reportado só quando o VLC muda de estado.
+        // Tempo andando é a prova de que não está carregando — mais confiável
+        // que o estado que o VLC anuncia. Como só emite na transição, isto não
+        // volta a fazer o transporte piscar.
+        buffering = false
         onTimeUpdate?(currentTime)
     }
 }
