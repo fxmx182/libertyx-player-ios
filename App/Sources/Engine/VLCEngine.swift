@@ -19,6 +19,9 @@ final class VLCEngine: NSObject, PlaybackEngine {
     private let player = VLCMediaPlayer()
     private let container = VLCRenderView()
     private var savedVolume: Float = 1.0
+    private var pendingScrub: Double?
+    private var scrubWork: DispatchWorkItem?
+    private var lastScrubApplied: CFTimeInterval = 0
 
     /// Permissão de leitura do arquivo, mantida enquanto a reprodução durar.
     ///
@@ -160,22 +163,55 @@ final class VLCEngine: NSObject, PlaybackEngine {
     func seek(to time: Double, precise: Bool) async {
         guard duration > 0 else { return }
         let alvo = max(0, min(time, duration))
-        onBufferingChange?(true)
+        // Sem acender a roda: o VLC busca rápido, e o pisca-pisca do indicador
+        // incomodava mais do que a espera que ele anunciava.
         player.time = VLCTime(int: Int32(alvo * 1000))
         onTimeUpdate?(alvo)
-        onBufferingChange?(false)
     }
 
     // MARK: - Rolagem
 
     func beginScrub() {}
 
-    /// Sem parar a reprodução: o VLC busca rápido o bastante para acompanhar o
-    /// dedo, e parar/retomar a cada movimento causaria mais engasgo que fluidez.
+    /// Rolagem com ritmo controlado.
+    ///
+    /// O dedo gera dezenas de eventos por segundo; mandar cada um para o VLC
+    /// faz ele abortar e reiniciar a busca sem parar, e a imagem trava em vez
+    /// de acompanhar. Aplicando no máximo a cada 80 ms, cada busca tem tempo de
+    /// mostrar o quadro antes da próxima — o movimento fica contínuo.
     func scrub(to time: Double) {
         guard duration > 0 else { return }
-        player.time = VLCTime(int: Int32(max(0, min(time, duration)) * 1000))
-        onTimeUpdate?(time)
+        let alvo = max(0, min(time, duration))
+        pendingScrub = alvo
+        onTimeUpdate?(alvo)
+
+        let agora = CACurrentMediaTime()
+        guard agora - lastScrubApplied >= 0.08 else {
+            agendarScrubPendente()
+            return
+        }
+        aplicarScrub(alvo, em: agora)
+    }
+
+    private func aplicarScrub(_ alvo: Double, em instante: CFTimeInterval) {
+        lastScrubApplied = instante
+        pendingScrub = nil
+        player.time = VLCTime(int: Int32(alvo * 1000))
+    }
+
+    /// Garante que o último ponto arrastado seja aplicado mesmo que o dedo
+    /// pare — senão a imagem ficaria num ponto anterior ao que a barra mostra.
+    private func agendarScrubPendente() {
+        guard scrubWork == nil else { return }
+        let trabalho = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.scrubWork = nil
+            if let alvo = self.pendingScrub {
+                self.aplicarScrub(alvo, em: CACurrentMediaTime())
+            }
+        }
+        scrubWork = trabalho
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: trabalho)
     }
 
     func endScrub() {}
@@ -271,7 +307,10 @@ extension VLCEngine: VLCMediaPlayerDelegate {
     }
 
     func mediaPlayerTimeChanged(_ notification: Notification) {
-        onBufferingChange?(false)
+        // Nada de mexer no indicador de carregamento aqui: isto dispara
+        // várias vezes por segundo, e ligar/desligar a roda a cada disparo
+        // fazia o transporte piscar durante a busca. O carregamento é
+        // reportado só quando o VLC muda de estado.
         onTimeUpdate?(currentTime)
     }
 }

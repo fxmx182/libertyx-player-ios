@@ -206,8 +206,11 @@ final class PlayerControlsView: UIView {
 
         slider.minimumTrackTintColor = tintColor
         slider.maximumTrackTintColor = UIColor.white.withAlphaComponent(0.35)
-        slider.setThumbImage(Self.thumbImage(diameter: 14), for: .normal)
-        slider.setThumbImage(Self.thumbImage(diameter: 22), for: .highlighted)
+        slider.setThumbImage(Self.thumbImage(diameter: 15), for: .normal)
+        slider.setThumbImage(Self.thumbImage(diameter: 24), for: .highlighted)
+        // Escalar na vertical engrossa a trilha sem precisar desenhar imagens
+        // próprias para ela — o UISlider não expõe espessura.
+        slider.transform = CGAffineTransform(scaleX: 1, y: 1.8)
         slider.translatesAutoresizingMaskIntoConstraints = false
         slider.addTarget(self, action: #selector(sliderChanged), for: .valueChanged)
         slider.addTarget(self, action: #selector(sliderTouchDown), for: .touchDown)
@@ -259,7 +262,7 @@ final class PlayerControlsView: UIView {
 
             // Linha de cima: tempo decorrido, barra, duração total.
             elapsedLabel.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 16),
-            elapsedLabel.bottomAnchor.constraint(equalTo: lockButton.topAnchor, constant: -10),
+            elapsedLabel.bottomAnchor.constraint(equalTo: lockButton.topAnchor, constant: -2),
 
             totalLabel.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -16),
             totalLabel.centerYAnchor.constraint(equalTo: elapsedLabel.centerYAnchor),

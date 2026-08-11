@@ -20,7 +20,7 @@ final class PlayerViewController: UIViewController {
         static let axisLockThreshold: CGFloat = 12
         static let doubleTapSeconds: Double = 10
         static let holdToSpeedRate: Float = 2.0
-        static let controlsAutoHideDelay: TimeInterval = 3.5
+        static let controlsAutoHideDelay: TimeInterval = 2.0
     }
 
     private enum PanAxis { case undecided, horizontal, vertical }
@@ -216,22 +216,53 @@ final class PlayerViewController: UIViewController {
                 try await engine.load(item)
                 controls.update(currentTime: 0, duration: engine.duration)
 
-                // Retomar antes de dar play: começar do zero e só depois
-                // saltar mostraria o início do filme por um instante e gastaria
-                // uma busca à toa — cara, num arquivo pela rede.
+                // Retomar é pergunta, não regra: às vezes se quer rever o
+                // filme desde o começo, e voltar sozinho ao meio obriga a
+                // desfazer na mão toda vez.
                 if let retomada = ResumeStore.shared.position(for: item.origin.resumeKey),
                    retomada < engine.duration {
-                    await engine.seek(to: retomada, precise: false)
-                    hud.show(.text("Retomando de \(TimeFormat.clock(retomada))"))
-                    hud.hideAfterDelay(2.0)
+                    perguntarRetomada(de: retomada)
+                } else {
+                    engine.play()
+                    scheduleControlsHide()
                 }
-
-                engine.play()
-                scheduleControlsHide()
             } catch {
                 presentError(error.localizedDescription)
             }
         }
+    }
+
+    /// Pergunta antes de retomar.
+    ///
+    /// Voltar sozinho ao meio do filme é útil na maioria das vezes e péssimo
+    /// quando se quer rever desde o começo — e desfazer isso na mão, toda vez,
+    /// cansa mais do que responder uma pergunta.
+    private func perguntarRetomada(de instante: Double) {
+        controlsHideWorkItem?.cancel()
+
+        let alerta = UIAlertController(
+            title: item.title,
+            message: "Você parou em \(TimeFormat.clock(instante)).",
+            preferredStyle: .alert)
+
+        alerta.addAction(UIAlertAction(title: "Continuar de \(TimeFormat.clock(instante))",
+                                       style: .default) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                await self.engine.seek(to: instante, precise: false)
+                self.engine.play()
+                self.scheduleControlsHide()
+            }
+        })
+
+        alerta.addAction(UIAlertAction(title: "Começar do início", style: .default) { [weak self] _ in
+            guard let self else { return }
+            ResumeStore.shared.clear(key: self.item.origin.resumeKey)
+            self.engine.play()
+            self.scheduleControlsHide()
+        })
+
+        present(alerta, animated: true)
     }
 
     /// Guarda a posição de tempos em tempos, não a cada quadro: são ~30
@@ -831,6 +862,7 @@ final class PlayerViewController: UIViewController {
         if kind == .subtitle {
             let acao = UIAlertAction(title: atual == nil ? "✓ Desligada" : "Desligada",
                                      style: .default) { [weak self] _ in
+                self?.scheduleControlsHide()
                 Task { await self?.engine.selectSubtitleTrack(nil) }
             }
             sheet.addAction(acao)
@@ -841,6 +873,9 @@ final class PlayerViewController: UIViewController {
             let extra = faixa.isBitmap ? " (imagem)" : ""
             let acao = UIAlertAction(title: "\(marca)\(faixa.label)\(extra)", style: .default) { [weak self] _ in
                 guard let self else { return }
+                // Sem isto a barra ficava presa na tela depois de trocar de
+                // faixa: abrir a lista cancela o agendamento e nada o repunha.
+                self.scheduleControlsHide()
                 Task {
                     if kind == .audio {
                         await self.engine.selectAudioTrack(faixa.id)
@@ -857,7 +892,9 @@ final class PlayerViewController: UIViewController {
                 ? "Este arquivo tem só uma faixa de áudio."
                 : "Este arquivo não tem legendas embutidas."
         }
-        sheet.addAction(UIAlertAction(title: "Fechar", style: .cancel))
+        sheet.addAction(UIAlertAction(title: "Fechar", style: .cancel) { [weak self] _ in
+            self?.scheduleControlsHide()
+        })
         presentSheet(sheet)
     }
 

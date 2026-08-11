@@ -40,6 +40,17 @@ enum DocumentsSetup {
           · Pendrive na USB-C: no app, + > Adicionar pasta
           · Servidor de rede: no app, ícone de servidor > Servidores SMB
 
+        ATENÇÃO AO ATUALIZAR O APP
+        ---------------------------
+        Instale a versão nova POR CIMA da antiga. Se você apagar o LabPlayer
+        antes de reinstalar, o iOS apaga junto tudo que estiver nesta pasta —
+        é o sistema removendo o espaço do app, não o app apagando nada.
+
+        Para arquivos que você não quer arriscar, prefira guardá-los fora
+        daqui — numa pasta do iCloud Drive ou do próprio app Arquivos — e
+        autorizá-la no LabPlayer em + > Adicionar pasta. Assim eles sobrevivem
+        a qualquer reinstalação.
+
         Este arquivo existe por um motivo técnico: o iOS esconde a pasta de um
         app enquanto ela está vazia. Pode apagá-lo depois de colocar algum
         vídeo aqui.
