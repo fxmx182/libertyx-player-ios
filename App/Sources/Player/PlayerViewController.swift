@@ -20,7 +20,7 @@ final class PlayerViewController: UIViewController {
         static let axisLockThreshold: CGFloat = 12
         static let doubleTapSeconds: Double = 10
         static let holdToSpeedRate: Float = 2.0
-        static let controlsAutoHideDelay: TimeInterval = 2.0
+        static let controlsAutoHideDelay: TimeInterval = 4.0
     }
 
     private enum PanAxis { case undecided, horizontal, vertical }
@@ -184,7 +184,6 @@ final class PlayerViewController: UIViewController {
         guard pip?.isActive != true else { return }
         volumeObservation?.invalidate()
         volumeObservation = nil
-        ThumbnailStore.isSuspended = false
         cancelSleepTimer()
         engine.teardown()
     }
@@ -997,7 +996,9 @@ final class PlayerViewController: UIViewController {
         let delta = Double(dx) * secondsPerPoint
         let target = max(0, min(panStartTime + delta, engine.duration))
 
-        hud.show(.seek(delta: target - panStartTime, target: target, duration: engine.duration))
+        // Sem balão central aqui: ele aparece bem no meio da imagem justamente
+        // enquanto o usuário procura uma cena. A barra embaixo já mostra o
+        // tempo de destino, e não cobre nada.
         controls.update(currentTime: target, duration: engine.duration)
 
         // É aqui que mora a "rolagem integral": em vez de só mostrar um rótulo e

@@ -217,17 +217,26 @@ final class PlayerControlsView: UIView {
         slider.addTarget(self, action: #selector(sliderTouchUp),
                          for: [.touchUpInside, .touchUpOutside, .touchCancel])
 
-        configure(lockButton, symbol: "lock.open", action: #selector(lockTapped))
-        configure(previousButton, symbol: "backward.end.fill", size: 22, action: #selector(previousTapped))
-        configure(playButton, symbol: "play.fill", size: 30, weight: .semibold, action: #selector(playTapped))
-        configure(nextButton, symbol: "forward.end.fill", size: 22, action: #selector(nextTapped))
-        configure(aspectButton, symbol: "arrow.left.and.right", action: #selector(aspectTapped))
-        configure(pipButton, symbol: "pip.enter", action: #selector(pipTapped))
+        configure(lockButton, symbol: "lock.open", size: 20, action: #selector(lockTapped))
+        configure(previousButton, symbol: "backward.end.fill", size: 27, action: #selector(previousTapped))
+        configure(playButton, symbol: "play.fill", size: 38, weight: .semibold, action: #selector(playTapped))
+        configure(nextButton, symbol: "forward.end.fill", size: 27, action: #selector(nextTapped))
+        configure(aspectButton, symbol: "arrow.left.and.right", size: 20, action: #selector(aspectTapped))
+        configure(pipButton, symbol: "pip.enter", size: 20, action: #selector(pipTapped))
+
+        // Área de toque generosa: o alvo confortável para o dedo é 44 pt, e
+        // esses botões ficam perto da borda inferior, onde errar é mais fácil.
+        [previousButton, nextButton].forEach {
+            $0.widthAnchor.constraint(equalToConstant: 60).isActive = true
+            $0.heightAnchor.constraint(equalToConstant: 56).isActive = true
+        }
+        playButton.widthAnchor.constraint(equalToConstant: 68).isActive = true
+        playButton.heightAnchor.constraint(equalToConstant: 56).isActive = true
         pipButton.isHidden = true
 
         transport.axis = .horizontal
         transport.alignment = .center
-        transport.spacing = 34
+        transport.spacing = 22
         transport.translatesAutoresizingMaskIntoConstraints = false
         [previousButton, playButton, nextButton].forEach(transport.addArrangedSubview)
 
@@ -238,31 +247,31 @@ final class PlayerControlsView: UIView {
             bottomBar.bottomAnchor.constraint(equalTo: bottomAnchor),
             bottomBar.leadingAnchor.constraint(equalTo: leadingAnchor),
             bottomBar.trailingAnchor.constraint(equalTo: trailingAnchor),
-            bottomBar.heightAnchor.constraint(equalToConstant: 128),
+            bottomBar.heightAnchor.constraint(equalToConstant: 148),
 
             // Linha de baixo: bloqueio à esquerda, transporte no centro,
             // enquadramento e janela flutuante à direita.
             lockButton.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 10),
             lockButton.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -8),
-            lockButton.widthAnchor.constraint(equalToConstant: 46),
-            lockButton.heightAnchor.constraint(equalToConstant: 46),
+            lockButton.widthAnchor.constraint(equalToConstant: 52),
+            lockButton.heightAnchor.constraint(equalToConstant: 52),
 
             transport.centerXAnchor.constraint(equalTo: centerXAnchor),
             transport.centerYAnchor.constraint(equalTo: lockButton.centerYAnchor),
 
             pipButton.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -10),
             pipButton.centerYAnchor.constraint(equalTo: lockButton.centerYAnchor),
-            pipButton.widthAnchor.constraint(equalToConstant: 46),
-            pipButton.heightAnchor.constraint(equalToConstant: 46),
+            pipButton.widthAnchor.constraint(equalToConstant: 52),
+            pipButton.heightAnchor.constraint(equalToConstant: 52),
 
             aspectButton.trailingAnchor.constraint(equalTo: pipButton.leadingAnchor, constant: -2),
             aspectButton.centerYAnchor.constraint(equalTo: lockButton.centerYAnchor),
-            aspectButton.widthAnchor.constraint(equalToConstant: 46),
-            aspectButton.heightAnchor.constraint(equalToConstant: 46),
+            aspectButton.widthAnchor.constraint(equalToConstant: 52),
+            aspectButton.heightAnchor.constraint(equalToConstant: 52),
 
             // Linha de cima: tempo decorrido, barra, duração total.
             elapsedLabel.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 16),
-            elapsedLabel.bottomAnchor.constraint(equalTo: lockButton.topAnchor, constant: -2),
+            elapsedLabel.bottomAnchor.constraint(equalTo: lockButton.topAnchor, constant: -16),
 
             totalLabel.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -16),
             totalLabel.centerYAnchor.constraint(equalTo: elapsedLabel.centerYAnchor),

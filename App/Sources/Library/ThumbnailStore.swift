@@ -1,5 +1,6 @@
 import UIKit
 import CryptoKit
+import AVFoundation
 
 /// Gera e guarda as miniaturas dos vídeos.
 ///
@@ -89,7 +90,14 @@ final class ThumbnailStore: ObservableObject {
 
     private func gerar(_ item: MediaItem) async -> (UIImage, Double)? {
         switch item.origin {
-        case .file:
+        case .file(let url, let bookmark):
+            // AVFoundation primeiro: é o gerador de miniatura da própria Apple,
+            // muito mais confiável nos MP4 e MOV gravados pelo celular — que
+            // são a maioria. O caminho FFmpeg fica para o que ela recusa.
+            if let porApple = await gerarComAVFoundation(url: url, bookmark: bookmark) {
+                return porApple
+            }
+
             let origem = item.origin
             let previa = try? await FFmpegRunner.run {
                 try FileAccess.withAccess(origem) { caminho in
@@ -97,7 +105,10 @@ final class ThumbnailStore: ObservableObject {
                                                maxWidth: FrameExtractor.listWidth)
                 }
             }
-            guard let previa = previa ?? nil else { return nil }
+            guard let previa = previa ?? nil else {
+                LabLog.problem("miniatura falhou: \(item.title)")
+                return nil
+            }
             return (UIImage(cgImage: previa.image), previa.duration)
 
         case .smb(let referencia, let caminho):
@@ -112,6 +123,33 @@ final class ThumbnailStore: ObservableObject {
         case .remote:
             return nil
         }
+    }
+
+    /// Miniatura pelo gerador da Apple.
+    ///
+    /// O escopo de segurança fica aberto durante toda a geração — ela é
+    /// assíncrona, e fechar antes faria a leitura falhar no meio.
+    private func gerarComAVFoundation(url: URL, bookmark: Data?) async -> (UIImage, Double)? {
+        let guarda = ScopedAccess(url: url, bookmark: bookmark)
+        guard guarda.path != nil else { return nil }
+
+        let asset = AVURLAsset(url: url)
+        guard (try? await asset.load(.isPlayable)) == true else { return nil }
+
+        let duracao = (try? await asset.load(.duration).seconds) ?? 0
+        let gerador = AVAssetImageGenerator(asset: asset)
+        // Respeita a rotação gravada pelo celular; sem isso vídeo em pé sai
+        // deitado na miniatura.
+        gerador.appliesPreferredTrackTransform = true
+        gerador.maximumSize = CGSize(width: 320, height: 320)
+
+        // 10% da duração, com teto de 12 s: passa da abertura escura sem cair
+        // depois do fim num vídeo curto.
+        let instante = duracao > 0 ? min(Self.momento, duracao * 0.1) : 0
+        let alvo = CMTime(seconds: max(0, instante), preferredTimescale: 600)
+
+        guard let cg = try? await gerador.image(at: alvo).image else { return nil }
+        return withExtendedLifetime(guarda) { (UIImage(cgImage: cg), duracao) }
     }
 
     /// Uma conexão por servidor, reaproveitada: abrir sessão SMB a cada
