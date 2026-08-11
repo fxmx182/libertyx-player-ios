@@ -240,7 +240,8 @@ final class AVPlayerEngine: NSObject, PlaybackEngine {
 /// frames manualmente no layout.
 final class PlayerLayerView: UIView, VideoGravityAdjustable {
     override class var layerClass: AnyClass { AVPlayerLayer.self }
-    private var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
+    /// Exposta porque o Picture in Picture do sistema é montado sobre ela.
+    var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
 
     init(player: AVPlayer) {
         super.init(frame: .zero)

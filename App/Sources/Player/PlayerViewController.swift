@@ -164,13 +164,10 @@ final class PlayerViewController: UIViewController {
         controls.onTogglePiP = { [weak self] in self?.pip?.toggle() }
         controls.moreMenuProvider = { [weak self] in self?.buildToolsMenu() ?? [] }
 
-        // A janela flutuante é montada sobre a camada de desenho do motor
-        // próprio. O VLC desenha do jeito dele, então o botão some quando ela
-        // não está disponível — em vez de existir e não fazer nada.
-        if let ffmpeg = engine as? FFmpegEngine {
-            pip = PictureInPicture(engine: engine, layer: ffmpeg.displayLayer)
-        }
-        controls.setPiPAvailable(pip?.isSupported == true)
+        // A janela flutuante só é montada depois da carga: quem toca o
+        // arquivo é decidido ali, e só o AVPlayer oferece a camada que o
+        // sistema aceita para PiP.
+        controls.setPiPAvailable(false)
         refreshToolStrip()
 
         ThumbnailStore.isSuspended = true
@@ -231,6 +228,7 @@ final class PlayerViewController: UIViewController {
         Task { @MainActor in
             do {
                 try await engine.load(item)
+                configurarPiP()
                 controls.update(currentTime: 0, duration: engine.duration)
 
                 // Retomar é pergunta, não regra: às vezes se quer rever o
@@ -250,6 +248,21 @@ final class PlayerViewController: UIViewController {
                 presentError(error.localizedDescription)
             }
         }
+    }
+
+    /// Liga a janela flutuante quando quem assumiu foi o AVPlayer.
+    ///
+    /// Com ele o sistema controla pausa e avanço da janela sozinho. O VLC
+    /// desenha por conta própria e não oferece essa camada — nesse caso o botão
+    /// simplesmente não aparece, em vez de existir sem fazer nada.
+    private func configurarPiP() {
+        guard let camada = (engine as? HybridEngine)?.pictureInPictureLayer else {
+            controls.setPiPAvailable(false)
+            return
+        }
+        pip = PictureInPicture(playerLayer: camada, engine: engine)
+        controls.setPiPAvailable(pip?.isSupported == true)
+        refreshToolStrip()
     }
 
     /// Pergunta antes de retomar.

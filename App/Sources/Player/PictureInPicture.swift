@@ -19,6 +19,20 @@ final class PictureInPicture: NSObject {
     var isSupported: Bool { AVPictureInPictureController.isPictureInPictureSupported() }
     var isActive: Bool { controller?.isPictureInPictureActive ?? false }
 
+    /// Caminho nativo: com uma `AVPlayerLayer` o sistema controla pausa,
+    /// avanço e barra sozinho — não é preciso implementar delegado nenhum.
+    init(playerLayer: AVPlayerLayer, engine: PlaybackEngine) {
+        self.engine = engine
+        super.init()
+
+        guard AVPictureInPictureController.isPictureInPictureSupported() else { return }
+
+        let novo = AVPictureInPictureController(playerLayer: playerLayer)
+        novo.delegate = self
+        novo.canStartPictureInPictureAutomaticallyFromInline = true
+        controller = novo
+    }
+
     init(engine: PlaybackEngine, layer: AVSampleBufferDisplayLayer) {
         self.engine = engine
         super.init()

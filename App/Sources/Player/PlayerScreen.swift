@@ -19,17 +19,13 @@ struct PlayerScreen: UIViewControllerRepresentable {
 
     func updateUIViewController(_ controller: PlayerViewController, context: Context) {}
 
-    /// VLC para tudo.
+    /// O motor é escolhido pelo arquivo, dentro do HybridEngine.
     ///
-    /// O motor próprio existe no projeto e decodifica quadro exato — é o que
-    /// daria a rolagem integral e a janela flutuante. Mas oferecer os dois
-    /// custou regressões imediatas, e uma opção que leva a um caminho instável
-    /// não é escolha, é armadilha. Ele volta quando estiver no mesmo nível.
-    ///
-    /// O `FFmpegEngine` segue em uso fora da reprodução: é ele que decodifica
-    /// o quadro exato das miniaturas em "Detalhes do arquivo".
+    /// Tenta o AVPlayer, que busca quadro exato e tem janela flutuante nativa;
+    /// se ele recusar o formato, o VLC assume. O usuário não escolhe nada, e
+    /// não há um caminho "experimental" para ele cair sem querer.
     @MainActor
     private static func makeEngine(for item: MediaItem) -> PlaybackEngine {
-        VLCEngine()
+        HybridEngine()
     }
 }
