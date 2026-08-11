@@ -18,6 +18,13 @@ import CoreGraphics
 /// hardware, que é onde essa etapa mais costuma quebrar.
 enum FrameExtractor {
 
+    /// Quadro e duração juntos. Sondar de novo só para saber o tempo seria uma
+    /// segunda abertura do arquivo — cara em disco e muito cara pela rede.
+    struct Preview {
+        let image: CGImage
+        let duration: Double
+    }
+
     /// Nenhuma miniatura precisa de 8K. Reduzir evita alocar centenas de
     /// megabytes por quadro em vídeos grandes — e a miniatura de uma lista
     /// pede bem menos que a da tela de detalhes.
@@ -26,6 +33,11 @@ enum FrameExtractor {
 
     static func image(path: String, at seconds: Double,
                       maxWidth: Int32 = defaultWidth) throws -> CGImage {
+        try preview(path: path, at: seconds, maxWidth: maxWidth).image
+    }
+
+    static func preview(path: String, at seconds: Double,
+                        maxWidth: Int32 = defaultWidth) throws -> Preview {
         var formatContext: UnsafeMutablePointer<AVFormatContext>?
         try ffCheck("abrir arquivo", avformat_open_input(&formatContext, path, nil, nil))
         defer { avformat_close_input(&formatContext) }
@@ -37,6 +49,11 @@ enum FrameExtractor {
 
     static func image(source: AVIOSource, at seconds: Double,
                       maxWidth: Int32 = defaultWidth) throws -> CGImage {
+        try preview(source: source, at: seconds, maxWidth: maxWidth).image
+    }
+
+    static func preview(source: AVIOSource, at seconds: Double,
+                        maxWidth: Int32 = defaultWidth) throws -> Preview {
         guard let alocado = avformat_alloc_context() else {
             throw FFmpegError(code: labp_averror_enomem(), operation: "alocar contexto")
         }
@@ -56,9 +73,13 @@ enum FrameExtractor {
 
     private static func decode(_ context: UnsafeMutablePointer<AVFormatContext>,
                                at seconds: Double,
-                               maxWidth: Int32) throws -> CGImage {
+                               maxWidth: Int32) throws -> Preview {
 
         try ffCheck("ler faixas", avformat_find_stream_info(context, nil))
+
+        let duracao = context.pointee.duration.isNoPTS
+            ? 0
+            : Double(context.pointee.duration) / Double(AV_TIME_BASE)
 
         var decoder: UnsafePointer<AVCodec>?
         let streamIndex = try ffCheck(
@@ -126,14 +147,16 @@ enum FrameExtractor {
 
                 // Chegamos ao alvo — ou já decodificamos demais procurando.
                 if instante >= alvo || quadrosDecodificados >= limite {
-                    return try convert(frame, maxWidth: maxWidth)
+                    return Preview(image: try convert(frame, maxWidth: maxWidth), duration: duracao)
                 }
                 av_frame_unref(frame)
             }
         }
 
         // Fim do arquivo antes do alvo: vale o último quadro que temos.
-        if frame.pointee.width > 0 { return try convert(frame, maxWidth: maxWidth) }
+        if frame.pointee.width > 0 {
+            return Preview(image: try convert(frame, maxWidth: maxWidth), duration: duracao)
+        }
         throw FFmpegError(code: labp_averror_eof(), operation: "nenhum quadro decodificado")
     }
 

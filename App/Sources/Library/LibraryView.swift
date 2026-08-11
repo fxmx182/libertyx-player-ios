@@ -9,6 +9,8 @@ struct LibraryView: View {
 
     @EnvironmentObject private var bookmarks: BookmarkStore
     @StateObject private var library = MediaLibrary()
+    @ObservedObject private var options = LibraryOptions.shared
+    @State private var showingOptions = false
 
     @State private var showingFolderPicker = false
     @State private var showingFilePicker = false
@@ -36,6 +38,11 @@ struct LibraryView: View {
                         SMBServersView()
                     } label: {
                         Image(systemName: "server.rack")
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showingOptions = true } label: {
+                        Image(systemName: "slider.horizontal.3")
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -89,6 +96,9 @@ struct LibraryView: View {
                 }
                 .ignoresSafeArea()
             }
+            .sheet(isPresented: $showingOptions) {
+                LibraryOptionsSheet(options: options)
+            }
             .sheet(isPresented: $managingFolders) {
                 ManageFoldersView()
             }
@@ -112,36 +122,9 @@ struct LibraryView: View {
     // MARK: - Conteúdo
 
     private var lista: some View {
-        List {
-            ForEach(library.groups) { grupo in
-                Section {
-                    ForEach(grupo.items) { item in
-                        Button {
-                            playlist = grupo.items
-                            playing = item
-                        } label: {
-                            VideoRow(item: item)
-                        }
-                        .buttonStyle(.plain)
-                        .contextMenu {
-                            Button {
-                                showingInfo = item
-                            } label: {
-                                Label("Detalhes do arquivo", systemImage: "info.circle")
-                            }
-                        }
-                    }
-                } header: {
-                    HStack {
-                        Image(systemName: "folder.fill").font(.caption2)
-                        Text(grupo.name)
-                        Spacer()
-                        Text("\(grupo.items.count)")
-                    }
-                }
-            }
+        Group {
+            if options.layout == .grid { grade } else { linhas }
         }
-        .listStyle(.insetGrouped)
         .overlay(alignment: .bottom) {
             if library.isScanning {
                 HStack(spacing: 8) {
@@ -153,6 +136,88 @@ struct LibraryView: View {
                 .padding(.bottom, 12)
             }
         }
+    }
+
+    /// Lista compacta: mais itens por tela, bom para pastas com muitos vídeos.
+    private var linhas: some View {
+        List {
+            ForEach(library.groups) { grupo in
+                Section {
+                    ForEach(options.sorted(grupo.items)) { item in
+                        Button {
+                            abrir(item, em: grupo)
+                        } label: {
+                            VideoRow(item: item)
+                        }
+                        .buttonStyle(.plain)
+                        .contextMenu { menuDoItem(item) }
+                    }
+                } header: {
+                    cabecalho(grupo)
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+    }
+
+    /// Grade: a miniatura vira o elemento principal, com a duração sobre ela —
+    /// é como se reconhece um vídeo gravado, cujo nome é só data e hora.
+    private var grade: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 20, pinnedViews: [.sectionHeaders]) {
+                ForEach(library.groups) { grupo in
+                    Section {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 14)],
+                                  spacing: 18) {
+                            ForEach(options.sorted(grupo.items)) { item in
+                                Button {
+                                    abrir(item, em: grupo)
+                                } label: {
+                                    VideoCard(item: item)
+                                }
+                                .buttonStyle(.plain)
+                                .contextMenu { menuDoItem(item) }
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                    } header: {
+                        cabecalho(grupo)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(.bar)
+                    }
+                }
+            }
+            .padding(.vertical, 8)
+        }
+    }
+
+    private func cabecalho(_ grupo: VideoGroup) -> some View {
+        HStack {
+            Image(systemName: "folder.fill").font(.caption2)
+            Text(grupo.name)
+            Spacer()
+            Text("\(grupo.items.count)")
+        }
+        .font(.footnote)
+        .foregroundStyle(.secondary)
+    }
+
+    @ViewBuilder
+    private func menuDoItem(_ item: MediaItem) -> some View {
+        Button {
+            showingInfo = item
+        } label: {
+            Label("Detalhes do arquivo", systemImage: "info.circle")
+        }
+    }
+
+    /// A lista de reprodução segue a ordem exibida — "próxima" deve ir para o
+    /// que está à frente na tela, não para uma ordem interna invisível.
+    private func abrir(_ item: MediaItem, em grupo: VideoGroup) {
+        playlist = options.sorted(grupo.items)
+        playing = item
     }
 
     private var vazio: some View {
@@ -241,6 +306,43 @@ struct VideoRow: View {
     }
 }
 
+/// Cartão da grade: a miniatura ocupa o lugar principal, com a duração no
+/// canto — em vídeo gravado pelo celular, cujo nome é só data e hora, a imagem
+/// é a única coisa que identifica o arquivo.
+struct VideoCard: View {
+    let item: MediaItem
+    @State private var miniatura: UIImage?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ZStack(alignment: .bottomTrailing) {
+                ThumbnailView(item: item, image: $miniatura, largura: nil, altura: 92)
+
+                if let duracao = ThumbnailStore.shared.duration(item) {
+                    Text(TimeFormat.clock(duracao))
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(.black.opacity(0.75), in: RoundedRectangle(cornerRadius: 4))
+                        .padding(6)
+                }
+            }
+
+            Text(item.title)
+                .font(.caption)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+
+            if let retomada = ResumeStore.shared.position(for: item.origin.resumeKey) {
+                Text("parou em \(TimeFormat.clock(retomada))")
+                    .font(.caption2)
+                    .foregroundStyle(.tint)
+            }
+        }
+    }
+}
+
 /// Miniatura da lista: mostra o quadro quando existe, e um espaço reservado
 /// enquanto não existe.
 ///
@@ -250,9 +352,9 @@ struct VideoRow: View {
 struct ThumbnailView: View {
     let item: MediaItem
     @Binding var image: UIImage?
-
-    private let largura: CGFloat = 64
-    private let altura: CGFloat = 40
+    /// `nil` ocupa toda a largura disponível — é assim na grade.
+    var largura: CGFloat? = 64
+    var altura: CGFloat = 40
 
     var body: some View {
         ZStack {
@@ -271,6 +373,7 @@ struct ThumbnailView: View {
             }
         }
         .frame(width: largura, height: altura)
+        .frame(maxWidth: largura == nil ? .infinity : nil)
         .clipped()
         .task(id: item.id) {
             if let pronta = ThumbnailStore.shared.cached(item) {

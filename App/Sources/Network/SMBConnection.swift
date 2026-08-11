@@ -114,7 +114,7 @@ actor SMBConnection {
     /// Decodifica um quadro do arquivo no servidor. Prova, com uma imagem na
     /// tela, que dá para buscar e decodificar por rede sem baixar nada.
     func thumbnail(share: String, path: String, at seconds: Double,
-                   maxWidth: Int32 = FrameExtractor.defaultWidth) async throws -> CGImage {
+                   maxWidth: Int32 = FrameExtractor.defaultWidth) async throws -> FrameExtractor.Preview {
         let client = try await connectedClient()
 
         if mountedShare != share {
@@ -128,7 +128,7 @@ actor SMBConnection {
 
         return try await FFmpegRunner.run {
             try withExtendedLifetime(avio) {
-                try FrameExtractor.image(source: avio, at: seconds, maxWidth: maxWidth)
+                try FrameExtractor.preview(source: avio, at: seconds, maxWidth: maxWidth)
             }
         }
     }

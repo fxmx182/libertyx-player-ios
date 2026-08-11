@@ -27,6 +27,9 @@ final class ThumbnailStore: ObservableObject {
     private static let momento: Double = 12
 
     private let memoria = NSCache<NSString, UIImage>()
+    /// Duração descoberta ao gerar a miniatura — o arquivo já estava aberto.
+    private var duracoes: [String: Double] = UserDefaults.standard
+        .dictionary(forKey: "labplayer.duracoes") as? [String: Double] ?? [:]
     private var conexoes: [UUID: SMBConnection] = [:]
     private var emCurso: Set<String> = []
 
@@ -53,6 +56,12 @@ final class ThumbnailStore: ObservableObject {
         return imagem
     }
 
+    /// Duração conhecida, se a miniatura já foi gerada alguma vez.
+    func duration(_ item: MediaItem) -> Double? {
+        let valor = duracoes[Self.chave(for: item)]
+        return (valor ?? 0) > 0 ? valor : nil
+    }
+
     func load(_ item: MediaItem) async -> UIImage? {
         if let pronta = cached(item) { return pronta }
 
@@ -63,7 +72,12 @@ final class ThumbnailStore: ObservableObject {
         emCurso.insert(chave)
         defer { emCurso.remove(chave) }
 
-        guard let imagem = await gerar(item) else { return nil }
+        guard let previa = await gerar(item) else { return nil }
+        let imagem = previa.0
+        if previa.1 > 0 {
+            duracoes[chave] = previa.1
+            UserDefaults.standard.set(duracoes, forKey: "labplayer.duracoes")
+        }
         memoria.setObject(imagem, forKey: chave as NSString)
         if let dados = imagem.jpegData(compressionQuality: 0.7) {
             try? dados.write(to: arquivo(chave), options: .atomic)
@@ -73,24 +87,27 @@ final class ThumbnailStore: ObservableObject {
 
     // MARK: - Geração
 
-    private func gerar(_ item: MediaItem) async -> UIImage? {
+    private func gerar(_ item: MediaItem) async -> (UIImage, Double)? {
         switch item.origin {
         case .file:
             let origem = item.origin
-            let cg = try? await FFmpegRunner.run {
+            let previa = try? await FFmpegRunner.run {
                 try FileAccess.withAccess(origem) { caminho in
-                    try FrameExtractor.image(path: caminho, at: Self.momento,
-                                             maxWidth: FrameExtractor.listWidth)
+                    try FrameExtractor.preview(path: caminho, at: Self.momento,
+                                               maxWidth: FrameExtractor.listWidth)
                 }
             }
-            return (cg ?? nil).map { UIImage(cgImage: $0) }
+            guard let previa = previa ?? nil else { return nil }
+            return (UIImage(cgImage: previa.image), previa.duration)
 
         case .smb(let referencia, let caminho):
             guard let conexao = conexao(para: referencia) else { return nil }
-            let cg = try? await conexao.thumbnail(share: referencia.share, path: caminho,
-                                                  at: Self.momento,
-                                                  maxWidth: FrameExtractor.listWidth)
-            return cg.map { UIImage(cgImage: $0) }
+            guard let previa = try? await conexao.thumbnail(share: referencia.share, path: caminho,
+                                                            at: Self.momento,
+                                                            maxWidth: FrameExtractor.listWidth) else {
+                return nil
+            }
+            return (UIImage(cgImage: previa.image), previa.duration)
 
         case .remote:
             return nil
