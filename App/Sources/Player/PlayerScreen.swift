@@ -19,18 +19,17 @@ struct PlayerScreen: UIViewControllerRepresentable {
 
     func updateUIViewController(_ controller: PlayerViewController, context: Context) {}
 
-    /// Os dois motores convivem, escolhidos por origem ou pela preferência.
+    /// VLC para tudo.
     ///
-    /// Nenhum vence em tudo: o próprio decodifica quadro exato (rolagem
-    /// integral) e desenha na camada do sistema (janela flutuante); o VLC tem
-    /// buffer de rede e recuperação de erro muito superiores. Deixá-los
-    /// conviver custa uma linha porque tudo passa pelo protocolo
-    /// `PlaybackEngine` desde o primeiro dia.
+    /// O motor próprio existe no projeto e decodifica quadro exato — é o que
+    /// daria a rolagem integral e a janela flutuante. Mas oferecer os dois
+    /// custou regressões imediatas, e uma opção que leva a um caminho instável
+    /// não é escolha, é armadilha. Ele volta quando estiver no mesmo nível.
+    ///
+    /// O `FFmpegEngine` segue em uso fora da reprodução: é ele que decodifica
+    /// o quadro exato das miniaturas em "Detalhes do arquivo".
     @MainActor
     private static func makeEngine(for item: MediaItem) -> PlaybackEngine {
-        switch EnginePreference.current.resolve(for: item.origin) {
-        case .own: return FFmpegEngine()
-        case .vlc: return VLCEngine()
-        }
+        VLCEngine()
     }
 }
