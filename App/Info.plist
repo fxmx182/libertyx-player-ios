@@ -48,7 +48,22 @@
 	<string>Para salvar a captura de tela do vídeo no seu álbum.</string>
 
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>O LabPlayer precisa da rede local para listar e reproduzir vídeos de compartilhamentos SMB do seu servidor.</string>
+	<string>O LabPlayer precisa da rede local para listar e reproduzir vídeos do seu servidor — compartilhamentos SMB e bibliotecas do Jellyfin.</string>
+
+	<!-- Servidor caseiro fala HTTP puro, e o iOS bloqueia isso por padrão.
+	     NSAllowsLocalNetworking sozinho não bastaria: ele libera as faixas
+	     privadas clássicas (10.x, 172.16.x, 192.168.x), e um Jellyfin
+	     alcançado por Tailscale responde em 100.64.x, que fica de fora.
+	     Este app é pessoal e instalado à mão; não passa por revisão da
+	     Apple, então a permissão ampla é escolha consciente e não um
+	     atalho para contornar análise. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_smb._tcp</string>
