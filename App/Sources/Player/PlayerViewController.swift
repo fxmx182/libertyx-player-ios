@@ -328,9 +328,9 @@ final class PlayerViewController: UIViewController {
 
     /// Liga a janela flutuante quando quem assumiu foi o AVPlayer.
     ///
-    /// Com ele o sistema controla pausa e avanço da janela sozinho. O VLC
-    /// desenha por conta própria e não oferece essa camada — nesse caso o botão
-    /// simplesmente não aparece, em vez de existir sem fazer nada.
+    /// Com ele o sistema controlaria pausa e avanço sozinho. O VLC desenha por
+    /// conta própria e não oferece essa camada, então hoje não há janela — o
+    /// botão fica e explica, em vez de sumir sem motivo aparente.
     private func configurarPiP() {
         // O botão fica sempre à mostra. Esconder quando não dá transformava um
         // limite conhecido num sumiço inexplicável.
@@ -338,10 +338,6 @@ final class PlayerViewController: UIViewController {
 
         // Sem AVPlayer não há camada sobre a qual o iOS monte a janelinha.
         pip = nil
-        refreshToolStrip()
-            return
-        }
-        pip = PictureInPicture(playerLayer: camada, engine: engine)
         refreshToolStrip()
     }
 
