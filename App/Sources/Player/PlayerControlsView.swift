@@ -67,7 +67,8 @@ final class PlayerControlsView: UIView {
     private let previousButton = UIButton(type: .system)
     private let playButton = UIButton(type: .system)
     private let nextButton = UIButton(type: .system)
-    private let transport = UIStackView()
+    /// Bloqueio, transporte e ajustes na mesma fileira, repartindo a largura.
+    private let fileiraInferior = UIStackView()
     private let aspectButton = UIButton(type: .system)
     private let pipButton = UIButton(type: .system)
 
@@ -230,25 +231,17 @@ final class PlayerControlsView: UIView {
             $0.widthAnchor.constraint(equalToConstant: 60).isActive = true
             $0.heightAnchor.constraint(equalToConstant: 56).isActive = true
         }
-        playButton.widthAnchor.constraint(equalToConstant: 68).isActive = true
-        playButton.heightAnchor.constraint(equalToConstant: 56).isActive = true
         pipButton.isHidden = true
 
-        transport.axis = .horizontal
-        transport.alignment = .center
-        // Folga generosa: com 22 os botões encostavam uns nos outros e errar o
-        // alvo era o resultado normal, não o acidente.
-        //
-        // A folga é só espaçamento, sem amarras de posição contra os botões
-        // das pontas. As amarras que eu tinha posto ficavam impossíveis de
-        // satisfazer numa tela estreita, e o Auto Layout resolvia isso
-        // encolhendo a fileira até os botões sumirem.
-        transport.spacing = 34
-        transport.translatesAutoresizingMaskIntoConstraints = false
-        [previousButton, playButton, nextButton].forEach(transport.addArrangedSubview)
+        // Uma fileira só, em partes iguais: ninguém pode invadir o vizinho.
+        fileiraInferior.axis = .horizontal
+        fileiraInferior.alignment = .center
+        fileiraInferior.distribution = .fillEqually
+        fileiraInferior.translatesAutoresizingMaskIntoConstraints = false
+        [lockButton, previousButton, playButton, nextButton, aspectButton, pipButton]
+            .forEach(fileiraInferior.addArrangedSubview)
 
-        [elapsedLabel, slider, totalLabel, lockButton, transport, aspectButton, pipButton]
-            .forEach(bottomBar.addSubview)
+        [elapsedLabel, slider, totalLabel, fileiraInferior].forEach(bottomBar.addSubview)
 
         NSLayoutConstraint.activate([
             bottomBar.bottomAnchor.constraint(equalTo: bottomAnchor),
@@ -256,30 +249,24 @@ final class PlayerControlsView: UIView {
             bottomBar.trailingAnchor.constraint(equalTo: trailingAnchor),
             bottomBar.heightAnchor.constraint(equalToConstant: 148),
 
-            // Linha de baixo: bloqueio à esquerda, transporte no centro,
-            // enquadramento e janela flutuante à direita.
-            lockButton.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 10),
-            lockButton.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -8),
-            lockButton.widthAnchor.constraint(equalToConstant: 52),
-            lockButton.heightAnchor.constraint(equalToConstant: 52),
-
-            transport.centerXAnchor.constraint(equalTo: centerXAnchor),
-            transport.centerYAnchor.constraint(equalTo: lockButton.centerYAnchor),
-
-
-            pipButton.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -10),
-            pipButton.centerYAnchor.constraint(equalTo: lockButton.centerYAnchor),
-            pipButton.widthAnchor.constraint(equalToConstant: 52),
-            pipButton.heightAnchor.constraint(equalToConstant: 52),
-
-            aspectButton.trailingAnchor.constraint(equalTo: pipButton.leadingAnchor, constant: -6),
-            aspectButton.centerYAnchor.constraint(equalTo: lockButton.centerYAnchor),
-            aspectButton.widthAnchor.constraint(equalToConstant: 52),
-            aspectButton.heightAnchor.constraint(equalToConstant: 52),
+            // Linha de baixo: uma fileira só, repartindo a largura.
+            //
+            // Antes cada botão tinha a sua âncora — bloqueio colado à esquerda,
+            // transporte fixo no centro, ajustes à direita — e nada impedia que
+            // se encontrassem no meio numa tela estreita. Duas tentativas de
+            // remendar com limites falharam, porque o problema nunca foi
+            // distância: era não haver ninguém encarregado de repartir o
+            // espaço. Uma fileira com distribuição igual tem esse encarregado
+            // por construção, e a sobreposição deixa de ser possível em
+            // qualquer largura.
+            fileiraInferior.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 8),
+            fileiraInferior.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -8),
+            fileiraInferior.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -8),
+            fileiraInferior.heightAnchor.constraint(equalToConstant: 56),
 
             // Linha de cima: tempo decorrido, barra, duração total.
             elapsedLabel.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 16),
-            elapsedLabel.bottomAnchor.constraint(equalTo: lockButton.topAnchor, constant: -16),
+            elapsedLabel.bottomAnchor.constraint(equalTo: fileiraInferior.topAnchor, constant: -14),
 
             totalLabel.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -16),
             totalLabel.centerYAnchor.constraint(equalTo: elapsedLabel.centerYAnchor),

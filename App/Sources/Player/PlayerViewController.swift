@@ -333,13 +333,12 @@ final class PlayerViewController: UIViewController {
     /// simplesmente não aparece, em vez de existir sem fazer nada.
     private func configurarPiP() {
         // O botão fica sempre à mostra. Esconder quando não dá transformava um
-        // limite conhecido num sumiço inexplicável — e a pergunta "cadê o PiP?"
-        // não tinha como ser respondida pela própria tela.
+        // limite conhecido num sumiço inexplicável.
         controls.setPiPAvailable(true)
 
-        guard let camada = (renderView as? PlayerLayerView)?.playerLayer else {
-            pip = nil
-            refreshToolStrip()
+        // Sem AVPlayer não há camada sobre a qual o iOS monte a janelinha.
+        pip = nil
+        refreshToolStrip()
             return
         }
         pip = PictureInPicture(playerLayer: camada, engine: engine)
@@ -1008,9 +1007,9 @@ final class PlayerViewController: UIViewController {
     private func explicarPiPIndisponivel() {
         let alerta = UIAlertController(
             title: "Janela flutuante indisponível",
-            message: "O sistema ainda não liberou a janela para esta mídia. "
-                   + "Costuma acontecer nos primeiros segundos de uma transmissão; "
-                   + "tente de novo daqui a pouco.",
+            message: "O iOS só monta a janelinha sobre o reprodutor da Apple. "
+                   + "Este arquivo está tocando no VLC, que abre formatos que a "
+                   + "Apple recusa — e aí o sistema não tem como transportar a imagem.",
             preferredStyle: .alert)
         alerta.addAction(UIAlertAction(title: "Entendi", style: .default) { [weak self] _ in
             self?.scheduleControlsHide()

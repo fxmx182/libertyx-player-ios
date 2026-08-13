@@ -112,23 +112,16 @@ final class ThumbnailStore: ObservableObject {
                 return porApple
             }
 
-            // Sem o VLC, o gerador da Apple é o único que existe. Arquivo que
-            // ele recusa fica sem miniatura — é o preço combinado.
-            LabLog.problem("miniatura: AVFoundation recusou \(item.title)")
-            return nil
+            // O gerador da Apple recusa HEVC marcado como `hev1` — muito
+            // arquivo remuxado é assim, e é o mesmo motivo de esses vídeos
+            // caírem no VLC na hora de tocar. Aí o VLC também tira a miniatura:
+            // quem consegue tocar o arquivo consegue extrair um quadro dele.
+            return await VLCThumbnailer.preview(for: item)
 
-        case .smb(let referencia, let caminho):
-            // A mesma ponte que faz o vídeo tocar serve para tirar o quadro: o
-            // gerador da Apple também não fala SMB, e também aceita ser
-            // alimentado.
-            guard SMBResourceLoader.canHandle(path: caminho),
-                  let servidor = SMBServerStore.shared.servers.first(where: { $0.id == referencia.serverID }),
-                  let ponte = SMBResourceLoader(share: referencia.share, path: caminho,
-                                                server: servidor,
-                                                password: SMBServerStore.shared.password(for: servidor)),
-                  let asset = ponte.makeAsset() else { return nil }
-            defer { ponte.teardown() }
-            return await Self.quadro(de: asset)
+        case .smb:
+            // Mesmo caminho do arquivo local: o VLC fala `smb://` nativamente,
+            // então não há ponte de leitura por blocos para manter aqui.
+            return await VLCThumbnailer.preview(for: item)
 
         case .remote:
             return nil
@@ -160,21 +153,6 @@ final class ThumbnailStore: ObservableObject {
 
         guard let cg = try? await gerador.image(at: alvo).image else { return nil }
         return withExtendedLifetime(guarda) { (UIImage(cgImage: cg), duracao) }
-    }
-
-    /// Um quadro de qualquer asset que a AVFoundation aceite abrir.
-    private static func quadro(de asset: AVURLAsset) async -> (UIImage, Double)? {
-        guard (try? await asset.load(.isPlayable)) == true else { return nil }
-        let duracao = (try? await asset.load(.duration).seconds) ?? 0
-
-        let gerador = AVAssetImageGenerator(asset: asset)
-        gerador.appliesPreferredTrackTransform = true
-        gerador.maximumSize = CGSize(width: 320, height: 320)
-
-        let instante = duracao > 0 ? min(momento, duracao * 0.1) : 0
-        let alvo = CMTime(seconds: max(0, instante), preferredTimescale: 600)
-        guard let cg = try? await gerador.image(at: alvo).image else { return nil }
-        return (UIImage(cgImage: cg), duracao)
     }
 
     /// Uma conexão por servidor, reaproveitada: abrir sessão SMB a cada

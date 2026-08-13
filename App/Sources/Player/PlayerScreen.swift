@@ -26,6 +26,6 @@ struct PlayerScreen: UIViewControllerRepresentable {
     /// não há um caminho "experimental" para ele cair sem querer.
     @MainActor
     private static func makeEngine(for item: MediaItem) -> PlaybackEngine {
-        AVPlayerEngine()
+        VLCEngine()
     }
 }

@@ -4,6 +4,7 @@ import SwiftUI
 struct JellyfinServersView: View {
 
     @StateObject private var store = JellyfinStore.shared
+    @Environment(\.dismiss) private var dismiss
     @State private var addingNew = false
     @State private var editing: JellyfinServer?
     @State private var pendingDeletion: JellyfinServer?
@@ -66,6 +67,9 @@ struct JellyfinServersView: View {
             Text("Apaga “\(servidor.name)” e o acesso guardado no Keychain do aparelho.")
         }
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button("Fechar") { dismiss() }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { addingNew = true } label: { Image(systemName: "plus") }
             }
