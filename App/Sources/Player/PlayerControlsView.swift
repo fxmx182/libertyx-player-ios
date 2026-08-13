@@ -86,6 +86,15 @@ final class PlayerControlsView: UIView {
         setupCloseButton()
         setupUnlockButton()
         setupSpinner()
+
+        // Quem decide o que está à mostra é sempre a mesma função, inclusive no
+        // primeiro instante.
+        //
+        // Antes cada peça escolhia a própria opacidade inicial, e elas
+        // discordavam: a barra nascia visível e o botão de sair nascia
+        // invisível. Como só uma mudança de estado chamava essa função, a saída
+        // só aparecia depois do primeiro ciclo de esconder e mostrar.
+        applyVisibility(animated: false)
     }
 
     @available(*, unavailable)
@@ -253,7 +262,6 @@ final class PlayerControlsView: UIView {
         configure(closeButton, symbol: "chevron.down", size: 17, action: #selector(closeTapped))
         closeButton.backgroundColor = UIColor.black.withAlphaComponent(0.35)
         closeButton.layer.cornerRadius = 19
-        closeButton.alpha = 0
         addSubview(closeButton)
 
         NSLayoutConstraint.activate([
