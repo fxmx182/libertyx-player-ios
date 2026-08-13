@@ -117,9 +117,19 @@ final class AVPlayerEngine: NSObject, PlaybackEngine {
             url = falsa
         }
 
-        let asset = AVURLAsset(url: url, options: [
-            AVURLAssetPreferPreciseDurationAndTimingKey: true
-        ])
+        // Duração exata só faz sentido em arquivo.
+        //
+        // Num HLS ela pede à AVFoundation que reconstrua a linha de tempo a
+        // partir da mídia, e é isto que fazia o filme do servidor andar três
+        // segundos e congelar. O reprodutor nativo do app oficial do Jellyfin
+        // toca o mesmo stream sem nenhuma opção — foi comparando com ele que a
+        // diferença apareceu.
+        let ehTransmissao: Bool
+        if case .remote = item.origin { ehTransmissao = true } else { ehTransmissao = false }
+
+        let asset = ehTransmissao
+            ? AVURLAsset(url: url)
+            : AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
 
         // Precisa ser registrado antes de qualquer carga: é o primeiro pedido
         // do asset que descobre que ninguém sabe abrir este esquema.
@@ -127,16 +137,23 @@ final class AVPlayerEngine: NSObject, PlaybackEngine {
             asset.resourceLoader.setDelegate(smbBridge, queue: smbQueue)
         }
 
-        // Pré-carrega para saber se dá para tocar antes de mostrar tela preta.
-        let playable = try await asset.load(.isPlayable)
-        guard playable else {
-            let msg = "Formato não suportado pelo motor AVFoundation."
-            state = .failed(msg)
-            throw PlaybackError.loadFailed(msg)
+        // Em arquivo, perguntar antes evita tela preta: sabendo que ele não
+        // abre, o VLC assume sem o usuário ver nada. Numa transmissão a
+        // pergunta é cara e enganosa — a resposta depende de rede, e obrigá-la
+        // agora atrasa o começo sem garantir nada.
+        if !ehTransmissao {
+            let playable = try await asset.load(.isPlayable)
+            guard playable else {
+                let msg = "Formato não suportado pelo motor AVFoundation."
+                state = .failed(msg)
+                throw PlaybackError.loadFailed(msg)
+            }
         }
 
         let playerItem = AVPlayerItem(asset: asset)
-        playerItem.seekingWaitsForVideoCompositionRendering = true
+        // Também só em arquivo: numa transmissão isso amarra a busca ao ritmo
+        // com que os pedaços chegam.
+        playerItem.seekingWaitsForVideoCompositionRendering = !ehTransmissao
         attachObservers(to: playerItem)
         player.replaceCurrentItem(with: playerItem)
         state = .ready
