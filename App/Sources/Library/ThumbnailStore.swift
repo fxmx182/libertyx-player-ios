@@ -100,41 +100,14 @@ final class ThumbnailStore: ObservableObject {
 
             // O gerador da Apple recusa HEVC marcado como `hev1` — muito
             // arquivo remuxado é assim, e é o mesmo motivo de esses vídeos
-            // caírem no VLC na hora de tocar. Aqui o FFmpeg assume.
-            let origem = item.origin
-            do {
-                let previa = try await FFmpegRunner.run {
-                    try FileAccess.withAccess(origem) { caminho in
-                        try FrameExtractor.preview(path: caminho, at: Self.momento,
-                                                   maxWidth: FrameExtractor.listWidth)
-                    }
-                }
-                guard let previa else {
-                    LabLog.problem("miniatura falhou: \(item.title) — sem acesso ao arquivo")
-                    return nil
-                }
-                return (UIImage(cgImage: previa.image), previa.duration)
-            } catch {
-                // Com o motivo junto: "falhou" sozinho não diz se foi o
-                // arquivo, a permissão ou o decodificador.
-                LabLog.problem("miniatura falhou: \(item.title) — \(error)")
-                return nil
-            }
+            // caírem no VLC na hora de tocar. Aí o VLC também tira a miniatura:
+            // quem consegue tocar o arquivo consegue extrair um quadro dele.
+            return await VLCThumbnailer.preview(for: item)
 
-        case .smb(let referencia, let caminho):
-            guard let conexao = conexao(para: referencia) else {
-                LabLog.problem("miniatura SMB: servidor \(referencia.host) não está mais salvo")
-                return nil
-            }
-            do {
-                let previa = try await conexao.thumbnail(share: referencia.share, path: caminho,
-                                                         at: Self.momento,
-                                                         maxWidth: FrameExtractor.listWidth)
-                return (UIImage(cgImage: previa.image), previa.duration)
-            } catch {
-                LabLog.problem("miniatura SMB falhou: \(item.title) — \(error)")
-                return nil
-            }
+        case .smb:
+            // Mesmo caminho do arquivo local: o VLC fala `smb://` nativamente,
+            // então não há ponte de leitura por blocos para manter aqui.
+            return await VLCThumbnailer.preview(for: item)
 
         case .remote:
             return nil

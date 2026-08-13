@@ -130,7 +130,7 @@ final class VLCEngine: NSObject, PlaybackEngine {
     ///
     /// No caso do SMB, as credenciais vão embutidas — é como o VLC as recebe.
     /// Elas continuam vindo do Keychain e nunca são gravadas em disco assim.
-    private static func resolveURL(for origin: MediaOrigin) throws -> URL? {
+    static func resolveURL(for origin: MediaOrigin) throws -> URL? {
         switch origin {
         case .file(let url, _):
             return url
