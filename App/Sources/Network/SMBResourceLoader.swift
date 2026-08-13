@@ -120,29 +120,56 @@ final class SMBResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
                 return
             }
 
-            let inicio = dados.requestedOffset + Int64(dados.currentOffset - dados.requestedOffset)
-            let restante = Int64(dados.requestedLength) - (inicio - dados.requestedOffset)
-            guard restante > 0, inicio < Int64(size) else {
+            // De onde continuar. `currentOffset` já conta o que foi entregue
+            // em respostas anteriores deste mesmo pedido.
+            let inicio = dados.currentOffset
+
+            // Quanto entregar — e é aqui que estava a tela preta.
+            //
+            // Quando o AVPlayer marca `requestsAllDataToEndOfResource`, o
+            // comprimento pedido não vale nada: ele quer o arquivo inteiro
+            // daquele ponto em diante. Eu lia isso como um número e tentava
+            // trazer gigabytes numa leitura só — o pedido nunca voltava, e o
+            // vídeo ficava preto esperando para sempre.
+            let total: Int64 = dados.requestsAllDataToEndOfResource
+                ? Int64(size) - inicio
+                : Int64(dados.requestedLength) - (inicio - dados.requestedOffset)
+
+            guard total > 0, inicio < Int64(size) else {
                 pedido.finishLoading()
                 return
             }
 
-            // O teto de UInt32 não é limite nosso, é o do protocolo — e o
-            // AVPlayer nunca pede tanto de uma vez.
-            let quanto = min(restante, Int64(size) - inicio)
-            let trecho = try await leitor.read(offset: UInt64(inicio),
-                                               length: UInt32(min(quanto, Int64(UInt32.max))))
-            guard !Task.isCancelled else { return }
+            // Em pedaços, e entregando a cada pedaço: o AVPlayer começa a
+            // decodificar com o que já chegou em vez de esperar o fim.
+            var posicao = inicio
+            let fim = min(Int64(size), inicio + total)
 
-            dados.respond(with: trecho)
+            while posicao < fim {
+                if Task.isCancelled || pedido.isCancelled { return }
+
+                let pedaco = min(Self.blocoDeLeitura, fim - posicao)
+                let trecho = try await leitor.read(offset: UInt64(posicao),
+                                                   length: UInt32(pedaco))
+                if trecho.isEmpty { break }
+
+                if Task.isCancelled || pedido.isCancelled { return }
+                dados.respond(with: trecho)
+                posicao += Int64(trecho.count)
+            }
+
             pedido.finishLoading()
 
         } catch {
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, !pedido.isCancelled else { return }
             LabLog.problem("SMB pelo AVPlayer falhou: \(error)")
             pedido.finishLoading(with: error)
         }
     }
+
+    /// Grande o bastante para a rede render, pequeno o bastante para o vídeo
+    /// começar antes de o bloco inteiro chegar.
+    private static let blocoDeLeitura: Int64 = 512 * 1024
 
     /// Uma conexão por reprodução, reaproveitada em todos os pedidos.
     private func abrir() async throws -> FileReader {
@@ -152,6 +179,17 @@ final class SMBResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
         size = tamanho
         return leitor
     }
+
+    /// O mesmo arquivo do servidor, pronto para o gerador de miniatura da
+    /// Apple — que também não fala SMB, e também aceita ser alimentado.
+    func makeAsset() -> AVURLAsset? {
+        guard let url = makeURL() else { return nil }
+        let asset = AVURLAsset(url: url)
+        asset.resourceLoader.setDelegate(self, queue: fila)
+        return asset
+    }
+
+    private let fila = DispatchQueue(label: "com.mauricio.labplayer.smbLoader.asset")
 
     func teardown() {
         trava.lock()

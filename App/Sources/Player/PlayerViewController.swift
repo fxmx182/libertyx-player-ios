@@ -337,7 +337,7 @@ final class PlayerViewController: UIViewController {
         // não tinha como ser respondida pela própria tela.
         controls.setPiPAvailable(true)
 
-        guard let camada = (engine as? HybridEngine)?.pictureInPictureLayer else {
+        guard let camada = (renderView as? PlayerLayerView)?.playerLayer else {
             pip = nil
             refreshToolStrip()
             return
@@ -1008,9 +1008,9 @@ final class PlayerViewController: UIViewController {
     private func explicarPiPIndisponivel() {
         let alerta = UIAlertController(
             title: "Janela flutuante indisponível",
-            message: "O iOS só monta a janelinha sobre o reprodutor da Apple. "
-                   + "Este arquivo está tocando no VLC, que abre formatos que a "
-                   + "Apple recusa — e aí o sistema não tem como transportar a imagem.",
+            message: "O sistema ainda não liberou a janela para esta mídia. "
+                   + "Costuma acontecer nos primeiros segundos de uma transmissão; "
+                   + "tente de novo daqui a pouco.",
             preferredStyle: .alert)
         alerta.addAction(UIAlertAction(title: "Entendi", style: .default) { [weak self] _ in
             self?.scheduleControlsHide()
