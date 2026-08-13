@@ -17,6 +17,10 @@ struct LabPlayerApp: App {
                 .environmentObject(bookmarks)
                 .environmentObject(smbServers)
                 .preferredColorScheme(.dark)
+                // Ciano em vez do azul de todo mundo, e um fundo um pouco acima
+                // do preto para as superfícies de vidro terem de onde emergir.
+                .tint(LabTheme.accent)
+                .background(LabTheme.background.ignoresSafeArea())
         }
     }
 }

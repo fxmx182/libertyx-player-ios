@@ -1,3 +1,4 @@
+import SwiftUI
 import UIKit
 
 /// Controles do player.
@@ -94,6 +95,7 @@ final class PlayerControlsView: UIView {
     override init(frame: CGRect) {
         super.init(frame: frame)
         backgroundColor = .clear
+        tintColor = LabTheme.accentUI
         setupBottomBar()
         setupGestoDeFundo()
         setupCloseButton()

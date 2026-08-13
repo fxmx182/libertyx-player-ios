@@ -201,8 +201,8 @@ struct LibraryView: View {
             LazyVStack(alignment: .leading, spacing: 20, pinnedViews: [.sectionHeaders]) {
                 ForEach(library.groups) { grupo in
                     Section {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 14)],
-                                  spacing: 18) {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)],
+                                  spacing: 14) {
                             ForEach(options.sorted(grupo.items)) { item in
                                 Button {
                                     abrir(item, em: grupo)
@@ -219,7 +219,7 @@ struct LibraryView: View {
                             .padding(.horizontal, 16)
                             .padding(.vertical, 8)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(.bar)
+                            .background(LabTheme.background.opacity(0.92))
                     }
                 }
             }
@@ -228,14 +228,19 @@ struct LibraryView: View {
     }
 
     private func cabecalho(_ grupo: VideoGroup) -> some View {
-        HStack {
+        HStack(spacing: 6) {
             Image(systemName: "folder.fill").font(.caption2)
             Text(grupo.name)
             Spacer()
+            // A contagem numa pastilha em vez de solta: vira informação, e não
+            // um número perdido na ponta da linha.
             Text("\(grupo.items.count)")
+                .font(.caption2.monospacedDigit().weight(.semibold))
+                .padding(.horizontal, 7)
+                .padding(.vertical, 2)
+                .background(LabTheme.glass, in: Capsule())
         }
-        .font(.footnote)
-        .foregroundStyle(.secondary)
+        .labSectionTitle()
     }
 
     @ViewBuilder
@@ -414,32 +419,41 @@ struct VideoCard: View {
     @State private var miniatura: UIImage?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             ZStack(alignment: .bottomTrailing) {
-                ThumbnailView(item: item, image: $miniatura, largura: nil, altura: 92)
+                ThumbnailView(item: item, image: $miniatura, largura: nil, altura: 96)
 
                 if let duracao = ThumbnailStore.shared.duration(item) {
                     Text(TimeFormat.clock(duracao))
-                        .font(.caption2.monospacedDigit())
+                        .font(.caption2.monospacedDigit().weight(.medium))
                         .foregroundStyle(.white)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background(.black.opacity(0.75), in: RoundedRectangle(cornerRadius: 4))
-                        .padding(6)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(.black.opacity(0.7), in: Capsule())
+                        .padding(7)
                 }
             }
 
-            Text(item.title)
-                .font(.caption)
-                .lineLimit(2)
-                .multilineTextAlignment(.leading)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(item.title)
+                    // Espaçamento apertado: é o que a Apple faz nos títulos, e
+                    // o que distingue texto de interface de texto de conteúdo.
+                    .font(.footnote.weight(.medium))
+                    .tracking(-0.2)
+                    .foregroundStyle(LabTheme.text)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
 
-            if let retomada = ResumeStore.shared.position(for: item.origin.resumeKey) {
-                Text("parou em \(TimeFormat.clock(retomada))")
-                    .font(.caption2)
-                    .foregroundStyle(.tint)
+                if let retomada = ResumeStore.shared.position(for: item.origin.resumeKey) {
+                    Text("parou em \(TimeFormat.clock(retomada))")
+                        .font(.caption2)
+                        .foregroundStyle(LabTheme.accent)
+                }
             }
+            .padding(.horizontal, 10)
+            .padding(.bottom, 10)
         }
+        .labCard()
     }
 }
 
@@ -456,16 +470,27 @@ struct ThumbnailView: View {
     var largura: CGFloat? = 64
     var altura: CGFloat = 40
 
+    /// Na grade a miniatura é o topo de um cartão, então arredonda só em cima;
+    /// na lista ela é um selo solto e arredonda por inteiro.
+    private var cantos: UnevenRoundedRectangle {
+        largura == nil
+            ? UnevenRoundedRectangle(topLeadingRadius: LabTheme.radiusCard,
+                                     bottomLeadingRadius: 0, bottomTrailingRadius: 0,
+                                     topTrailingRadius: LabTheme.radiusCard, style: .continuous)
+            : UnevenRoundedRectangle(topLeadingRadius: 6, bottomLeadingRadius: 6,
+                                     bottomTrailingRadius: 6, topTrailingRadius: 6,
+                                     style: .continuous)
+    }
+
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                .fill(Color.secondary.opacity(0.18))
+            cantos.fill(Color.white.opacity(0.06))
 
             if let image {
                 Image(uiImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
-                    .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                    .clipShape(cantos)
             } else {
                 Image(systemName: "film")
                     .font(.caption)
