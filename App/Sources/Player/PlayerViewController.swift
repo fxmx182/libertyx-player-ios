@@ -49,6 +49,9 @@ final class PlayerViewController: UIViewController {
     /// do decodificador. Aqui só rastreamos o arrasto na barra.
     private var isBarScrubbing = false
 
+    /// Se foi este mesmo toque que trouxe a barra à tela.
+    private var mostrouNesteToque = false
+
     private var rateBeforeHold: Float = 1.0
     private var controlsHideWorkItem: DispatchWorkItem?
     private var didPresentError = false
@@ -595,14 +598,31 @@ final class PlayerViewController: UIViewController {
     /// o que ele serve.
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         super.touchesBegan(touches, with: event)
-        guard gesturesEnabled, !controls.isVisible else { return }
-        controls.setVisible(true, animated: true)
-        scheduleControlsHide()
+        guard gesturesEnabled else { return }
+
+        if controls.isVisible {
+            // Barra já na tela: este toque é para escondê-la.
+            mostrouNesteToque = false
+        } else {
+            mostrouNesteToque = true
+            controls.setVisible(true, animated: true)
+            scheduleControlsHide()
+        }
     }
 
     /// Já visível, o toque simples esconde — o mostrar ficou no `touchesBegan`.
+    ///
+    /// Só que os dois eram o mesmo dedo. Mostrar acontece no encostar; o toque
+    /// simples só é reconhecido uns 0,3 s depois, quando o toque duplo desiste.
+    /// Nesse intervalo a barra já estava visível, então o mesmo toque que a
+    /// trouxe a mandava embora — ela piscava e sumia. Tocar num botão parecia
+    /// funcionar porque aí nem um nem outro chegava a rodar.
     @objc private func handleSingleTap() {
         guard gesturesEnabled, controls.isVisible else { return }
+        guard !mostrouNesteToque else {
+            mostrouNesteToque = false
+            return
+        }
         controls.setVisible(false, animated: true)
     }
 
