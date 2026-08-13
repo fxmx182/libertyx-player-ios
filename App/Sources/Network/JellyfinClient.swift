@@ -230,35 +230,119 @@ struct JellyfinClient {
 
     // MARK: - Reprodução
 
-    /// A URL para tocar.
+    /// A URL para tocar, perguntada ao servidor.
     ///
-    /// Pede um HLS e declara o que este aparelho aceita. Com isso o servidor
-    /// decide sozinho: se o vídeo já está num codec que a Apple lê, ele só
-    /// troca a embalagem — barato, sem perda. Se não estiver, converte o que
-    /// for preciso e só isso.
+    /// Montar essa URL na mão não funciona — foi o que eu tinha feito, e por
+    /// isso nada abria. O Jellyfin quer que o cliente **declare o que sabe
+    /// tocar** e devolve a decisão pronta: se dá para entregar o arquivo como
+    /// está, ou qual endereço usar depois de reembalar.
     ///
-    /// É esta linha que faz um MKV virar algo que o AVPlayer toca com busca
-    /// exata e janela flutuante.
-    func streamURL(for item: Item) -> URL? {
-        var componentes = URLComponents(
-            url: server.baseURL.appendingPathComponent("Videos/\(item.id)/master.m3u8"),
-            resolvingAgainstBaseURL: false)
-        componentes?.queryItems = [
-            URLQueryItem(name: "api_key", value: token),
-            URLQueryItem(name: "MediaSourceId", value: item.id),
-            // H.264 sempre aceito; HEVC também, e aí um filme 4K passa sem
-            // recodificar. Quem escolhe é o servidor, não nós.
-            URLQueryItem(name: "VideoCodec", value: "h264,hevc"),
-            URLQueryItem(name: "AudioCodec", value: "aac,mp3"),
-            URLQueryItem(name: "TranscodingContainer", value: "ts"),
-            URLQueryItem(name: "TranscodingProtocol", value: "hls"),
-            URLQueryItem(name: "SegmentContainer", value: "ts"),
-            // Sem isto o servidor pode escolher um perfil que o iPhone recusa.
-            URLQueryItem(name: "h264-profile", value: "high,main,baseline"),
-            URLQueryItem(name: "h264-level", value: "51"),
-            URLQueryItem(name: "MaxAudioChannels", value: "2"),
+    /// O perfil abaixo é onde mora o ganho. Ele diz duas coisas ao servidor:
+    ///
+    /// - **Toque direto** só de MP4, M4V e MOV. MKV fica de fora de propósito:
+    ///   o AVPlayer não abre, e receber o arquivo cru seria um beco sem saída.
+    /// - **Reembalando**, aceitamos H.264 e HEVC dentro de fMP4, com áudio AAC,
+    ///   AC-3 ou E-AC-3. Como o codec de origem quase sempre está nessa lista,
+    ///   o servidor **copia** as faixas em vez de recodificar — troca de casca,
+    ///   processador quase parado. É a diferença entre o seu homelab ventilando
+    ///   e ele nem perceber que está servindo um filme.
+    ///
+    /// fMP4 e não MPEG-TS porque a Apple só aceita HEVC em HLS dentro de fMP4;
+    /// com TS, todo filme em HEVC seria recodificado à toa.
+    func playbackURL(for item: Item) async throws -> URL {
+        let perfil: [String: Any] = [
+            "DeviceProfile": [
+                "MaxStreamingBitrate": 120_000_000,
+                "MaxStaticBitrate": 120_000_000,
+                "MusicStreamingTranscodingBitrate": 384_000,
+                "DirectPlayProfiles": [
+                    [
+                        "Container": "mp4,m4v,mov",
+                        "Type": "Video",
+                        "VideoCodec": "h264,hevc",
+                        "AudioCodec": "aac,mp3,ac3,eac3,alac,flac",
+                    ],
+                ],
+                "TranscodingProfiles": [
+                    [
+                        "Container": "mp4",
+                        "Type": "Video",
+                        "VideoCodec": "h264,hevc",
+                        "AudioCodec": "aac,ac3,eac3",
+                        "Protocol": "hls",
+                        "Context": "Streaming",
+                        "MaxAudioChannels": "6",
+                        "MinSegments": 2,
+                        "BreakOnNonKeyFrames": false,
+                    ],
+                ],
+                "ContainerProfiles": [],
+                "CodecProfiles": [],
+                "SubtitleProfiles": [
+                    ["Format": "vtt", "Method": "Hls"],
+                    ["Format": "vtt", "Method": "External"],
+                ],
+            ] as [String: Any],
         ]
-        return componentes?.url
+
+        guard var componentes = URLComponents(
+            url: server.baseURL.appendingPathComponent("Items/\(item.id)/PlaybackInfo"),
+            resolvingAgainstBaseURL: false) else { throw Failure.badURL }
+        componentes.queryItems = [URLQueryItem(name: "UserId", value: server.userID)]
+        guard let url = componentes.url else { throw Failure.badURL }
+
+        var pedido = URLRequest(url: url)
+        pedido.httpMethod = "POST"
+        pedido.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        Self.assinar(&pedido, token: token)
+        pedido.httpBody = try JSONSerialization.data(withJSONObject: perfil)
+
+        let (dados, resposta) = try await URLSession.shared.data(for: pedido)
+        guard let http = resposta as? HTTPURLResponse else { throw Failure.malformed }
+        guard (200..<300).contains(http.statusCode) else {
+            throw Failure.badResponse(http.statusCode, String(data: dados, encoding: .utf8) ?? "")
+        }
+
+        guard let raiz = try JSONSerialization.jsonObject(with: dados) as? [String: Any],
+              let fontes = raiz["MediaSources"] as? [[String: Any]],
+              let fonte = fontes.first else {
+            throw Failure.malformed
+        }
+
+        // Reembalado ou convertido: o servidor já devolve o endereço pronto,
+        // com a sessão dele embutida.
+        if let caminho = fonte["TranscodingUrl"] as? String {
+            let absoluto = caminho.hasPrefix("http")
+                ? caminho
+                : server.baseURL.absoluteString + caminho
+            guard let url = URL(string: absoluto) else { throw Failure.badURL }
+            return comChave(url)
+        }
+
+        // Toque direto: o arquivo como está no disco do servidor.
+        let fonteID = (fonte["Id"] as? String) ?? item.id
+        let extensao = (fonte["Container"] as? String)?.split(separator: ",").first.map(String.init) ?? "mp4"
+        guard var direto = URLComponents(
+            url: server.baseURL.appendingPathComponent("Videos/\(item.id)/stream.\(extensao)"),
+            resolvingAgainstBaseURL: false) else { throw Failure.badURL }
+        direto.queryItems = [
+            URLQueryItem(name: "static", value: "true"),
+            URLQueryItem(name: "mediaSourceId", value: fonteID),
+            URLQueryItem(name: "api_key", value: token),
+        ]
+        guard let url = direto.url else { throw Failure.badURL }
+        return url
+    }
+
+    /// O endereço devolvido pelo servidor nem sempre traz a chave — e sem ela
+    /// o AVPlayer leva 401 no primeiro segmento, sem nada explicando.
+    private func comChave(_ url: URL) -> URL {
+        guard var componentes = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
+        var itens = componentes.queryItems ?? []
+        guard !itens.contains(where: { $0.name.lowercased() == "api_key" }) else { return url }
+        itens.append(URLQueryItem(name: "api_key", value: token))
+        componentes.queryItems = itens
+        return componentes.url ?? url
     }
 
     // MARK: - Estado de reprodução

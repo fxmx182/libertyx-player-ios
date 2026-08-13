@@ -179,7 +179,8 @@ struct JellyfinLibraryView: View {
     @State private var carregando = true
     @State private var falha: String?
     @State private var tocando: MediaItem?
-    @State private var retomada: Double?
+    /// Qual cartão está esperando resposta do servidor.
+    @State private var abrindo: String?
 
     private var client: JellyfinClient? {
         guard let token = JellyfinStore.shared.token(for: server) else { return nil }
@@ -225,21 +226,47 @@ struct JellyfinLibraryView: View {
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .task { await carregar() }
+        .overlay {
+            if abrindo != nil {
+                ProgressView("Preparando…")
+                    .padding(20)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+            }
+        }
+        .alert("Não deu para abrir", isPresented: Binding(
+            get: { falha != nil && !carregando },
+            set: { if !$0 { falha = nil } }
+        )) {
+            Button("Fechar", role: .cancel) { falha = nil }
+        } message: {
+            Text(falha ?? "")
+        }
         .fullScreenCover(item: $tocando) { item in
             PlayerScreen(item: item, playlist: [item]).ignoresSafeArea()
         }
     }
 
     private func abrir(_ item: JellyfinClient.Item) {
-        guard let client, let url = client.streamURL(for: item) else { return }
+        guard let client else { return }
+        abrindo = item.id
+        Task {
+            defer { abrindo = nil }
+            do {
+                // Quem decide como o vídeo vem é o servidor, não nós — daí
+                // isto ser uma ida à rede e não uma URL montada na hora.
+                let url = try await client.playbackURL(for: item)
 
-        // A marca de onde parou vem do servidor, então ela vale em qualquer
-        // aparelho — é para isso que serve ter um Jellyfin.
-        if let posicao = item.resumePosition, let duracao = item.duration {
-            ResumeStore.shared.save(position: posicao, duration: duracao,
-                                    for: MediaOrigin.remote(url: url).resumeKey)
+                // A marca de onde parou vem do servidor, então ela vale em
+                // qualquer aparelho — é para isso que serve ter um Jellyfin.
+                if let posicao = item.resumePosition, let duracao = item.duration {
+                    ResumeStore.shared.save(position: posicao, duration: duracao,
+                                            for: MediaOrigin.remote(url: url).resumeKey)
+                }
+                tocando = MediaItem(title: item.name, origin: .remote(url: url))
+            } catch {
+                falha = error.localizedDescription
+            }
         }
-        tocando = MediaItem(title: item.name, origin: .remote(url: url))
     }
 
     private func carregar() async {
@@ -269,36 +296,18 @@ struct JellyfinCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
-            ZStack(alignment: .bottomLeading) {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(Color.secondary.opacity(0.18))
-
-                if let url = client?.imageURL(for: item, maxWidth: 300) {
-                    AsyncImage(url: url) { imagem in
-                        imagem.resizable().aspectRatio(contentMode: .fill)
-                    } placeholder: {
-                        ProgressView()
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                } else {
-                    Image(systemName: item.isFolder ? "folder" : "film")
-                        .font(.title3)
-                        .foregroundStyle(.secondary)
-                }
-
-                // A faixa de progresso repete o que o servidor sabe: quanto
-                // deste filme você já viu.
-                if let posicao = item.resumePosition, let duracao = item.duration, duracao > 0 {
-                    GeometryReader { geo in
-                        Rectangle()
-                            .fill(Color.accentColor)
-                            .frame(width: geo.size.width * min(1, posicao / duracao), height: 3)
-                            .offset(y: geo.size.height - 3)
-                    }
-                }
-            }
-            .aspectRatio(2.0 / 3.0, contentMode: .fit)
-            .clipped()
+            // Quem manda no tamanho é este retângulo invisível, e só ele.
+            //
+            // Antes o pôster estava dentro de uma pilha, junto de um leitor de
+            // geometria — que ocupa tudo o que puder. A célula deixava de ter
+            // tamanho próprio e os cartões passavam por cima uns dos outros.
+            // Em sobreposição, `overlay` é diferente de empilhar: o conteúdo de
+            // um overlay não pode aumentar quem o hospeda.
+            Color.clear
+                .aspectRatio(2.0 / 3.0, contentMode: .fit)
+                .overlay { capa }
+                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .overlay(alignment: .bottom) { progresso }
 
             Text(item.name)
                 .font(.caption)
@@ -308,6 +317,46 @@ struct JellyfinCard: View {
             if let ano = item.year {
                 Text(String(ano)).font(.caption2).foregroundStyle(.secondary)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var capa: some View {
+        ZStack {
+            Rectangle().fill(Color.secondary.opacity(0.18))
+
+            if let url = client?.imageURL(for: item, maxWidth: 300) {
+                AsyncImage(url: url) { fase in
+                    switch fase {
+                    case .success(let imagem):
+                        imagem.resizable().aspectRatio(contentMode: .fill)
+                    case .failure:
+                        Image(systemName: "photo").foregroundStyle(.secondary)
+                    default:
+                        ProgressView()
+                    }
+                }
+            } else {
+                Image(systemName: item.isFolder ? "folder" : "film")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// Quanto deste filme você já viu, do jeito que o servidor sabe.
+    @ViewBuilder
+    private var progresso: some View {
+        if let posicao = item.resumePosition, let duracao = item.duration, duracao > 0 {
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Rectangle().fill(Color.black.opacity(0.35))
+                    Rectangle()
+                        .fill(Color.accentColor)
+                        .frame(width: geo.size.width * min(1, posicao / duracao))
+                }
+            }
+            .frame(height: 3)
         }
     }
 }
