@@ -282,7 +282,7 @@ struct JellyfinClient {
                         "Container": "mp4,m4v,mov",
                         "Type": "Video",
                         "VideoCodec": "h264,hevc",
-                        "AudioCodec": "aac,mp3,ac3,eac3,alac,flac",
+                        "AudioCodec": "aac,mp3,alac",
                     ],
                 ],
                 "TranscodingProfiles": [
@@ -290,10 +290,17 @@ struct JellyfinClient {
                         "Container": "mp4",
                         "Type": "Video",
                         "VideoCodec": "h264,hevc",
-                        "AudioCodec": "aac,ac3,eac3",
+                        // Só AAC, e este "só" é o conserto.
+                        //
+                        // Aceitar AC-3 fazia o servidor copiar a faixa original
+                        // — barato para ele, impossível para o iPhone, que não
+                        // decodifica AC-3. Vídeo perfeito, áudio mudo, e o
+                        // AVPlayer parando na tela preta sem dizer nada.
+                        // Converter só o áudio custa quase nada no servidor.
+                        "AudioCodec": "aac",
                         "Protocol": "hls",
                         "Context": "Streaming",
-                        "MaxAudioChannels": "6",
+                        "MaxAudioChannels": "2",
                         "MinSegments": 2,
                         "BreakOnNonKeyFrames": false,
                     ],

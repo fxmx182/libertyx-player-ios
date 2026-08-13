@@ -79,6 +79,13 @@ final class HybridEngine: NSObject, PlaybackEngine {
             return
         }
 
+        // Canal de TV também: o Jellyfin serve MPEG-TS contínuo sobre HTTP, e
+        // o AVPlayer só sabe HLS.
+        if item.isLiveStream {
+            try await adotar(VLCEngine(), item: item)
+            return
+        }
+
         let apple = AVPlayerEngine()
         do {
             try await apple.load(item)

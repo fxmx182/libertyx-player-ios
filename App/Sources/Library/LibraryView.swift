@@ -19,6 +19,7 @@ struct LibraryView: View {
     @State private var playlist: [MediaItem] = []
     @State private var showingInfo: MediaItem?
     @State private var errorMessage: String?
+    @State private var pendingDeletion: MediaItem?
 
     var body: some View {
         NavigationStack {
@@ -30,6 +31,17 @@ struct LibraryView: View {
                 }
             }
             .navigationTitle("Vídeos")
+            // Apagar arquivo não tem desfazer no iOS — a confirmação é a
+            // única chance de voltar atrás.
+            .alert("Excluir vídeo?", isPresented: Binding(
+                get: { pendingDeletion != nil },
+                set: { if !$0 { pendingDeletion = nil } }
+            ), presenting: pendingDeletion) { item in
+                Button("Excluir", role: .destructive) { excluir(item) }
+                Button("Cancelar", role: .cancel) {}
+            } message: { item in
+                Text("“\(item.title)” será apagado do aparelho. Não dá para desfazer.")
+            }
             .toolbar {
                 // SMB à esquerda, separado das ações locais: são dois mundos
                 // diferentes, e misturá-los num menu só esconderia a rede.
@@ -212,11 +224,44 @@ struct LibraryView: View {
     }
 
     @ViewBuilder
+    @ViewBuilder
     private func menuDoItem(_ item: MediaItem) -> some View {
         Button {
             showingInfo = item
         } label: {
             Label("Detalhes do arquivo", systemImage: "info.circle")
+        }
+
+        // Só arquivo local: no servidor, apagar seria mexer no acervo de
+        // verdade, e um toque errado ali não tem desfazer.
+        if case .file = item.origin {
+            Button(role: .destructive) {
+                pendingDeletion = item
+            } label: {
+                Label("Excluir do aparelho", systemImage: "trash")
+            }
+        }
+    }
+
+    /// Apaga o arquivo de verdade, dentro do escopo que a pasta autoriza.
+    private func excluir(_ item: MediaItem) {
+        guard case .file(let url, let bookmark) = item.origin else { return }
+
+        let guarda = ScopedAccess(url: url, bookmark: bookmark)
+        defer { withExtendedLifetime(guarda) {} }
+        guard guarda.path != nil else {
+            errorMessage = "O iOS não autorizou apagar este arquivo. Reautorize a pasta e tente de novo."
+            return
+        }
+
+        do {
+            try FileManager.default.removeItem(at: url)
+            // A marca de onde parou não pode sobreviver ao arquivo: ela
+            // reapareceria num arquivo futuro de mesmo nome.
+            ResumeStore.shared.clear(key: item.origin.resumeKey)
+            Task { await library.refresh(bookmarks: bookmarks) }
+        } catch {
+            errorMessage = "Não deu para apagar: \(error.localizedDescription)"
         }
     }
 

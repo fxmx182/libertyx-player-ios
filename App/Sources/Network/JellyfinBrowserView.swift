@@ -209,10 +209,16 @@ struct JellyfinLibraryView: View {
                                 JellyfinLibraryView(server: server, parent: item.id,
                                                     title: item.name,
                                                     collectionType: item.collectionType)
+                                    // Sem identidade própria, o SwiftUI
+                                    // reaproveita a tela anterior com o estado
+                                    // dela — daí clicar em Filmes e abrir
+                                    // Séries.
+                                    .id(item.id)
                             } label: {
                                 JellyfinCard(item: item, client: client)
                             }
                             .buttonStyle(.plain)
+                            .id(item.id)
                         } else if item.isPlayable {
                             Button {
                                 abrir(item)
@@ -220,6 +226,7 @@ struct JellyfinLibraryView: View {
                                 JellyfinCard(item: item, client: client)
                             }
                             .buttonStyle(.plain)
+                            .id(item.id)
                         }
                     }
                 }
@@ -266,7 +273,8 @@ struct JellyfinLibraryView: View {
                     ResumeStore.shared.save(position: posicao, duration: duracao,
                                             for: MediaOrigin.remote(url: url).resumeKey)
                 }
-                tocando = MediaItem(title: item.name, origin: .remote(url: url))
+                tocando = MediaItem(title: item.name, origin: .remote(url: url),
+                                    isLiveStream: item.type == "TvChannel")
             } catch {
                 falha = error.localizedDescription
             }
@@ -352,6 +360,7 @@ struct JellyfinCard: View {
                         ProgressView()
                     }
                 }
+                .id(url)
             } else {
                 Image(systemName: item.isFolder ? "folder" : "film")
                     .font(.title3)

@@ -39,14 +39,22 @@ struct MediaItem: Identifiable, Hashable {
     var origin: MediaOrigin
     var fileSize: Int64?
     var modifiedAt: Date?
+    /// Transmissão contínua sem fim — canal de TV.
+    ///
+    /// O Jellyfin entrega canal como MPEG-TS puro sobre HTTP, que o AVPlayer
+    /// não sabe ler: ele só entende HLS. Marcar aqui evita dez segundos de
+    /// tela preta até o vigia perceber e trocar de motor.
+    var isLiveStream: Bool = false
 
     init(id: UUID = UUID(), title: String, origin: MediaOrigin,
-         fileSize: Int64? = nil, modifiedAt: Date? = nil) {
+         fileSize: Int64? = nil, modifiedAt: Date? = nil,
+         isLiveStream: Bool = false) {
         self.id = id
         self.title = title
         self.origin = origin
         self.fileSize = fileSize
         self.modifiedAt = modifiedAt
+        self.isLiveStream = isLiveStream
     }
 
     /// Extensões que consideramos vídeo ao varrer uma pasta.

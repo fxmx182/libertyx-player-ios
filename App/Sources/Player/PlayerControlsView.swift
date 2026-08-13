@@ -236,7 +236,9 @@ final class PlayerControlsView: UIView {
 
         transport.axis = .horizontal
         transport.alignment = .center
-        transport.spacing = 22
+        // Folga generosa: com 22 os botões encostavam uns nos outros e errar o
+        // alvo era o resultado normal, não o acidente.
+        transport.spacing = 34
         transport.translatesAutoresizingMaskIntoConstraints = false
         [previousButton, playButton, nextButton].forEach(transport.addArrangedSubview)
 
@@ -258,13 +260,18 @@ final class PlayerControlsView: UIView {
 
             transport.centerXAnchor.constraint(equalTo: centerXAnchor),
             transport.centerYAnchor.constraint(equalTo: lockButton.centerYAnchor),
+            // Limite real em vez de esperança: em tela estreita o grupo do
+            // meio encostava no bloqueio de um lado e no enquadramento do
+            // outro. Assim ele encolhe antes de invadir.
+            transport.leadingAnchor.constraint(greaterThanOrEqualTo: lockButton.trailingAnchor, constant: 12),
+            transport.trailingAnchor.constraint(lessThanOrEqualTo: aspectButton.leadingAnchor, constant: -12),
 
             pipButton.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -10),
             pipButton.centerYAnchor.constraint(equalTo: lockButton.centerYAnchor),
             pipButton.widthAnchor.constraint(equalToConstant: 52),
             pipButton.heightAnchor.constraint(equalToConstant: 52),
 
-            aspectButton.trailingAnchor.constraint(equalTo: pipButton.leadingAnchor, constant: -2),
+            aspectButton.trailingAnchor.constraint(equalTo: pipButton.leadingAnchor, constant: -6),
             aspectButton.centerYAnchor.constraint(equalTo: lockButton.centerYAnchor),
             aspectButton.widthAnchor.constraint(equalToConstant: 52),
             aspectButton.heightAnchor.constraint(equalToConstant: 52),
