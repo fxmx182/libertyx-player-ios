@@ -123,21 +123,41 @@ final class HybridEngine: NSObject, PlaybackEngine {
         vigia?.cancel()
         guard !jaTrocouPorTravamento, active is AVPlayerEngine, let item = itemAtual else { return }
 
-        let partida = currentTime
         vigia = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 10_000_000_000)
-            guard let self, !Task.isCancelled else { return }
-            guard self.active is AVPlayerEngine, self.state == .playing else { return }
-            guard abs(self.currentTime - partida) < 0.25 else { return }
+            var ultimo = self?.currentTime ?? 0
+            var paradas = 0
 
-            LabLog.problem("AVPlayer travado em \(item.title); passando para o VLC")
-            self.jaTrocouPorTravamento = true
-            let retomar = max(partida, 0)
-            self.active?.teardown()
-            try? await self.adotar(VLCEngine(), item: item)
-            self.play()
-            if retomar > 1 {
-                await self.seek(to: retomar, precise: false)
+            // Vigilância contínua, e não uma olhada só.
+            //
+            // A primeira versão media uma vez, dez segundos depois do play — e
+            // era enganada exatamente pelo caso real: o vídeo anda três
+            // segundos, prova que "está andando", e só então congela. Um
+            // instante de progresso não é sinal de saúde.
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 4_000_000_000)
+                guard let self, !Task.isCancelled, self.active is AVPlayerEngine else { return }
+
+                // Pausado não é travado — quem parou foi o usuário.
+                guard self.state == .playing else {
+                    ultimo = self.currentTime
+                    paradas = 0
+                    continue
+                }
+
+                let agora = self.currentTime
+                paradas = abs(agora - ultimo) < 0.25 ? paradas + 1 : 0
+                ultimo = agora
+                guard paradas >= 2 else { continue }
+
+                LabLog.problem("AVPlayer parou em \(TimeFormat.clock(agora)) de \(item.title); passando para o VLC")
+                self.jaTrocouPorTravamento = true
+                self.active?.teardown()
+                try? await self.adotar(VLCEngine(), item: item)
+                self.play()
+                if agora > 1 {
+                    await self.seek(to: agora, precise: false)
+                }
+                return
             }
         }
     }
