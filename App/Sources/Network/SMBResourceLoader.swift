@@ -127,8 +127,11 @@ final class SMBResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
                 return
             }
 
+            // O teto de UInt32 não é limite nosso, é o do protocolo — e o
+            // AVPlayer nunca pede tanto de uma vez.
             let quanto = min(restante, Int64(size) - inicio)
-            let trecho = try await leitor.read(offset: UInt64(inicio), length: Int(quanto))
+            let trecho = try await leitor.read(offset: UInt64(inicio),
+                                               length: UInt32(min(quanto, Int64(UInt32.max))))
             guard !Task.isCancelled else { return }
 
             dados.respond(with: trecho)
