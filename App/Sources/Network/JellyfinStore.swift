@@ -15,6 +15,10 @@ struct JellyfinServer: Codable, Identifiable, Hashable {
     var username: String
     /// Identificador do usuário dentro do servidor, devolvido no login.
     var userID: String
+    /// Identificador do próprio servidor. A interface web precisa dele para
+    /// reconhecer a sessão que entregamos pronta. Opcional porque servidores
+    /// salvos antes disso não o têm.
+    var systemID: String?
 
     var displayHost: String {
         (baseURL.host ?? baseURL.absoluteString) + (baseURL.port.map { ":\($0)" } ?? "")
