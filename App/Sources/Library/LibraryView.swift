@@ -1,3 +1,4 @@
+import UniformTypeIdentifiers
 import SwiftUI
 
 /// Tela inicial: todos os vídeos que o app encontra, agrupados por pasta.
@@ -90,7 +91,7 @@ struct LibraryView: View {
                         Button {
                             managingFolders = true
                         } label: {
-                            Label("Pastas autorizadas", systemImage: "folder.badge.gearshape")
+                            Label("Adicionar ou remover pastas", systemImage: "folder.badge.gearshape")
                         }
                         Button {
                             Task { await library.refresh(bookmarks: bookmarks) }
@@ -128,7 +129,11 @@ struct LibraryView: View {
             .sheet(isPresented: $showingOptions) {
                 LibraryOptionsSheet(options: options)
             }
-            .sheet(isPresented: $managingFolders) {
+            .sheet(isPresented: $managingFolders, onDismiss: {
+                // Tirar a autorização de uma pasta tem que sumir com os vídeos
+                // dela da lista na hora — senão ficam ali, sem abrir.
+                Task { await library.refresh(bookmarks: bookmarks) }
+            }) {
                 ManageFoldersView()
             }
             .sheet(item: $showingInfo) { item in
@@ -307,26 +312,58 @@ struct ManageFoldersView: View {
 
     @EnvironmentObject private var bookmarks: BookmarkStore
     @Environment(\.dismiss) private var dismiss
+    @State private var escolhendoPasta = false
 
     var body: some View {
         NavigationStack {
             List {
                 Section {
                     ForEach(bookmarks.folders) { pasta in
-                        Label(pasta.name, systemImage: "folder")
+                        HStack {
+                            Label(pasta.name, systemImage: "folder")
+                            Spacer()
+                            // Botão à mostra, e não só o deslizar: o gesto não
+                            // se anuncia, e quem não sabe que ele existe conclui
+                            // que a opção não existe.
+                            Button("Desconectar", role: .destructive) {
+                                bookmarks.remove(pasta)
+                            }
+                            .buttonStyle(.borderless)
+                            .font(.callout)
+                        }
                     }
                     .onDelete { indices in
                         indices.map { bookmarks.folders[$0] }.forEach(bookmarks.remove)
                     }
+                } header: {
+                    Text("Pastas conectadas")
                 } footer: {
-                    Text("Remover uma pasta só tira a autorização — nenhum arquivo é apagado.")
+                    Text("Desconectar só tira a autorização — nenhum arquivo é apagado do aparelho.")
+                }
+
+                Section {
+                    Button {
+                        escolhendoPasta = true
+                    } label: {
+                        Label("Conectar outra pasta…", systemImage: "folder.badge.plus")
+                    }
+                } footer: {
+                    Text("O iOS não deixa um app varrer o aparelho inteiro. Cada pasta autorizada aqui passa a ser varrida sozinha, incluindo as subpastas.")
                 }
             }
-            .navigationTitle("Pastas autorizadas")
+            .navigationTitle("Pastas")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Fechar") { dismiss() }
+                }
+            }
+            .fileImporter(isPresented: $escolhendoPasta,
+                          allowedContentTypes: [.folder],
+                          allowsMultipleSelection: true) { resultado in
+                guard case .success(let urls) = resultado else { return }
+                for url in urls {
+                    try? bookmarks.add(url: url)
                 }
             }
             .overlay {
