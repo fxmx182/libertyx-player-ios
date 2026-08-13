@@ -31,6 +31,13 @@ final class PlayerControlsView: UIView {
     // MARK: - Estado
 
     private(set) var isVisible = true
+    /// Desde quando está na tela.
+    ///
+    /// Serve para distinguir "o toque que trouxe a barra" de "um toque com a
+    /// barra já na tela" sem depender de sinalizador algum: basta olhar o
+    /// relógio. Um sinalizador precisa que dois eventos aconteçam sempre em
+    /// par, e quando um falha ele trava — foi o que aconteceu.
+    private(set) var visibleSince: Date? = Date()
     /// Bloqueio: esconde tudo e desliga os gestos. Existe porque assistir
     /// deitado significa encostar na tela sem querer o tempo todo.
     private(set) var isLocked = false
@@ -425,6 +432,7 @@ final class PlayerControlsView: UIView {
     func setVisible(_ visible: Bool, animated: Bool) {
         guard !isLocked, visible != isVisible else { return }
         isVisible = visible
+        visibleSince = visible ? Date() : nil
         applyVisibility(animated: animated)
     }
 

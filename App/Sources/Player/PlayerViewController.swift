@@ -52,9 +52,6 @@ final class PlayerViewController: UIViewController {
     /// A ponte com a ilha, a central de controle e o botão do fone.
     private let nowPlaying = NowPlayingCenter()
 
-    /// Se foi este mesmo toque que trouxe a barra à tela.
-    private var mostrouNesteToque = false
-
     private var rateBeforeHold: Float = 1.0
     private var controlsHideWorkItem: DispatchWorkItem?
     private var didPresentError = false
@@ -667,29 +664,26 @@ final class PlayerViewController: UIViewController {
         super.touchesBegan(touches, with: event)
         guard gesturesEnabled else { return }
 
-        if controls.isVisible {
-            // Barra já na tela: este toque é para escondê-la.
-            mostrouNesteToque = false
-        } else {
-            mostrouNesteToque = true
-            controls.setVisible(true, animated: true)
-            scheduleControlsHide()
-        }
+        guard !controls.isVisible else { return }
+        controls.setVisible(true, animated: true)
+        scheduleControlsHide()
     }
 
     /// Já visível, o toque simples esconde — o mostrar ficou no `touchesBegan`.
     ///
-    /// Só que os dois eram o mesmo dedo. Mostrar acontece no encostar; o toque
+    /// Só que os dois são o mesmo dedo. Mostrar acontece no encostar; o toque
     /// simples só é reconhecido uns 0,3 s depois, quando o toque duplo desiste.
-    /// Nesse intervalo a barra já estava visível, então o mesmo toque que a
-    /// trouxe a mandava embora — ela piscava e sumia. Tocar num botão parecia
-    /// funcionar porque aí nem um nem outro chegava a rodar.
+    /// Sem separar os dois, o mesmo toque que trouxe a barra a mandava embora.
+    ///
+    /// A separação é pelo relógio, e não por um sinalizador: se a barra chegou
+    /// agora, este toque foi o que a trouxe e não deve escondê-la. Sinalizador
+    /// exige que os dois eventos aconteçam sempre em par — e quando um deles
+    /// não acontece, ele fica preso ligado e engole o toque seguinte, que era
+    /// justamente o de esconder.
     @objc private func handleSingleTap() {
         guard gesturesEnabled, controls.isVisible else { return }
-        guard !mostrouNesteToque else {
-            mostrouNesteToque = false
-            return
-        }
+        guard let desde = controls.visibleSince,
+              Date().timeIntervalSince(desde) > 0.3 else { return }
         controls.setVisible(false, animated: true)
     }
 
