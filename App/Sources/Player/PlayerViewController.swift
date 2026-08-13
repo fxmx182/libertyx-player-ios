@@ -74,6 +74,20 @@ final class PlayerViewController: UIViewController {
     private let gravityModes: [AVLayerVideoGravity] = [.resizeAspect, .resizeAspectFill, .resize]
     private var gravityIndex = 0
 
+    // MARK: - Ampliação
+
+    /// Ampliação contínua da imagem, independente do enquadramento.
+    ///
+    /// O enquadramento decide como o vídeo se encaixa na tela; a ampliação é o
+    /// usuário chegando mais perto de um pedaço. São coisas diferentes e por
+    /// isso não se atrapalham.
+    private var videoZoom: CGFloat = 1.0
+    /// Que pedaço da imagem ampliada está no centro.
+    private var videoOffset: CGPoint = .zero
+    /// Abaixo de 1× dá para ver a imagem inteira afastada; acima, chega-se
+    /// perto o bastante para ler uma placa no fundo da cena.
+    private let zoomRange: ClosedRange<CGFloat> = 0.5...6.0
+
     // MARK: - Ciclo de vida
 
     init(engine: PlaybackEngine, item: MediaItem, playlist: [MediaItem] = []) {
@@ -442,6 +456,11 @@ final class PlayerViewController: UIViewController {
         // seriam as do arquivo errado.
         didPresentError = false
         lastSavedPosition = 0
+        // A ampliação era do vídeo anterior; o novo pode nem ter o mesmo
+        // formato de tela.
+        videoZoom = 1
+        videoOffset = .zero
+        applyZoom()
 
         controls.title = item.title
         controls.update(currentTime: 0, duration: 0)
@@ -493,7 +512,13 @@ final class PlayerViewController: UIViewController {
         view.addGestureRecognizer(longPress)
 
         let pinch = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch))
+        pinch.delegate = self
         view.addGestureRecognizer(pinch)
+
+        let zoomPan = UIPanGestureRecognizer(target: self, action: #selector(handleZoomPan))
+        zoomPan.minimumNumberOfTouches = 2
+        zoomPan.delegate = self
+        view.addGestureRecognizer(zoomPan)
 
         // O relógio recomeça a cada toque, inclusive nos que caem em botões.
         let espiao = TouchSpyRecognizer()
@@ -619,13 +644,88 @@ final class PlayerViewController: UIViewController {
         }
     }
 
+    /// Pinça amplia e reduz a imagem, como em qualquer foto no iPhone.
+    ///
+    /// Antes ela percorria os modos de enquadramento — mas para isso já existe
+    /// o botão "Enquadrar", e nenhum outro app do aparelho usa a pinça assim.
     @objc private func handlePinch(_ gesture: UIPinchGestureRecognizer) {
-        guard gesturesEnabled, gesture.state == .ended else { return }
-        // Espalhar avança o modo, juntar volta.
-        gravityIndex = gesture.scale > 1
-            ? min(gravityIndex + 1, gravityModes.count - 1)
-            : max(gravityIndex - 1, 0)
-        applyGravity()
+        guard gesturesEnabled else { return }
+
+        switch gesture.state {
+        case .changed:
+            videoZoom = min(max(videoZoom * gesture.scale, zoomRange.lowerBound), zoomRange.upperBound)
+            gesture.scale = 1
+            applyZoom()
+            hud.show(.text("\(Int(videoZoom * 100))%"))
+            controlsHideWorkItem?.cancel()
+
+        case .ended, .cancelled, .failed:
+            // Perto do tamanho original a pinça encaixa em 1×: acertar
+            // exatamente 100% com dois dedos é impossível, e ficar em 1,03×
+            // deixa a imagem tremida sem nenhum motivo.
+            if abs(videoZoom - 1) < 0.08 {
+                videoZoom = 1
+                videoOffset = .zero
+                applyZoom(animated: true)
+            }
+            hud.hideAfterDelay()
+            scheduleControlsHide()
+
+        default:
+            break
+        }
+    }
+
+    /// Dois dedos arrastando movem a imagem ampliada.
+    ///
+    /// Um dedo já é rolagem do vídeo e volume — mexer nisso custaria os gestos
+    /// principais do app para servir a um caso ocasional.
+    @objc private func handleZoomPan(_ gesture: UIPanGestureRecognizer) {
+        guard gesturesEnabled, videoZoom > 1 else { return }
+
+        switch gesture.state {
+        case .changed:
+            let passo = gesture.translation(in: view)
+            gesture.setTranslation(.zero, in: view)
+            videoOffset.x += passo.x
+            videoOffset.y += passo.y
+            applyZoom()
+            controlsHideWorkItem?.cancel()
+
+        case .ended, .cancelled, .failed:
+            scheduleControlsHide()
+
+        default:
+            break
+        }
+    }
+
+    private func applyZoom(animated: Bool = false) {
+        // A imagem não pode ser arrastada para fora de vista: o limite é a
+        // sobra que a ampliação criou de cada lado.
+        let sobraX = max(0, view.bounds.width * (videoZoom - 1) / 2)
+        let sobraY = max(0, view.bounds.height * (videoZoom - 1) / 2)
+        videoOffset.x = min(max(videoOffset.x, -sobraX), sobraX)
+        videoOffset.y = min(max(videoOffset.y, -sobraY), sobraY)
+
+        let transformacao = CGAffineTransform(translationX: videoOffset.x, y: videoOffset.y)
+            .scaledBy(x: videoZoom, y: videoZoom)
+
+        if animated {
+            UIView.animate(withDuration: 0.2) { self.renderView.transform = transformacao }
+        } else {
+            renderView.transform = transformacao
+        }
+    }
+
+    /// Volta a imagem ao tamanho original.
+    private func resetZoom() {
+        guard videoZoom != 1 || videoOffset != .zero else { return }
+        videoZoom = 1
+        videoOffset = .zero
+        applyZoom(animated: true)
+        hud.show(.text("100%"))
+        hud.hideAfterDelay()
     }
 
     /// Mesma ação pelo botão da barra de ferramentas, aí sempre avançando.
@@ -715,6 +815,12 @@ final class PlayerViewController: UIViewController {
             .init(id: "girar", symbol: "rotate.right", title: "Girar tela") { [weak self] in
                 self?.toggleOrientation()
             },
+            .init(id: "zoom", symbol: "arrow.up.left.and.arrow.down.right",
+                  title: "Ampliação", isOn: videoZoom != 1) { [weak self] in
+                      self?.resetZoom()
+                      self?.refreshToolStrip()
+                      self?.scheduleControlsHide()
+                  },
             .init(id: "interface", symbol: "clock.arrow.circlepath", title: "Ocultar barra",
                   isOn: PlayerPreferences.autoHide == .nunca) { [weak self] in
                       self?.showAutoHideSheet()
@@ -1133,5 +1239,15 @@ final class PlayerViewController: UIViewController {
         }
         controlsHideWorkItem = work
         DispatchQueue.main.asyncAfter(deadline: .now() + atraso, execute: work)
+    }
+}
+
+/// Pinçar e arrastar com dois dedos são o mesmo gesto para quem faz: um ajusta
+/// o tamanho, o outro escolhe o pedaço, e exigir que aconteçam em turnos
+/// deixaria a ampliação truncada.
+extension PlayerViewController: UIGestureRecognizerDelegate {
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                           shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+        true
     }
 }
