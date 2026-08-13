@@ -224,7 +224,6 @@ struct LibraryView: View {
     }
 
     @ViewBuilder
-    @ViewBuilder
     private func menuDoItem(_ item: MediaItem) -> some View {
         Button {
             showingInfo = item
