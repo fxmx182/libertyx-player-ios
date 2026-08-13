@@ -133,6 +133,24 @@ actor SMBConnection {
         }
     }
 
+    /// Leitor de acesso aleatório, para quem quiser os bytes crus.
+    ///
+    /// É o que o `SMBResourceLoader` entrega ao AVPlayer: ele pede trechos por
+    /// posição, e quem sabe converter isso em leitura SMB é o `FileReader`.
+    func fileReader(share: String, path: String) async throws -> (FileReader, UInt64) {
+        let client = try await connectedClient()
+
+        if mountedShare != share {
+            if mountedShare != nil { try? await client.disconnectShare() }
+            try await client.connectShare(share)
+            mountedShare = share
+        }
+
+        let leitor = client.fileReader(path: path)
+        let tamanho = try await leitor.fileSize
+        return (leitor, tamanho)
+    }
+
     /// Sessão de reprodução lendo direto do servidor.
     func makeSession(share: String, path: String) async throws -> FFmpegPlaybackSession {
         let client = try await connectedClient()

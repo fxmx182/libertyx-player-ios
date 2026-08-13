@@ -81,9 +81,18 @@ final class AVPlayerEngine: NSObject, PlaybackEngine {
         }
     }
 
+    /// Ponte de leitura quando a origem é SMB. Precisa viver enquanto o asset
+    /// viver — se ela sumir, o AVPlayer fica sem quem responda aos pedidos.
+    private var smbBridge: SMBResourceLoader?
+    /// Fila própria: o delegado é chamado em rajadas e não pode disputar a
+    /// thread principal com a interface.
+    private let smbQueue = DispatchQueue(label: "com.mauricio.labplayer.smbLoader")
+
     func load(_ item: MediaItem) async throws {
         state = .loading
         releaseScope()
+        smbBridge?.teardown()
+        smbBridge = nil
 
         let url: URL
         switch item.origin {
@@ -91,15 +100,32 @@ final class AVPlayerEngine: NSObject, PlaybackEngine {
             url = try resolveFile(fileURL, bookmark: bookmark)
         case .remote(let remoteURL):
             url = remoteURL
-        case .smb:
-            // AVFoundation não fala SMB. Só o motor FFmpeg vai atender isso.
-            state = .failed(PlaybackError.unsupportedOrigin.localizedDescription)
-            throw PlaybackError.unsupportedOrigin
+        case .smb(let referencia, let caminho):
+            // O AVFoundation não fala SMB — mas aceita que a gente fale por
+            // ele. O delegado de recursos entrega os bytes; o formato continua
+            // sendo problema dele.
+            guard SMBResourceLoader.canHandle(path: caminho),
+                  let servidor = SMBServerStore.shared.servers.first(where: { $0.id == referencia.serverID }),
+                  let ponte = SMBResourceLoader(share: referencia.share, path: caminho,
+                                                server: servidor,
+                                                password: SMBServerStore.shared.password(for: servidor)),
+                  let falsa = ponte.makeURL() else {
+                state = .failed(PlaybackError.unsupportedOrigin.localizedDescription)
+                throw PlaybackError.unsupportedOrigin
+            }
+            smbBridge = ponte
+            url = falsa
         }
 
         let asset = AVURLAsset(url: url, options: [
             AVURLAssetPreferPreciseDurationAndTimingKey: true
         ])
+
+        // Precisa ser registrado antes de qualquer carga: é o primeiro pedido
+        // do asset que descobre que ninguém sabe abrir este esquema.
+        if let smbBridge {
+            asset.resourceLoader.setDelegate(smbBridge, queue: smbQueue)
+        }
 
         // Pré-carrega para saber se dá para tocar antes de mostrar tela preta.
         let playable = try await asset.load(.isPlayable)
@@ -232,6 +258,8 @@ final class AVPlayerEngine: NSObject, PlaybackEngine {
         removeObservers()
         player.replaceCurrentItem(with: nil)
         releaseScope()
+        smbBridge?.teardown()
+        smbBridge = nil
         state = .idle
     }
 }

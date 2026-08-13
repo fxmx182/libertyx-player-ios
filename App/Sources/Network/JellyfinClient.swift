@@ -49,22 +49,40 @@ struct JellyfinClient {
     }
 
     enum Failure: LocalizedError {
-        case badResponse(Int)
+        /// Com o corpo junto: o Jellyfin costuma dizer o que não gostou, e
+        /// jogar isso fora deixa "recusado" sem nenhuma pista de por quê.
+        case badResponse(Int, String)
         case malformed
         case badURL
 
         var errorDescription: String? {
             switch self {
-            case .badResponse(let code) where code == 401:
-                return "Usuário ou senha recusados pelo servidor."
-            case .badResponse(let code):
+            case .badResponse(let code, _) where code == 401:
+                return "Usuário ou senha recusados pelo servidor (401)."
+            case .badResponse(let code, let detalhe) where detalhe.isEmpty:
                 return "O servidor respondeu \(code)."
+            case .badResponse(let code, let detalhe):
+                return "O servidor respondeu \(code): \(detalhe.prefix(200))"
             case .malformed:
                 return "Resposta do servidor em formato inesperado."
             case .badURL:
                 return "Endereço do servidor inválido."
             }
         }
+    }
+
+    /// Põe os dois cabeçalhos de autenticação no pedido.
+    ///
+    /// O Jellyfin moderno lê `Authorization`; versões mais antigas só olham
+    /// `X-Emby-Authorization`. Mandar os dois custa nada e evita um "recusado"
+    /// que não teria explicação nenhuma.
+    private static func assinar(_ pedido: inout URLRequest, token: String? = nil) {
+        let cabecalho = authHeader(token: token)
+        pedido.setValue(cabecalho, forHTTPHeaderField: "Authorization")
+        pedido.setValue(cabecalho, forHTTPHeaderField: "X-Emby-Authorization")
+        // Sem User-Agent, proxy na frente do servidor às vezes responde 403
+        // achando que é robô — e o erro chega aqui como recusa de login.
+        pedido.setValue("LabPlayer/\(AppBuild.version) (iOS)", forHTTPHeaderField: "User-Agent")
     }
 
     // MARK: - Autenticação
@@ -99,7 +117,7 @@ struct JellyfinClient {
         var pedido = URLRequest(url: baseURL.appendingPathComponent("Users/AuthenticateByName"))
         pedido.httpMethod = "POST"
         pedido.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        pedido.setValue(authHeader(), forHTTPHeaderField: "Authorization")
+        assinar(&pedido)
         pedido.httpBody = try JSONSerialization.data(withJSONObject: [
             "Username": username,
             "Pw": password,
@@ -107,7 +125,9 @@ struct JellyfinClient {
 
         let (dados, resposta) = try await URLSession.shared.data(for: pedido)
         guard let http = resposta as? HTTPURLResponse else { throw Failure.malformed }
-        guard (200..<300).contains(http.statusCode) else { throw Failure.badResponse(http.statusCode) }
+        guard (200..<300).contains(http.statusCode) else {
+            throw Failure.badResponse(http.statusCode, String(data: dados, encoding: .utf8) ?? "")
+        }
 
         guard let raiz = try JSONSerialization.jsonObject(with: dados) as? [String: Any],
               let token = raiz["AccessToken"] as? String,
@@ -153,11 +173,13 @@ struct JellyfinClient {
         guard let url = componentes.url else { throw Failure.badURL }
 
         var pedido = URLRequest(url: url)
-        pedido.setValue(Self.authHeader(token: token), forHTTPHeaderField: "Authorization")
+        Self.assinar(&pedido, token: token)
 
         let (dados, resposta) = try await URLSession.shared.data(for: pedido)
         guard let http = resposta as? HTTPURLResponse else { throw Failure.malformed }
-        guard (200..<300).contains(http.statusCode) else { throw Failure.badResponse(http.statusCode) }
+        guard (200..<300).contains(http.statusCode) else {
+            throw Failure.badResponse(http.statusCode, String(data: dados, encoding: .utf8) ?? "")
+        }
 
         guard let raiz = try JSONSerialization.jsonObject(with: dados) as? [String: Any],
               let lista = raiz["Items"] as? [[String: Any]] else {
@@ -266,7 +288,7 @@ struct JellyfinClient {
         var pedido = URLRequest(url: server.baseURL.appendingPathComponent(caminho))
         pedido.httpMethod = "POST"
         pedido.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        pedido.setValue(Self.authHeader(token: token), forHTTPHeaderField: "Authorization")
+        Self.assinar(&pedido, token: token)
         pedido.httpBody = try? JSONSerialization.data(withJSONObject: corpo)
         _ = try? await URLSession.shared.data(for: pedido)
     }

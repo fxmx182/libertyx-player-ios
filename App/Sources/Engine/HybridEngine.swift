@@ -66,9 +66,10 @@ final class HybridEngine: NSObject, PlaybackEngine {
     func load(_ item: MediaItem) async throws {
         state = .loading
 
-        // SMB nem chega a ser tentado no AVPlayer: ele não fala o protocolo, e
-        // a tentativa só custaria tempo antes de cair no VLC de qualquer jeito.
-        if case .smb = item.origin {
+        // No SMB, o AVPlayer só é tentado quando o contêiner é dele. Sem esse
+        // filtro, um MKV atravessaria toda a ponte de leitura pela rede para
+        // ser recusado no fim — o custo de uma conexão e a espera junto.
+        if case .smb(_, let caminho) = item.origin, !SMBResourceLoader.canHandle(path: caminho) {
             try await adotar(VLCEngine(), item: item)
             return
         }
