@@ -189,6 +189,10 @@ final class PlayerViewController: UIViewController {
         controls.setPiPAvailable(false)
         refreshToolStrip()
 
+        // Enquanto o vídeo toca, ninguém disputa disco e CPU com ele. A
+        // retomada fica em `viewWillDisappear` — e precisa ficar, porque sem
+        // ela abrir um único vídeo desligava a geração de miniatura para o
+        // resto da sessão.
         ThumbnailStore.isSuspended = true
 
         installGestures()
@@ -201,6 +205,16 @@ final class PlayerViewController: UIViewController {
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
+
+        // Fora da reprodução a biblioteca volta a poder gerar miniatura.
+        //
+        // Isto faltava, e era a causa de só uns poucos vídeos terem imagem: a
+        // suspensão era ligada ao abrir o primeiro vídeo e nunca mais
+        // desligada. Sobrava o que já estava em cache — os primeiros da lista,
+        // gerados antes de o usuário abrir qualquer coisa. Filme e servidor,
+        // que demoram mais para chegar na vez, nunca tinham a sua.
+        ThumbnailStore.isSuspended = false
+
         // Sair com a janela flutuante aberta é legítimo: o vídeo continua nela.
         guard pip?.isActive != true else { return }
         volumeObservation?.invalidate()

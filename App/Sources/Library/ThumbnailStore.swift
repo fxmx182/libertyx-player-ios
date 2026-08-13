@@ -122,13 +122,19 @@ final class ThumbnailStore: ObservableObject {
             }
 
         case .smb(let referencia, let caminho):
-            guard let conexao = conexao(para: referencia) else { return nil }
-            guard let previa = try? await conexao.thumbnail(share: referencia.share, path: caminho,
-                                                            at: Self.momento,
-                                                            maxWidth: FrameExtractor.listWidth) else {
+            guard let conexao = conexao(para: referencia) else {
+                LabLog.problem("miniatura SMB: servidor \(referencia.host) não está mais salvo")
                 return nil
             }
-            return (UIImage(cgImage: previa.image), previa.duration)
+            do {
+                let previa = try await conexao.thumbnail(share: referencia.share, path: caminho,
+                                                         at: Self.momento,
+                                                         maxWidth: FrameExtractor.listWidth)
+                return (UIImage(cgImage: previa.image), previa.duration)
+            } catch {
+                LabLog.problem("miniatura SMB falhou: \(item.title) — \(error)")
+                return nil
+            }
 
         case .remote:
             return nil
