@@ -158,7 +158,7 @@ final class PlayerControlsView: UIView {
         trilhaFundo.backgroundColor = UIColor.white.withAlphaComponent(0.28)
         trilhaCarregada.backgroundColor = UIColor.white.withAlphaComponent(0.55)
         [trilhaFundo, trilhaCarregada].forEach {
-            $0.layer.cornerRadius = 3.5
+            $0.layer.cornerRadius = 2.5
             $0.isUserInteractionEnabled = false
             $0.translatesAutoresizingMaskIntoConstraints = false
         }
@@ -231,7 +231,7 @@ final class PlayerControlsView: UIView {
             bottomBar.bottomAnchor.constraint(equalTo: bottomAnchor),
             bottomBar.leadingAnchor.constraint(equalTo: leadingAnchor),
             bottomBar.trailingAnchor.constraint(equalTo: trailingAnchor),
-            bottomBar.heightAnchor.constraint(equalToConstant: 148),
+            bottomBar.heightAnchor.constraint(equalToConstant: 118),
 
             // Linha de baixo: uma fileira só, repartindo a largura.
             //
@@ -244,12 +244,12 @@ final class PlayerControlsView: UIView {
             // por construção, e a sobreposição deixa de ser possível em
             // qualquer largura.
             transporte.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 10),
-            transporte.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -8),
-            transporte.heightAnchor.constraint(equalToConstant: 52),
+            transporte.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -2),
+            transporte.heightAnchor.constraint(equalToConstant: 48),
 
             ajustes.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -10),
             ajustes.centerYAnchor.constraint(equalTo: transporte.centerYAnchor),
-            ajustes.heightAnchor.constraint(equalToConstant: 52),
+            ajustes.heightAnchor.constraint(equalToConstant: 48),
             // Os dois grupos não podem se encontrar: com pouca largura, quem
             // cede é o da direita, encolhendo os ícones.
             ajustes.leadingAnchor.constraint(greaterThanOrEqualTo: transporte.trailingAnchor,
@@ -257,7 +257,7 @@ final class PlayerControlsView: UIView {
 
             // Linha de cima: tempo decorrido, barra, duração total.
             elapsedLabel.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 16),
-            elapsedLabel.bottomAnchor.constraint(equalTo: transporte.topAnchor, constant: -14),
+            elapsedLabel.bottomAnchor.constraint(equalTo: transporte.topAnchor, constant: -8),
 
             totalLabel.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -16),
             totalLabel.centerYAnchor.constraint(equalTo: elapsedLabel.centerYAnchor),
@@ -271,11 +271,11 @@ final class PlayerControlsView: UIView {
             trilhaFundo.leadingAnchor.constraint(equalTo: slider.leadingAnchor, constant: 2),
             trilhaFundo.trailingAnchor.constraint(equalTo: slider.trailingAnchor, constant: -2),
             trilhaFundo.centerYAnchor.constraint(equalTo: slider.centerYAnchor),
-            trilhaFundo.heightAnchor.constraint(equalToConstant: 7),
+            trilhaFundo.heightAnchor.constraint(equalToConstant: 5),
 
             trilhaCarregada.leadingAnchor.constraint(equalTo: trilhaFundo.leadingAnchor),
             trilhaCarregada.centerYAnchor.constraint(equalTo: trilhaFundo.centerYAnchor),
-            trilhaCarregada.heightAnchor.constraint(equalToConstant: 7),
+            trilhaCarregada.heightAnchor.constraint(equalToConstant: 5),
         ])
     }
 
@@ -341,7 +341,7 @@ final class PlayerControlsView: UIView {
 
     /// Trilha com altura própria. O UISlider não expõe espessura, mas aceita
     /// uma imagem esticável — que é o jeito de engrossar sem deformar o resto.
-    private static func trackImage(color: UIColor, height: CGFloat = 7) -> UIImage {
+    private static func trackImage(color: UIColor, height: CGFloat = 5) -> UIImage {
         let tamanho = CGSize(width: height, height: height)
         let imagem = UIGraphicsImageRenderer(size: tamanho).image { _ in
             color.setFill()
