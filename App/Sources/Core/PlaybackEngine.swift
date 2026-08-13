@@ -52,6 +52,13 @@ protocol PlaybackEngine: AnyObject {
 
     var isMuted: Bool { get set }
     /// Quadro que está na tela agora, para captura de tela.
+    /// Até que instante do vídeo os dados já estão em mãos.
+    ///
+    /// Só faz sentido em rede; num arquivo local o disco responde na hora e
+    /// não há espera a mostrar. Por isso o padrão é zero — quem não tem o que
+    /// dizer não precisa dizer nada.
+    var bufferedTime: Double { get }
+
     func snapshot() -> UIImage?
 
     func selectAudioTrack(_ id: Int32) async
@@ -128,4 +135,8 @@ enum PlaybackError: LocalizedError {
             return "Falha ao carregar: \(reason)"
         }
     }
+}
+
+extension PlaybackEngine {
+    var bufferedTime: Double { 0 }
 }

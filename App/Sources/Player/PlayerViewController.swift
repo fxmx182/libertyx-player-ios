@@ -282,6 +282,7 @@ final class PlayerViewController: UIViewController {
             }
 
             self.controls.update(currentTime: time, duration: self.engine.duration)
+            self.controls.setBuffered(self.engine.bufferedTime)
             self.saveResumePoint(time)
             self.refreshNowPlaying()
         }

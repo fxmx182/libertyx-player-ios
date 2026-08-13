@@ -56,6 +56,12 @@ final class PlayerControlsView: UIView {
     private let elapsedLabel = UILabel()
     private let totalLabel = UILabel()
     private let slider = UISlider()
+    /// Trilha própria atrás do controle: o fundo escuro e, sobre ele, o quanto
+    /// já está carregado. O `UISlider` não sabe desenhar três camadas, então a
+    /// dele fica transparente e estas duas ficam por baixo.
+    private let trilhaFundo = UIView()
+    private let trilhaCarregada = UIView()
+    private var larguraCarregada: NSLayoutConstraint?
 
     private let previousButton = UIButton(type: .system)
     private let playButton = UIButton(type: .system)
@@ -138,8 +144,17 @@ final class PlayerControlsView: UIView {
         // Trilha desenhada, e não escalada: escalar o controle inteiro
         // engrossava a barra mas esticava o marcador junto, deixando-o oval.
         slider.setMinimumTrackImage(Self.trackImage(color: tintColor), for: .normal)
-        slider.setMaximumTrackImage(Self.trackImage(color: UIColor.white.withAlphaComponent(0.3)),
-                                    for: .normal)
+        // Transparente de propósito: quem desenha o fundo agora é a trilha
+        // própria, para caber a faixa do que já foi carregado entre os dois.
+        slider.setMaximumTrackImage(Self.trackImage(color: .clear), for: .normal)
+
+        trilhaFundo.backgroundColor = UIColor.white.withAlphaComponent(0.28)
+        trilhaCarregada.backgroundColor = UIColor.white.withAlphaComponent(0.55)
+        [trilhaFundo, trilhaCarregada].forEach {
+            $0.layer.cornerRadius = 3.5
+            $0.isUserInteractionEnabled = false
+            $0.translatesAutoresizingMaskIntoConstraints = false
+        }
         slider.setThumbImage(Self.thumbImage(diameter: 15), for: .normal)
         slider.setThumbImage(Self.thumbImage(diameter: 22), for: .highlighted)
         slider.translatesAutoresizingMaskIntoConstraints = false
@@ -202,7 +217,8 @@ final class PlayerControlsView: UIView {
         [subtitleButton, audioButton, toolsButton, pipButton, aspectButton]
             .forEach(ajustes.addArrangedSubview)
 
-        [elapsedLabel, slider, totalLabel, transporte, ajustes].forEach(bottomBar.addSubview)
+        [elapsedLabel, trilhaFundo, trilhaCarregada, slider, totalLabel, transporte, ajustes]
+            .forEach(bottomBar.addSubview)
 
         NSLayoutConstraint.activate([
             bottomBar.bottomAnchor.constraint(equalTo: bottomAnchor),
@@ -242,6 +258,17 @@ final class PlayerControlsView: UIView {
             slider.leadingAnchor.constraint(equalTo: elapsedLabel.trailingAnchor, constant: 12),
             slider.trailingAnchor.constraint(equalTo: totalLabel.leadingAnchor, constant: -12),
             slider.centerYAnchor.constraint(equalTo: elapsedLabel.centerYAnchor),
+
+            // As trilhas seguem a do controle: a bolinha precisa de folga nas
+            // pontas, e desenhar de borda a borda deixaria as três desalinhadas.
+            trilhaFundo.leadingAnchor.constraint(equalTo: slider.leadingAnchor, constant: 2),
+            trilhaFundo.trailingAnchor.constraint(equalTo: slider.trailingAnchor, constant: -2),
+            trilhaFundo.centerYAnchor.constraint(equalTo: slider.centerYAnchor),
+            trilhaFundo.heightAnchor.constraint(equalToConstant: 7),
+
+            trilhaCarregada.leadingAnchor.constraint(equalTo: trilhaFundo.leadingAnchor),
+            trilhaCarregada.centerYAnchor.constraint(equalTo: trilhaFundo.centerYAnchor),
+            trilhaCarregada.heightAnchor.constraint(equalToConstant: 7),
         ])
     }
 
@@ -327,6 +354,16 @@ final class PlayerControlsView: UIView {
     }
 
     // MARK: - Atualizações
+
+    /// O quanto já está carregado, em segundos de vídeo.
+    func setBuffered(_ instante: Double) {
+        guard duration > 0 else { return }
+        let fracao = max(0, min(1, instante / duration))
+        larguraCarregada?.isActive = false
+        larguraCarregada = trilhaCarregada.widthAnchor.constraint(
+            equalTo: trilhaFundo.widthAnchor, multiplier: max(0.0001, fracao))
+        larguraCarregada?.isActive = true
+    }
 
     func update(currentTime: Double, duration: Double) {
         self.duration = duration

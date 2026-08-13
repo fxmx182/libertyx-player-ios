@@ -19,6 +19,37 @@ final class VLCEngine: NSObject, PlaybackEngine {
     private let player = VLCMediaPlayer()
     private let container = VLCRenderView()
     private var savedVolume: Float = 1.0
+
+    /// Tamanho do arquivo, quando a listagem soube dizer. É o que permite
+    /// traduzir "bytes lidos" em "segundos prontos".
+    private var tamanhoDoArquivo: Int64?
+    /// Quantos bytes já tinham sido lidos quando a posição atual começou.
+    private var bytesNaBusca: (bytes: Int64, instante: Double)?
+
+    /// Até onde o vídeo já está carregado, estimado pelo que o VLC leu.
+    ///
+    /// Não existe API que responda isso diretamente — o que há são as
+    /// estatísticas de leitura. A conta é simples e a aproximação é honesta:
+    /// a fração do arquivo lida desde a última busca vale, em segundos, a mesma
+    /// fração da duração. Erra em vídeo de taxa muito variável, e para uma
+    /// barra de progresso isso não tem importância.
+    var bufferedTime: Double {
+        guard let tamanho = tamanhoDoArquivo, tamanho > 0, duration > 0 else { return 0 }
+        let lidos = Int64(player.media?.statistics.demuxReadBytes ?? 0)
+        guard lidos > 0 else { return 0 }
+
+        let referencia = bytesNaBusca ?? (bytes: 0, instante: 0)
+        let desde = max(0, lidos - referencia.bytes)
+        let segundos = Double(desde) / Double(tamanho) * duration
+        return min(duration, referencia.instante + segundos)
+    }
+
+    /// Depois de buscar, a contagem recomeça: o que estava em memória era de
+    /// outro trecho do arquivo.
+    private func marcarBusca(em instante: Double) {
+        let lidos = Int64(player.media?.statistics.demuxReadBytes ?? 0)
+        bytesNaBusca = (bytes: lidos, instante: instante)
+    }
     /// Avisa a interface só na mudança.
     ///
     /// Emitir a cada atualização de tempo fazia o transporte piscar; emitir só
@@ -113,6 +144,8 @@ final class VLCEngine: NSObject, PlaybackEngine {
 
         let media = VLCMedia(url: url)
         Self.configurarBuffer(media, origem: item.origin)
+        tamanhoDoArquivo = item.fileSize
+        bytesNaBusca = nil
 
         player.media = media
         state = .ready
@@ -207,6 +240,7 @@ final class VLCEngine: NSObject, PlaybackEngine {
         // Sem acender a roda: o VLC busca rápido, e o pisca-pisca do indicador
         // incomodava mais do que a espera que ele anunciava.
         player.time = VLCTime(int: Int32(alvo * 1000))
+        marcarBusca(em: alvo)
         onTimeUpdate?(alvo)
     }
 
