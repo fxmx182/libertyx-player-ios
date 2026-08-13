@@ -19,7 +19,6 @@ final class PlayerViewController: UIViewController {
         /// Distância mínima antes de decidir se o gesto é horizontal ou vertical.
         static let axisLockThreshold: CGFloat = 12
         static let doubleTapSeconds: Double = 10
-        static let holdToSpeedRate: Float = 2.0
     }
 
     private enum PanAxis { case undecided, horizontal, vertical }
@@ -706,10 +705,10 @@ final class PlayerViewController: UIViewController {
         case .began:
             guard engine.state == .playing else { return }
             rateBeforeHold = engine.rate
-            engine.rate = Tuning.holdToSpeedRate
-            hud.show(.rate(Tuning.holdToSpeedRate))
+            engine.rate = PlayerPreferences.holdSpeed
+            hud.show(.rate(PlayerPreferences.holdSpeed))
         case .ended, .cancelled, .failed:
-            guard engine.rate == Tuning.holdToSpeedRate else { return }
+            guard engine.rate == PlayerPreferences.holdSpeed else { return }
             engine.rate = rateBeforeHold
             hud.hideAfterDelay()
         default:
@@ -920,6 +919,17 @@ final class PlayerViewController: UIViewController {
         presentSheet(alerta)
     }
 
+    /// Quanto acelera enquanto o dedo fica na tela.
+    private func holdSpeedActions() -> [UIAction] {
+        let atual = PlayerPreferences.holdSpeed
+        return PlayerPreferences.holdSpeedOptions.map { valor in
+            UIAction(title: String(format: "%g×", valor),
+                     state: valor == atual ? .on : .off) { _ in
+                PlayerPreferences.holdSpeed = valor
+            }
+        }
+    }
+
     private func autoHideActions() -> [UIAction] {
         let atual = PlayerPreferences.autoHide
         return PlayerPreferences.AutoHide.allCases.map { opcao in
@@ -1006,6 +1016,9 @@ final class PlayerViewController: UIViewController {
                             children: nightModeActions()))
         itens.append(UIMenu(title: sleepTimerTitle(), image: UIImage(systemName: "timer"),
                             children: sleepTimerActions()))
+        itens.append(UIMenu(title: "Segurar para acelerar",
+                            image: UIImage(systemName: "hand.tap"),
+                            children: holdSpeedActions()))
         itens.append(UIMenu(title: "Ocultar barra", image: UIImage(systemName: "clock.arrow.circlepath"),
                             children: autoHideActions()))
 

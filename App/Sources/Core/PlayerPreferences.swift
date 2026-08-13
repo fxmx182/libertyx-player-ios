@@ -37,6 +37,25 @@ enum PlayerPreferences {
         }
     }
 
+    // MARK: - Velocidade ao segurar
+
+    /// Quantas vezes mais rápido enquanto o dedo fica na tela.
+    ///
+    /// Dois é o padrão porque é onde a fala ainda se entende. Quem usa isso
+    /// para pular um trecho chato prefere mais; quem usa para ouvir um pouco
+    /// mais rápido prefere menos — não há número que sirva aos dois.
+    private static let holdSpeedKey = "playback.holdSpeed"
+
+    static let holdSpeedOptions: [Float] = [1.5, 2, 2.5, 3, 4]
+
+    static var holdSpeed: Float {
+        get {
+            let valor = defaults.float(forKey: holdSpeedKey)
+            return holdSpeedOptions.contains(valor) ? valor : 2
+        }
+        set { defaults.set(newValue, forKey: holdSpeedKey) }
+    }
+
     private static let autoHideKey = "controls.autoHide"
 
     /// 10 segundos de padrão, o teto do que o MX Player oferece.
