@@ -35,6 +35,13 @@ struct LibraryView: View {
                 // diferentes, e misturá-los num menu só esconderia a rede.
                 ToolbarItem(placement: .topBarLeading) {
                     NavigationLink {
+                        JellyfinServersView()
+                    } label: {
+                        Image(systemName: "play.rectangle.on.rectangle")
+                    }
+                }
+                ToolbarItem(placement: .topBarLeading) {
+                    NavigationLink {
                         SMBServersView()
                     } label: {
                         Image(systemName: "server.rack")
@@ -235,6 +242,11 @@ struct LibraryView: View {
                 SMBServersView()
             } label: {
                 Text("Conectar a um servidor SMB")
+            }
+            NavigationLink {
+                JellyfinServersView()
+            } label: {
+                Text("Conectar ao Jellyfin")
             }
         }
     }
