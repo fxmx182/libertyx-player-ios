@@ -104,13 +104,19 @@ enum FrameExtractor {
         try ffCheck("abrir decodificador", avcodec_open2(codecContext, decoder, nil))
 
         let timeBase = stream.pointee.time_base
-        let alvo = max(0, seconds)
 
         // AVSEEK_FLAG_BACKWARD garante que caímos ANTES do alvo — decodificar
         // para frente é possível, para trás não.
+        // Buscar é um atalho, não um requisito. Arquivo sem índice — muito
+        // HEVC remuxado é assim — recusa a busca, e desistir aqui deixava o
+        // vídeo inteiro sem miniatura por causa de uma otimização. Falhou,
+        // decodifica do começo: mais lento, mas com imagem no fim.
+        var alvo = max(0, seconds)
         if alvo > 0 {
             let timestamp = Int64(alvo / av_q2d(timeBase))
-            try ffCheck("buscar", av_seek_frame(context, streamIndex, timestamp, AVSEEK_FLAG_BACKWARD))
+            if av_seek_frame(context, streamIndex, timestamp, AVSEEK_FLAG_BACKWARD) < 0 {
+                alvo = 0
+            }
             avcodec_flush_buffers(codecContext)
         }
 

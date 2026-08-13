@@ -98,18 +98,24 @@ final class ThumbnailStore: ObservableObject {
                 return porApple
             }
 
+            // O gerador da Apple recusa HEVC marcado como `hev1` — muito
+            // arquivo remuxado é assim, e é o mesmo motivo de esses vídeos
+            // caírem no VLC na hora de tocar. Aqui o FFmpeg assume.
             let origem = item.origin
-            let previa = try? await FFmpegRunner.run {
-                try FileAccess.withAccess(origem) { caminho in
-                    try FrameExtractor.preview(path: caminho, at: Self.momento,
-                                               maxWidth: FrameExtractor.listWidth)
+            do {
+                let previa = try await FFmpegRunner.run {
+                    try FileAccess.withAccess(origem) { caminho in
+                        try FrameExtractor.preview(path: caminho, at: Self.momento,
+                                                   maxWidth: FrameExtractor.listWidth)
+                    }
                 }
-            }
-            guard let previa = previa ?? nil else {
-                LabLog.problem("miniatura falhou: \(item.title)")
+                return (UIImage(cgImage: previa.image), previa.duration)
+            } catch {
+                // Com o motivo junto: "falhou" sozinho não diz se foi o
+                // arquivo, a permissão ou o decodificador.
+                LabLog.problem("miniatura falhou: \(item.title) — \(error)")
                 return nil
             }
-            return (UIImage(cgImage: previa.image), previa.duration)
 
         case .smb(let referencia, let caminho):
             guard let conexao = conexao(para: referencia) else { return nil }

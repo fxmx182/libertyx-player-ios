@@ -49,6 +49,9 @@ final class PlayerViewController: UIViewController {
     /// do decodificador. Aqui só rastreamos o arrasto na barra.
     private var isBarScrubbing = false
 
+    /// A ponte com a ilha, a central de controle e o botão do fone.
+    private let nowPlaying = NowPlayingCenter()
+
     /// Se foi este mesmo toque que trouxe a barra à tela.
     private var mostrouNesteToque = false
 
@@ -190,6 +193,8 @@ final class PlayerViewController: UIViewController {
 
         installGestures()
         bindEngine()
+        bindNowPlaying()
+        loadNowPlayingArtwork()
         updateNavigation()
         loadAndPlay()
     }
@@ -202,6 +207,46 @@ final class PlayerViewController: UIViewController {
         volumeObservation = nil
         cancelSleepTimer()
         engine.teardown()
+    }
+
+    // MARK: - Integração com o sistema
+
+    private func bindNowPlaying() {
+        nowPlaying.onPlay = { [weak self] in self?.engine.play() }
+        nowPlaying.onPause = { [weak self] in self?.engine.pause() }
+        nowPlaying.onToggle = { [weak self] in self?.togglePlayPause() }
+        nowPlaying.onNext = { [weak self] in self?.goToNext() }
+        nowPlaying.onPrevious = { [weak self] in self?.goToPrevious() }
+        nowPlaying.onSkip = { [weak self] passo in self?.jump(by: passo) }
+        nowPlaying.onSeek = { [weak self] instante in
+            guard let self else { return }
+            Task { @MainActor in await self.engine.seek(to: instante, precise: false) }
+        }
+        nowPlaying.activate()
+        refreshNowPlaying()
+    }
+
+    /// Mantém o sistema sabendo o que está tocando e em que ponto.
+    ///
+    /// Sem o tempo e a taxa corretos a barrinha da tela bloqueada fica parada,
+    /// e a ilha não anima.
+    private func refreshNowPlaying() {
+        nowPlaying.hasNext = currentIndex + 1 < playlist.count
+        nowPlaying.hasPrevious = currentIndex > 0
+        nowPlaying.update(title: item.title,
+                          currentTime: engine.currentTime,
+                          duration: engine.duration,
+                          rate: engine.state == .playing ? playbackSpeed : 0)
+    }
+
+    /// A miniatura do vídeo vira a capa na ilha e na tela bloqueada.
+    private func loadNowPlayingArtwork() {
+        let alvo = item
+        Task { @MainActor in
+            let imagem = await ThumbnailStore.shared.thumbnail(for: alvo)?.0
+            guard self.item.id == alvo.id else { return }
+            self.nowPlaying.setArtwork(imagem)
+        }
     }
 
     // MARK: - Motor
@@ -222,6 +267,7 @@ final class PlayerViewController: UIViewController {
 
             self.controls.update(currentTime: time, duration: self.engine.duration)
             self.saveResumePoint(time)
+            self.refreshNowPlaying()
         }
         engine.onBufferingChange = { [weak self] buffering in
             self?.controls.setBuffering(buffering)
@@ -233,6 +279,7 @@ final class PlayerViewController: UIViewController {
         engine.onStateChange = { [weak self] state in
             guard let self else { return }
             self.controls.apply(state: state)
+            self.refreshNowPlaying()
             if case .failed(let message) = state { self.presentError(message) }
 
             if state == .ended { self.handlePlaybackEnded() }
@@ -399,6 +446,7 @@ final class PlayerViewController: UIViewController {
                                     duration: engine.duration,
                                     for: item.origin.resumeKey)
         }
+        nowPlaying.deactivate()
         engine.teardown()
         dismiss(animated: true)
     }
@@ -469,6 +517,9 @@ final class PlayerViewController: UIViewController {
         controls.update(currentTime: 0, duration: 0)
         controls.setVisible(true, animated: true)
         updateNavigation()
+
+        refreshNowPlaying()
+        loadNowPlayingArtwork()
 
         hud.show(.text(item.title))
         hud.hideAfterDelay(1.2)
