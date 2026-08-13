@@ -31,6 +31,10 @@ struct JellyfinClient {
         let year: Int?
         let overview: String?
         let imageTag: String?
+        /// Só as bibliotecas têm: "movies", "tvshows", "livetv"…
+        let collectionType: String?
+        /// O que está passando agora, quando é canal de TV.
+        let nowPlaying: String?
 
         var duration: Double? {
             guard let runTimeTicks, runTimeTicks > 0 else { return nil }
@@ -156,6 +160,22 @@ struct JellyfinClient {
         ])
     }
 
+    /// Canais de TV ao vivo.
+    ///
+    /// Precisa de um caminho próprio: a TV ao vivo não é uma pasta com
+    /// arquivos dentro, é uma lista que o servidor monta na hora a partir do
+    /// sintonizador. Pedir os "filhos" dela como se fosse pasta devolve vazio
+    /// — que foi exatamente o que aconteceu.
+    func liveChannels() async throws -> [Item] {
+        try await items(path: "LiveTv/Channels", query: [
+            URLQueryItem(name: "UserId", value: server.userID),
+            URLQueryItem(name: "EnableImages", value: "true"),
+            URLQueryItem(name: "AddCurrentProgram", value: "true"),
+            URLQueryItem(name: "SortBy", value: "SortName"),
+            URLQueryItem(name: "Limit", value: "600"),
+        ])
+    }
+
     /// O que ficou pela metade, para a primeira tela.
     func resumable() async throws -> [Item] {
         try await items(path: "Users/\(server.userID)/Items/Resume", query: [
@@ -205,7 +225,9 @@ struct JellyfinClient {
             played: dadosDoUsuario?["Played"] as? Bool ?? false,
             year: (bruto["ProductionYear"] as? NSNumber)?.intValue,
             overview: bruto["Overview"] as? String,
-            imageTag: (tags?["Primary"] as? String) ?? (tags?["Thumb"] as? String)
+            imageTag: (tags?["Primary"] as? String) ?? (tags?["Thumb"] as? String),
+            collectionType: bruto["CollectionType"] as? String,
+            nowPlaying: (bruto["CurrentProgram"] as? [String: Any])?["Name"] as? String
         )
     }
 

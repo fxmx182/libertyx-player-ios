@@ -174,6 +174,8 @@ struct JellyfinLibraryView: View {
     /// `nil` na raiz: aí o que se lista são as bibliotecas.
     let parent: String?
     let title: String
+    /// "livetv" quando esta tela é a da TV ao vivo — ela se lê de outro jeito.
+    var collectionType: String? = nil
 
     @State private var itens: [JellyfinClient.Item] = []
     @State private var carregando = true
@@ -204,7 +206,9 @@ struct JellyfinLibraryView: View {
                     ForEach(itens) { item in
                         if item.isFolder {
                             NavigationLink {
-                                JellyfinLibraryView(server: server, parent: item.id, title: item.name)
+                                JellyfinLibraryView(server: server, parent: item.id,
+                                                    title: item.name,
+                                                    collectionType: item.collectionType)
                             } label: {
                                 JellyfinCard(item: item, client: client)
                             }
@@ -276,7 +280,13 @@ struct JellyfinLibraryView: View {
             return
         }
         do {
-            itens = parent == nil ? try await client.views() : try await client.children(of: parent!)
+            if collectionType == "livetv" {
+                itens = try await client.liveChannels()
+            } else if let parent {
+                itens = try await client.children(of: parent)
+            } else {
+                itens = try await client.views()
+            }
         } catch {
             falha = error.localizedDescription
         }
@@ -304,7 +314,9 @@ struct JellyfinCard: View {
             // Em sobreposição, `overlay` é diferente de empilhar: o conteúdo de
             // um overlay não pode aumentar quem o hospeda.
             Color.clear
-                .aspectRatio(2.0 / 3.0, contentMode: .fit)
+                // Canal de TV tem logotipo largo; filme tem pôster em pé.
+                // Forçar a mesma forma nos dois deixaria um dos dois torto.
+                .aspectRatio(item.type == "TvChannel" ? 16.0 / 9.0 : 2.0 / 3.0, contentMode: .fit)
                 .overlay { capa }
                 .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
                 .overlay(alignment: .bottom) { progresso }
@@ -314,7 +326,9 @@ struct JellyfinCard: View {
                 .lineLimit(2)
                 .foregroundStyle(.primary)
 
-            if let ano = item.year {
+            if let agora = item.nowPlaying {
+                Text(agora).font(.caption2).lineLimit(1).foregroundStyle(.secondary)
+            } else if let ano = item.year {
                 Text(String(ano)).font(.caption2).foregroundStyle(.secondary)
             }
         }
@@ -329,7 +343,9 @@ struct JellyfinCard: View {
                 AsyncImage(url: url) { fase in
                     switch fase {
                     case .success(let imagem):
-                        imagem.resizable().aspectRatio(contentMode: .fill)
+                        imagem.resizable()
+                            .aspectRatio(contentMode: item.type == "TvChannel" ? .fit : .fill)
+                            .padding(item.type == "TvChannel" ? 8 : 0)
                     case .failure:
                         Image(systemName: "photo").foregroundStyle(.secondary)
                     default:
