@@ -494,6 +494,25 @@ final class PlayerViewController: UIViewController {
 
         let pinch = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch))
         view.addGestureRecognizer(pinch)
+
+        // O relógio recomeça a cada toque, inclusive nos que caem em botões.
+        let espiao = TouchSpyRecognizer()
+        espiao.onTouch = { [weak self] in self?.userDidTouchScreen() }
+        view.addGestureRecognizer(espiao)
+    }
+
+    /// Qualquer encostar de dedo com a barra na tela reinicia a contagem.
+    ///
+    /// Sem isto o relógio corria desde o instante em que a barra apareceu, e
+    /// nunca era reiniciado: tocar num botão nove segundos depois deixava meio
+    /// segundo antes de tudo sumir. Não era intermitente — dependia de quando
+    /// no ciclo o toque acontecia, o que parece aleatório de fora.
+    private func userDidTouchScreen() {
+        guard gesturesEnabled, controls.isVisible, !controls.isLocked else { return }
+        // Um gesto em curso já segura a barra por conta própria; reagendar no
+        // meio dele faria a barra sumir com o dedo ainda na tela.
+        guard panAxis == .undecided, !isBarScrubbing else { return }
+        scheduleControlsHide()
     }
 
     private func setupSubtitleLabel() {
