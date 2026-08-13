@@ -12,8 +12,10 @@ struct SMBServersView: View {
 
     var body: some View {
         List {
-            procuraAutomatica
-
+            // Os servidores salvos primeiro: é para eles que se entra aqui na
+            // maioria das vezes. A procura automática interessa uma vez, no dia
+            // em que se cadastra um servidor novo — e ficava justamente no
+            // caminho de quem só quer abrir um vídeo.
             if store.servers.isEmpty {
                 ContentUnavailableView {
                     Label("Nenhum servidor", systemImage: "server.rack")
@@ -66,6 +68,8 @@ struct SMBServersView: View {
                     }
                 }
             }
+
+            procuraAutomatica
         }
         // Confirmação porque excluir também apaga a senha do Keychain — e não
         // há como desfazer isso.
@@ -134,7 +138,9 @@ struct SMBServersView: View {
                     }
                 }
             } header: {
-                Text("Procura automática")
+                Text("Encontrados na rede")
+            } footer: {
+                Text("Servidores que responderam na sua rede e ainda não estão salvos. Toque para cadastrar com o endereço já preenchido.")
             }
         }
     }
