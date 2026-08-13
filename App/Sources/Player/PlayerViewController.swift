@@ -180,7 +180,7 @@ final class PlayerViewController: UIViewController {
         }
 
         controls.onCycleAspect = { [weak self] in self?.cycleAspect() }
-        controls.onTogglePiP = { [weak self] in self?.pip?.toggle() }
+        controls.onTogglePiP = { [weak self] in self?.acionarPiP() }
         controls.moreMenuProvider = { [weak self] in self?.buildToolsMenu() ?? [] }
 
         // A janela flutuante só é montada depois da carga: quem toca o
@@ -318,12 +318,17 @@ final class PlayerViewController: UIViewController {
     /// desenha por conta própria e não oferece essa camada — nesse caso o botão
     /// simplesmente não aparece, em vez de existir sem fazer nada.
     private func configurarPiP() {
+        // O botão fica sempre à mostra. Esconder quando não dá transformava um
+        // limite conhecido num sumiço inexplicável — e a pergunta "cadê o PiP?"
+        // não tinha como ser respondida pela própria tela.
+        controls.setPiPAvailable(true)
+
         guard let camada = (engine as? HybridEngine)?.pictureInPictureLayer else {
-            controls.setPiPAvailable(false)
+            pip = nil
+            refreshToolStrip()
             return
         }
         pip = PictureInPicture(playerLayer: camada, engine: engine)
-        controls.setPiPAvailable(pip?.isSupported == true)
         refreshToolStrip()
     }
 
@@ -907,11 +912,9 @@ final class PlayerViewController: UIViewController {
                   },
         ])
 
-        if pip?.isSupported == true {
-            ferramentas.append(.init(id: "pip", symbol: "pip.enter", title: "Janela flutuante") { [weak self] in
-                self?.pip?.toggle()
-            })
-        }
+        ferramentas.append(.init(id: "pip", symbol: "pip.enter", title: "Janela flutuante") { [weak self] in
+            self?.acionarPiP()
+        })
 
         ferramentas.append(.init(id: "bloqueio", symbol: "lock", title: "Bloquear") { [weak self] in
             self?.controls.toggleLock()
@@ -972,6 +975,28 @@ final class PlayerViewController: UIViewController {
         })
         sheet.addAction(UIAlertAction(title: "Fechar", style: .cancel))
         presentSheet(sheet)
+    }
+
+    /// Abre a janela flutuante, ou explica por que este vídeo não a tem.
+    ///
+    /// A janela do iOS é montada pelo sistema sobre a camada do AVPlayer. Nos
+    /// arquivos que o AVFoundation recusa — HEVC marcado como `hev1`, MKV,
+    /// tudo o que vem do servidor — quem toca é o VLC, que desenha por conta
+    /// própria numa superfície que o sistema não sabe transportar para a
+    /// janelinha. Não é opção nossa desligada: é uma porta que só a Apple abre.
+    private func acionarPiP() {
+        if pip?.toggle() == true { return }
+
+        let alerta = UIAlertController(
+            title: "Janela flutuante indisponível",
+            message: "O iOS só monta a janelinha sobre o reprodutor da Apple. "
+                   + "Este arquivo está tocando no VLC, que abre formatos que a "
+                   + "Apple recusa — e aí o sistema não tem como transportar a imagem.",
+            preferredStyle: .alert)
+        alerta.addAction(UIAlertAction(title: "Entendi", style: .default) { [weak self] _ in
+            self?.scheduleControlsHide()
+        })
+        presentSheet(alerta)
     }
 
     /// Quanto tempo a barra fica na tela — o "Interface auto hide" do MX Player.

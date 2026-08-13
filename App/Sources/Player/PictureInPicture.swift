@@ -19,23 +19,37 @@ final class PictureInPicture: NSObject {
     var isSupported: Bool { AVPictureInPictureController.isPictureInPictureSupported() }
     var isActive: Bool { controller?.isPictureInPictureActive ?? false }
 
+    /// Guardada para montar o controlador só quando for preciso.
+    private let playerLayer: AVPlayerLayer?
+
     /// Caminho nativo: com uma `AVPlayerLayer` o sistema controla pausa,
     /// avanço e barra sozinho — não é preciso implementar delegado nenhum.
+    ///
+    /// O controlador não é montado aqui. `init(playerLayer:)` devolve nil
+    /// enquanto a camada ainda não tem vídeo, e no instante em que a carga
+    /// termina ela normalmente não tem — montar cedo demais deixava a janela
+    /// flutuante indisponível para sempre naquele vídeo. Montamos no toque.
     init(playerLayer: AVPlayerLayer, engine: PlaybackEngine) {
         self.engine = engine
+        self.playerLayer = playerLayer
         super.init()
+    }
 
-        // `init(playerLayer:)` é falível: devolve nil quando o sistema recusa
-        // montar o controlador para aquela camada.
+    @discardableResult
+    private func prepararControlador() -> AVPictureInPictureController? {
+        if let controller { return controller }
         guard AVPictureInPictureController.isPictureInPictureSupported(),
-              let novo = AVPictureInPictureController(playerLayer: playerLayer) else { return }
+              let playerLayer,
+              let novo = AVPictureInPictureController(playerLayer: playerLayer) else { return nil }
         novo.delegate = self
         novo.canStartPictureInPictureAutomaticallyFromInline = true
         controller = novo
+        return novo
     }
 
     init(engine: PlaybackEngine, layer: AVSampleBufferDisplayLayer) {
         self.engine = engine
+        self.playerLayer = nil
         super.init()
 
         guard AVPictureInPictureController.isPictureInPictureSupported() else { return }
@@ -52,13 +66,19 @@ final class PictureInPicture: NSObject {
         controller = novo
     }
 
-    func toggle() {
-        guard let controller else { return }
+    /// `true` se a janela chegou a abrir; `false` se o sistema recusou.
+    @discardableResult
+    func toggle() -> Bool {
+        guard let controller = prepararControlador() else {
+            LabLog.problem("PiP indisponível: o sistema não montou o controlador")
+            return false
+        }
         if controller.isPictureInPictureActive {
             controller.stopPictureInPicture()
         } else {
             controller.startPictureInPicture()
         }
+        return true
     }
 }
 
