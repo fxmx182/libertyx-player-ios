@@ -307,7 +307,7 @@ struct LibraryView: View {
     }
 }
 
-/// Gerenciar as pastas autorizadas.
+/// Conectar e desconectar pastas — o único lugar onde isso se faz.
 struct ManageFoldersView: View {
 
     @EnvironmentObject private var bookmarks: BookmarkStore
@@ -317,38 +317,45 @@ struct ManageFoldersView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section {
-                    ForEach(bookmarks.folders) { pasta in
-                        HStack {
-                            Label(pasta.name, systemImage: "folder")
-                            Spacer()
-                            // Botão à mostra, e não só o deslizar: o gesto não
-                            // se anuncia, e quem não sabe que ele existe conclui
-                            // que a opção não existe.
-                            Button("Desconectar", role: .destructive) {
-                                bookmarks.remove(pasta)
+                // A seção só existe quando há o que listar. Antes o cabeçalho e
+                // o rodapé ficavam na tela com nada entre eles, e por cima
+                // aparecia um aviso de "nenhuma pasta" repetindo a mesma
+                // informação — dois textos disputando o mesmo espaço para dizer
+                // a mesma coisa.
+                if !bookmarks.folders.isEmpty {
+                    Section {
+                        ForEach(bookmarks.folders) { pasta in
+                            HStack {
+                                Label(pasta.name, systemImage: "folder")
+                                Spacer()
+                                // Botão à mostra, e não só o deslizar: o gesto
+                                // não se anuncia, e quem não sabe que ele
+                                // existe conclui que a opção não existe.
+                                Button("Desconectar", role: .destructive) {
+                                    bookmarks.remove(pasta)
+                                }
+                                .buttonStyle(.borderless)
+                                .font(.callout)
                             }
-                            .buttonStyle(.borderless)
-                            .font(.callout)
                         }
+                        .onDelete { indices in
+                            indices.map { bookmarks.folders[$0] }.forEach(bookmarks.remove)
+                        }
+                    } header: {
+                        Text("Pastas conectadas")
+                    } footer: {
+                        Text("Desconectar só tira a autorização — nenhum arquivo é apagado do aparelho.")
                     }
-                    .onDelete { indices in
-                        indices.map { bookmarks.folders[$0] }.forEach(bookmarks.remove)
-                    }
-                } header: {
-                    Text("Pastas conectadas")
-                } footer: {
-                    Text("Desconectar só tira a autorização — nenhum arquivo é apagado do aparelho.")
                 }
 
                 Section {
                     Button {
                         escolhendoPasta = true
                     } label: {
-                        Label("Conectar outra pasta…", systemImage: "folder.badge.plus")
+                        Label("Conectar uma pasta…", systemImage: "folder.badge.plus")
                     }
                 } footer: {
-                    Text("O iOS não deixa um app varrer o aparelho inteiro. Cada pasta autorizada aqui passa a ser varrida sozinha, incluindo as subpastas.")
+                    Text("O iOS não deixa um app varrer o aparelho inteiro. Cada pasta conectada aqui passa a ser varrida sozinha, incluindo as subpastas.")
                 }
             }
             .navigationTitle("Pastas")
@@ -364,12 +371,6 @@ struct ManageFoldersView: View {
                 guard case .success(let urls) = resultado else { return }
                 for url in urls {
                     try? bookmarks.add(url: url)
-                }
-            }
-            .overlay {
-                if bookmarks.folders.isEmpty {
-                    ContentUnavailableView("Nenhuma pasta autorizada",
-                                           systemImage: "folder.badge.questionmark")
                 }
             }
         }
