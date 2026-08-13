@@ -77,6 +77,9 @@ final class PlayerControlsView: UIView {
     private let spinner = UIActivityIndicatorView(style: .large)
     let toolStrip = ToolStripView()
 
+    /// Toque no espaço vazio das barras — não num botão delas.
+    var onBackgroundTap: (() -> Void)?
+
     // MARK: - Ciclo de vida
 
     override init(frame: CGRect) {
@@ -286,6 +289,18 @@ final class PlayerControlsView: UIView {
     }
 
     private func setupToolStrip() {
+        // As barras cobrem boa parte da tela quando aparecem, e um toque em
+        // cima delas — fora de um botão — não chegava a lugar nenhum: a view de
+        // controles capturava e ninguém tratava. Quem quisesse esconder tinha
+        // que acertar a faixa estreita de vídeo que sobrava no meio.
+        //
+        // Os botões continuam ganhando o toque deles: um controle sempre vence
+        // um reconhecedor de gesto do pai.
+        [topBar, bottomBar].forEach { barra in
+            barra.addGestureRecognizer(UITapGestureRecognizer(target: self,
+                                                              action: #selector(fundoTocado)))
+        }
+
         toolStrip.translatesAutoresizingMaskIntoConstraints = false
         addSubview(toolStrip)
         NSLayoutConstraint.activate([
@@ -490,6 +505,8 @@ final class PlayerControlsView: UIView {
         elapsedLabel.text = TimeFormat.clock(destino)
         onScrub?(destino, true)
     }
+
+    @objc private func fundoTocado() { onBackgroundTap?() }
 
     @objc private func sliderTouchDown() { isUserScrubbing = true }
 

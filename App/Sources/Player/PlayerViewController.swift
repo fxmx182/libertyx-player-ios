@@ -179,6 +179,9 @@ final class PlayerViewController: UIViewController {
             if locked { self?.controlsHideWorkItem?.cancel() } else { self?.scheduleControlsHide() }
         }
 
+        controls.onBackgroundTap = { [weak self] in
+            self?.controls.setVisible(false, animated: true)
+        }
         controls.onCycleAspect = { [weak self] in self?.cycleAspect() }
         controls.onTogglePiP = { [weak self] in self?.acionarPiP() }
         controls.moreMenuProvider = { [weak self] in self?.buildToolsMenu() ?? [] }
