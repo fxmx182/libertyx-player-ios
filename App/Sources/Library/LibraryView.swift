@@ -436,7 +436,17 @@ struct ThumbnailView: View {
                 image = pronta
                 return
             }
-            image = await ThumbnailStore.shared.load(item)
+            // Só duas miniaturas são geradas por vez; quem não pegou vez volta
+            // a tentar, senão a linha ficaria sem imagem para sempre depois de
+            // uma rolagem rápida.
+            for _ in 0..<12 {
+                if let pronta = await ThumbnailStore.shared.load(item) {
+                    image = pronta
+                    return
+                }
+                if Task.isCancelled { return }
+                try? await Task.sleep(nanoseconds: 900_000_000)
+            }
         }
     }
 }

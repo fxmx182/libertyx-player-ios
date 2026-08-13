@@ -33,6 +33,14 @@ final class ThumbnailStore: ObservableObject {
         .dictionary(forKey: "labplayer.duracoes") as? [String: Double] ?? [:]
     private var conexoes: [UUID: SMBConnection] = [:]
     private var emCurso: Set<String> = []
+    /// Quantas gerações estão acontecendo agora.
+    ///
+    /// Cada miniatura pelo VLC monta um decodificador inteiro. Ao voltar do
+    /// vídeo, a grade inteira pede a sua de uma vez — vinte decodificadores
+    /// nascendo juntos travam o aparelho. Duas por vez atendem a lista sem que
+    /// se perceba.
+    private var gerando = 0
+    private static let limiteSimultaneo = 2
 
     private lazy var pasta: URL = {
         let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
@@ -70,8 +78,14 @@ final class ThumbnailStore: ObservableObject {
         // Duas linhas da lista pedindo o mesmo arquivo não devem gerar duas
         // vezes — no SMB isso dobraria o tráfego à toa.
         guard !emCurso.contains(chave), !Self.isSuspended else { return nil }
+        guard gerando < Self.limiteSimultaneo else { return nil }
+
         emCurso.insert(chave)
-        defer { emCurso.remove(chave) }
+        gerando += 1
+        defer {
+            emCurso.remove(chave)
+            gerando -= 1
+        }
 
         guard let previa = await gerar(item) else { return nil }
         let imagem = previa.0

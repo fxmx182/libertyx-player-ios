@@ -52,9 +52,15 @@ final class NowPlayingCenter {
         limparComandos()
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         UIApplication.shared.endReceivingRemoteControlEvents()
-        // Devolve o áudio a quem estava tocando antes — sem isto o Spotify
-        // fica em silêncio depois de fechar um vídeo.
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+
+        // Fora da thread principal, e por um motivo prático: desativar a
+        // sessão avisa todos os outros apps de áudio do aparelho, e isso pode
+        // levar segundos. Feito aqui mesmo, a tela congelava na saída do vídeo
+        // — parecia travamento do app e era só espera.
+        DispatchQueue.global(qos: .utility).async {
+            try? AVAudioSession.sharedInstance()
+                .setActive(false, options: .notifyOthersOnDeactivation)
+        }
     }
 
     // MARK: - Comandos
