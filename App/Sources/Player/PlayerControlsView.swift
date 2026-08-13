@@ -214,6 +214,14 @@ final class PlayerControlsView: UIView {
         slider.setThumbImage(Self.thumbImage(diameter: 22), for: .highlighted)
         slider.translatesAutoresizingMaskIntoConstraints = false
         slider.addTarget(self, action: #selector(sliderChanged), for: .valueChanged)
+        // Um toque na barra leva o vídeo até ali.
+        //
+        // O controle padrão do sistema só responde a arrasto a partir da
+        // bolinha: tocar no meio da trilha não faz nada. Em vídeo isso
+        // contraria o que todo mundo espera — apontar para um ponto é a forma
+        // mais direta de dizer "quero ver isto aqui".
+        slider.addGestureRecognizer(UITapGestureRecognizer(target: self,
+                                                           action: #selector(sliderTapped)))
         slider.addTarget(self, action: #selector(sliderTouchDown), for: .touchDown)
         slider.addTarget(self, action: #selector(sliderTouchUp),
                          for: [.touchUpInside, .touchUpOutside, .touchCancel])
@@ -363,9 +371,15 @@ final class PlayerControlsView: UIView {
 
     /// Some com os saltos de faixa quando não há para onde ir — botão inerte
     /// na tela é pior que botão ausente.
+    /// Os saltos de faixa ficam sempre na tela, apagados quando não há para
+    /// onde ir.
+    ///
+    /// Antes eles sumiam, e a fileira se reorganizava sozinha: a mesma posição
+    /// passava a ter outro botão conforme o vídeo aberto. Um controle que muda
+    /// de lugar é pior que um controle inerte — a mão já sabe onde estava.
     func setNavigation(hasPrevious: Bool, hasNext: Bool) {
-        previousButton.isHidden = !hasPrevious && !hasNext
-        nextButton.isHidden = previousButton.isHidden
+        previousButton.isHidden = false
+        nextButton.isHidden = false
         previousButton.isEnabled = hasPrevious
         nextButton.isEnabled = hasNext
         previousButton.alpha = hasPrevious ? 1 : 0.3
@@ -459,6 +473,22 @@ final class PlayerControlsView: UIView {
         isVisible = !isLocked
         applyVisibility(animated: true)
         onLockChange?(isLocked)
+    }
+
+    @objc private func sliderTapped(_ gesto: UITapGestureRecognizer) {
+        guard duration > 0 else { return }
+
+        // A trilha não ocupa a largura inteira do controle: a bolinha precisa
+        // caber nas pontas. Perguntar ao próprio controle onde ela está evita
+        // um desvio que só apareceria perto do começo e do fim.
+        let trilha = slider.trackRect(forBounds: slider.bounds)
+        let ponto = gesto.location(in: slider)
+        let fracao = max(0, min(1, (ponto.x - trilha.minX) / max(1, trilha.width)))
+
+        slider.setValue(Float(fracao), animated: true)
+        let destino = Double(fracao) * duration
+        elapsedLabel.text = TimeFormat.clock(destino)
+        onScrub?(destino, true)
     }
 
     @objc private func sliderTouchDown() { isUserScrubbing = true }
