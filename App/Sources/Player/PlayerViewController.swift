@@ -243,7 +243,7 @@ final class PlayerViewController: UIViewController {
     private func loadNowPlayingArtwork() {
         let alvo = item
         Task { @MainActor in
-            let imagem = await ThumbnailStore.shared.thumbnail(for: alvo)?.0
+            let imagem = await ThumbnailStore.shared.load(alvo)
             guard self.item.id == alvo.id else { return }
             self.nowPlaying.setArtwork(imagem)
         }

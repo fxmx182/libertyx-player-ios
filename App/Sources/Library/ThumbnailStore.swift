@@ -109,6 +109,10 @@ final class ThumbnailStore: ObservableObject {
                                                    maxWidth: FrameExtractor.listWidth)
                     }
                 }
+                guard let previa else {
+                    LabLog.problem("miniatura falhou: \(item.title) — sem acesso ao arquivo")
+                    return nil
+                }
                 return (UIImage(cgImage: previa.image), previa.duration)
             } catch {
                 // Com o motivo junto: "falhou" sozinho não diz se foi o
