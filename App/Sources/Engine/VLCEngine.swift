@@ -112,18 +112,46 @@ final class VLCEngine: NSObject, PlaybackEngine {
         }
 
         let media = VLCMedia(url: url)
-        // Buffer de rede generoso: é o que evita o vídeo travar quando a
-        // leitura do servidor engasga. O padrão do VLC é curto demais para
-        // arquivos de alta taxa num compartilhamento doméstico.
-        if case .smb = item.origin {
-            media.addOption(":network-caching=3000")
-        } else {
-            media.addOption(":file-caching=500")
-        }
+        Self.configurarBuffer(media, origem: item.origin)
 
         player.media = media
         state = .ready
         LabLog.open("VLC pronto: \(item.title)")
+    }
+
+    /// Quanto o VLC guarda adiantado antes de precisar.
+    ///
+    /// Dois mecanismos diferentes, e é preciso os dois no servidor:
+    ///
+    /// - **`network-caching`** é o fôlego do reprodutor: quantos milissegundos
+    ///   de vídeo já decodificado ele mantém à frente. É o que absorve uma
+    ///   engasgada da rede sem a imagem parar.
+    /// - **`prefetch`** é o fôlego da leitura: um bloco grande em memória lido
+    ///   adiantado, para que o pedido seguinte não vire uma ida ao servidor.
+    ///   Sem ele, cada leitura é uma viagem de rede feita no exato momento em
+    ///   que os bytes fazem falta.
+    ///
+    /// O que faz diferença ao arrastar a barra é o segundo: depois de uma
+    /// busca, o bloco novo chega de uma vez em vez de gota a gota. Em troca,
+    /// o vídeo demora um pouco mais para começar — é o preço de nunca engasgar
+    /// no meio, e num filme inteiro esse preço se paga logo nos primeiros
+    /// segundos.
+    private static func configurarBuffer(_ media: VLCMedia, origem: MediaOrigin) {
+        switch origem {
+        case .smb, .remote:
+            media.addOption(":network-caching=5000")
+            // 32 MB adiantados: uns 20 segundos de um filme 1080p comum.
+            media.addOption(":prefetch-buffer-size=32768")
+            // Blocos de 256 KB em vez dos 16 KB padrão — menos idas ao
+            // servidor, cada uma trazendo muito mais.
+            media.addOption(":prefetch-read-size=262144")
+            // Busca curta aproveita o que já está em memória em vez de jogar
+            // fora e ler tudo de novo; é o caso de ajustar a posição no fino.
+            media.addOption(":prefetch-seek-threshold=1048576")
+
+        case .file:
+            media.addOption(":file-caching=500")
+        }
     }
 
     /// Monta a URL que o VLC entende.
