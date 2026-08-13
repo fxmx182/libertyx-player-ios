@@ -17,7 +17,7 @@ import AVFoundation
 @MainActor
 final class HybridEngine: NSObject, PlaybackEngine {
 
-    private let container = UIView()
+    private let container = GravityForwardingView()
     private var active: PlaybackEngine?
 
     /// Camada do AVPlayer, quando é ele que está tocando — é sobre ela que a
@@ -112,6 +112,11 @@ final class HybridEngine: NSObject, PlaybackEngine {
             superficie.trailingAnchor.constraint(equalTo: container.trailingAnchor),
         ])
 
+        // O motor só é escolhido depois de abrir o arquivo, então a superfície
+        // real chega aqui — e com ela, o enquadramento que o usuário já tinha
+        // escolhido antes desta troca.
+        container.reapplyGravity()
+
         pictureInPictureLayer = (superficie as? PlayerLayerView)?.playerLayer
         active = motor
         state = motor.state
@@ -136,5 +141,31 @@ final class HybridEngine: NSObject, PlaybackEngine {
         active = nil
         pictureInPictureLayer = nil
         state = .idle
+    }
+}
+
+/// O contêiner que o `HybridEngine` entrega à tela.
+///
+/// A tela pede o enquadramento a quem ela recebeu de `makeRenderView()` — e o
+/// que ela recebe aqui é uma casca, porque o motor de verdade só é conhecido
+/// depois de abrir o arquivo. Sem repassar o pedido, o botão "Enquadrar"
+/// simplesmente não fazia nada: a casca não sabia responder e o `as?` falhava
+/// em silêncio.
+final class GravityForwardingView: UIView, VideoGravityAdjustable {
+
+    private var ultimo: AVLayerVideoGravity = .resizeAspect
+
+    func setGravity(_ gravity: AVLayerVideoGravity) {
+        ultimo = gravity
+        superficie?.setGravity(gravity)
+    }
+
+    /// Reaplica o que já estava escolhido a uma superfície recém-chegada.
+    func reapplyGravity() {
+        superficie?.setGravity(ultimo)
+    }
+
+    private var superficie: VideoGravityAdjustable? {
+        subviews.compactMap { $0 as? VideoGravityAdjustable }.first
     }
 }

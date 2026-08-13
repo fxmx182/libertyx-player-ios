@@ -749,9 +749,18 @@ final class PlayerViewController: UIViewController {
     }
 
     /// Mesma ação pelo botão da barra de ferramentas, aí sempre avançando.
+    /// Percorre os enquadramentos e desfaz a ampliação.
+    ///
+    /// Enquadrar é justamente o botão de "ajeita isso aí": deixar a imagem
+    /// ampliada por baixo faria o enquadramento novo chegar recortado, e daria
+    /// a impressão de que o botão não fez nada.
     private func cycleAspect() {
         gravityIndex = (gravityIndex + 1) % gravityModes.count
+        videoZoom = 1
+        videoOffset = .zero
+        applyZoom(animated: true)
         applyGravity()
+        refreshToolStrip()
         scheduleControlsHide()
     }
 
