@@ -568,12 +568,6 @@ final class PlayerViewController: UIViewController {
         doubleTap.numberOfTapsRequired = 2
         view.addGestureRecognizer(doubleTap)
 
-        let singleTap = UITapGestureRecognizer(target: self, action: #selector(handleSingleTap))
-        singleTap.numberOfTapsRequired = 1
-        // Sem isso, um toque simples dispara antes de o duplo ser reconhecido.
-        singleTap.require(toFail: doubleTap)
-        view.addGestureRecognizer(singleTap)
-
         let longPress = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress))
         longPress.minimumPressDuration = 0.35
         view.addGestureRecognizer(longPress)
@@ -664,27 +658,25 @@ final class PlayerViewController: UIViewController {
         super.touchesBegan(touches, with: event)
         guard gesturesEnabled else { return }
 
-        guard !controls.isVisible else { return }
-        controls.setVisible(true, animated: true)
-        scheduleControlsHide()
-    }
-
-    /// Já visível, o toque simples esconde — o mostrar ficou no `touchesBegan`.
-    ///
-    /// Só que os dois são o mesmo dedo. Mostrar acontece no encostar; o toque
-    /// simples só é reconhecido uns 0,3 s depois, quando o toque duplo desiste.
-    /// Sem separar os dois, o mesmo toque que trouxe a barra a mandava embora.
-    ///
-    /// A separação é pelo relógio, e não por um sinalizador: se a barra chegou
-    /// agora, este toque foi o que a trouxe e não deve escondê-la. Sinalizador
-    /// exige que os dois eventos aconteçam sempre em par — e quando um deles
-    /// não acontece, ele fica preso ligado e engole o toque seguinte, que era
-    /// justamente o de esconder.
-    @objc private func handleSingleTap() {
-        guard gesturesEnabled, controls.isVisible else { return }
-        guard let desde = controls.visibleSince,
-              Date().timeIntervalSince(desde) > 0.3 else { return }
-        controls.setVisible(false, animated: true)
+        // Mostrar e esconder acontecem os dois aqui, no encostar do dedo.
+        //
+        // Esconder morava num reconhecedor de toque simples, e por duas vezes
+        // eu tratei o sintoma achando que ele estava sendo chamado. Ele espera
+        // o toque duplo desistir, disputa com os outros gestos da tela e não
+        // dispara quando alguma camada intermediária fica com o toque — três
+        // formas de não acontecer, nenhuma visível de fora.
+        //
+        // Aqui não há espera nem disputa: o dedo encostou, alternou. A margem
+        // de tempo existe só para o segundo dedo de um gesto de pinça não
+        // desfazer o que o primeiro fez.
+        if controls.isVisible {
+            guard let desde = controls.visibleSince,
+                  Date().timeIntervalSince(desde) > 0.3 else { return }
+            controls.setVisible(false, animated: true)
+        } else {
+            controls.setVisible(true, animated: true)
+            scheduleControlsHide()
+        }
     }
 
     @objc private func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
