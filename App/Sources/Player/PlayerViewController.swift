@@ -190,7 +190,6 @@ final class PlayerViewController: UIViewController {
         // arquivo é decidido ali, e só o AVPlayer oferece a camada que o
         // sistema aceita para PiP.
         controls.setPiPAvailable(false)
-        refreshToolStrip()
 
         // Enquanto o vídeo toca, ninguém disputa disco e CPU com ele. A
         // retomada fica em `viewWillDisappear` — e precisa ficar, porque sem
@@ -341,7 +340,6 @@ final class PlayerViewController: UIViewController {
 
         // Sem AVPlayer não há camada sobre a qual o iOS monte a janelinha.
         pip = nil
-        refreshToolStrip()
     }
 
     /// Pergunta antes de retomar.
@@ -828,7 +826,6 @@ final class PlayerViewController: UIViewController {
         videoOffset = .zero
         applyZoom(animated: true)
         applyGravity()
-        refreshToolStrip()
         scheduleControlsHide()
     }
 
@@ -860,81 +857,6 @@ final class PlayerViewController: UIViewController {
 
     // MARK: - Menu de ferramentas
 
-    /// Monta a fileira de ferramentas sobre o vídeo.
-    ///
-    /// Refeita a cada mudança de estado para os destaques acompanharem — mudo
-    /// ligado, repetição ativa, modo noturno em uso.
-    private func refreshToolStrip() {
-        var ferramentas: [ToolStripView.Tool] = [
-            .init(id: "mudo",
-                  symbol: engine.isMuted ? "speaker.slash.fill" : "speaker.wave.2",
-                  title: "Mudo",
-                  isOn: engine.isMuted) { [weak self] in
-                      self?.engine.isMuted.toggle()
-                      self?.refreshToolStrip()
-                      self?.scheduleControlsHide()
-                  },
-            .init(id: "repetir", symbol: "repeat.1", title: "Repetir",
-                  isOn: repeatMode == .one) { [weak self] in
-                      guard let self else { return }
-                      self.repeatMode = self.repeatMode == .one ? .off : .one
-                      self.refreshToolStrip()
-                  },
-        ]
-
-        if playlist.count > 1 {
-            ferramentas.append(.init(id: "aleatorio", symbol: "shuffle", title: "Aleatório",
-                                     isOn: isShuffling) { [weak self] in
-                self?.isShuffling.toggle()
-                self?.refreshToolStrip()
-            })
-        }
-
-        ferramentas.append(contentsOf: [
-            .init(id: "velocidade", symbol: "speedometer", title: "Velocidade",
-                  isOn: playbackSpeed != 1.0) { [weak self] in self?.showSpeedSheet() },
-            .init(id: "legendas", symbol: "captions.bubble", title: "Legendas",
-                  isOn: engine.currentSubtitleTrack != nil) { [weak self] in
-                      self?.showTracks(.subtitle)
-                  },
-            .init(id: "audio", symbol: "waveform", title: "Áudio") { [weak self] in
-                self?.showTracks(.audio)
-            },
-            .init(id: "enquadramento", symbol: "rectangle.arrowtriangle.2.inward",
-                  title: "Enquadrar") { [weak self] in self?.cycleAspect() },
-            .init(id: "captura", symbol: "camera", title: "Captura") { [weak self] in
-                self?.takeSnapshot()
-            },
-            .init(id: "noturno", symbol: "moon.stars", title: "Modo noturno",
-                  isOn: dimView.alpha > 0) { [weak self] in self?.cycleNightMode() },
-            .init(id: "dormir", symbol: "timer", title: "Dormir",
-                  isOn: sleepTimer != nil) { [weak self] in self?.showSleepSheet() },
-            .init(id: "girar", symbol: "rotate.right", title: "Girar tela") { [weak self] in
-                self?.toggleOrientation()
-            },
-            .init(id: "zoom", symbol: "arrow.up.left.and.arrow.down.right",
-                  title: "Ampliação", isOn: videoZoom != 1) { [weak self] in
-                      self?.resetZoom()
-                      self?.refreshToolStrip()
-                      self?.scheduleControlsHide()
-                  },
-            .init(id: "interface", symbol: "clock.arrow.circlepath", title: "Ocultar barra",
-                  isOn: PlayerPreferences.autoHide == .nunca) { [weak self] in
-                      self?.showAutoHideSheet()
-                  },
-        ])
-
-        ferramentas.append(.init(id: "pip", symbol: "pip.enter", title: "Janela flutuante") { [weak self] in
-            self?.acionarPiP()
-        })
-
-        ferramentas.append(.init(id: "bloqueio", symbol: "lock", title: "Bloquear") { [weak self] in
-            self?.controls.toggleLock()
-        })
-
-        controls.toolStrip.configure(with: ferramentas)
-    }
-
     /// Percorre os níveis em vez de abrir um menu: uma ferramenta de um toque
     /// só, que é o ponto de ela estar na tela.
     private func cycleNightMode() {
@@ -945,7 +867,6 @@ final class PlayerViewController: UIViewController {
         hud.show(.text(proximo == 0 ? "Modo noturno desligado"
                                     : "Modo noturno \(Int(proximo * 100))%"))
         hud.hideAfterDelay(1.2)
-        refreshToolStrip()
     }
 
     private func showSpeedSheet() {
@@ -959,7 +880,6 @@ final class PlayerViewController: UIViewController {
                 if self.engine.state == .playing { self.engine.rate = valor }
                 self.hud.show(.rate(valor))
                 self.hud.hideAfterDelay()
-                self.refreshToolStrip()
             })
         }
         sheet.addAction(UIAlertAction(title: "Fechar", style: .cancel))
@@ -971,19 +891,16 @@ final class PlayerViewController: UIViewController {
         sheet.addAction(UIAlertAction(title: sleepTimer == nil ? "✓ Desligado" : "Desligado",
                                       style: .default) { [weak self] _ in
             self?.cancelSleepTimer()
-            self?.refreshToolStrip()
         })
         for minutos in [15, 30, 45, 60] {
             sheet.addAction(UIAlertAction(title: "\(minutos) minutos", style: .default) { [weak self] _ in
                 self?.startSleepTimer(minutes: minutos)
-                self?.refreshToolStrip()
             })
         }
         sheet.addAction(UIAlertAction(title: "No fim do vídeo", style: .default) { [weak self] _ in
             guard let self else { return }
             self.startSleepTimer(minutes: nil,
                                  seconds: max(1, self.engine.duration - self.engine.currentTime))
-            self.refreshToolStrip()
         })
         sheet.addAction(UIAlertAction(title: "Fechar", style: .cancel))
         presentSheet(sheet)
@@ -1016,6 +933,16 @@ final class PlayerViewController: UIViewController {
         presentSheet(alerta)
     }
 
+    private func autoHideActions() -> [UIAction] {
+        let atual = PlayerPreferences.autoHide
+        return PlayerPreferences.AutoHide.allCases.map { opcao in
+            UIAction(title: opcao.title, state: opcao == atual ? .on : .off) { [weak self] _ in
+                PlayerPreferences.autoHide = opcao
+                self?.scheduleControlsHide()
+            }
+        }
+    }
+
     /// Quanto tempo a barra fica na tela — o "Interface auto hide" do MX Player.
     private func showAutoHideSheet() {
         let atual = PlayerPreferences.autoHide
@@ -1025,7 +952,6 @@ final class PlayerViewController: UIViewController {
             let marca = opcao == atual ? "✓ " : ""
             sheet.addAction(UIAlertAction(title: marca + opcao.title, style: .default) { [weak self] _ in
                 PlayerPreferences.autoHide = opcao
-                self?.refreshToolStrip()
                 // Reagenda já com o valor novo, para o efeito ser sentido
                 // nesta mesma vez em vez de só no próximo toque.
                 self?.scheduleControlsHide()
@@ -1069,10 +995,40 @@ final class PlayerViewController: UIViewController {
             self?.acionarPiP()
         })
 
+        itens.append(UIAction(title: "Velocidade",
+                              image: UIImage(systemName: "speedometer")) { [weak self] _ in
+            self?.showSpeedSheet()
+        })
+
+        itens.append(UIAction(title: "Ampliação normal",
+                              image: UIImage(systemName: "arrow.up.left.and.arrow.down.right")) { [weak self] _ in
+            self?.resetZoom()
+        })
+
+        itens.append(UIAction(title: "Girar tela",
+                              image: UIImage(systemName: "rotate.right")) { [weak self] _ in
+            self?.toggleOrientation()
+        })
+
+        itens.append(UIAction(title: "Bloquear tela",
+                              image: UIImage(systemName: "lock")) { [weak self] _ in
+            self?.controls.toggleLock()
+        })
+
         itens.append(UIMenu(title: "Modo noturno", image: UIImage(systemName: "moon.stars"),
                             children: nightModeActions()))
         itens.append(UIMenu(title: sleepTimerTitle(), image: UIImage(systemName: "timer"),
                             children: sleepTimerActions()))
+        itens.append(UIMenu(title: "Ocultar barra", image: UIImage(systemName: "clock.arrow.circlepath"),
+                            children: autoHideActions()))
+
+        // Fechar mora aqui porque a barra de cima saiu — e sem uma saída
+        // visível o usuário fica preso no vídeo.
+        itens.append(UIAction(title: "Fechar vídeo",
+                              image: UIImage(systemName: "xmark"),
+                              attributes: .destructive) { [weak self] _ in
+            self?.close()
+        })
         return itens
     }
 

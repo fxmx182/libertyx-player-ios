@@ -36,46 +36,39 @@ final class PlayerControlsView: UIView {
     private(set) var isLocked = false
     /// Preferência do usuário, preservada entre aparições dos controles.
     /// Começa fechada para não cobrir o vídeo; o botão de grade abre.
-    private(set) var isToolStripExpanded = false
 
-    var title: String = "" {
-        didSet { titleLabel.text = title }
-    }
+    /// Guardado por compatibilidade com quem informa o título; a barra de
+    /// cima saiu, e com ela o lugar onde ele aparecia.
+    var title: String = ""
 
     private var duration: Double = 0
     private var isUserScrubbing = false
 
     // MARK: - Views
 
-    private let topBar = UIView()
     private let bottomBar = UIView()
-    private let topGradient = CAGradientLayer()
     private let bottomGradient = CAGradientLayer()
 
-    private let titleLabel = UILabel()
-    private let closeButton = UIButton(type: .system)
     private let toolsButton = UIButton(type: .system)
     private let subtitleButton = UIButton(type: .system)
     private let audioButton = UIButton(type: .system)
-    private let moreButton = UIButton(type: .system)
 
     private let elapsedLabel = UILabel()
     private let totalLabel = UILabel()
     private let slider = UISlider()
 
-    private let lockButton = UIButton(type: .system)
     private let previousButton = UIButton(type: .system)
     private let playButton = UIButton(type: .system)
     private let nextButton = UIButton(type: .system)
-    /// Bloqueio, transporte e ajustes na mesma fileira, repartindo a largura.
-    private let fileiraInferior = UIStackView()
+    /// Transporte à esquerda, ajustes à direita.
+    private let transporte = UIStackView()
+    private let ajustes = UIStackView()
     private let aspectButton = UIButton(type: .system)
     private let pipButton = UIButton(type: .system)
 
     /// Aparece sozinho quando tudo está bloqueado.
     private let unlockButton = UIButton(type: .system)
     private let spinner = UIActivityIndicatorView(style: .large)
-    let toolStrip = ToolStripView()
 
     /// Toque no espaço vazio das barras — não num botão delas.
     var onBackgroundTap: (() -> Void)?
@@ -85,9 +78,8 @@ final class PlayerControlsView: UIView {
     override init(frame: CGRect) {
         super.init(frame: frame)
         backgroundColor = .clear
-        setupTopBar()
         setupBottomBar()
-        setupToolStrip()
+        setupGestoDeFundo()
         setupUnlockButton()
         setupSpinner()
     }
@@ -104,95 +96,16 @@ final class PlayerControlsView: UIView {
         // Escondida, a barra deixa o toque passar para os gestos; visível, ela
         // captura só onde há controle de verdade.
         guard isVisible else { return false }
-        return topBar.frame.contains(point)
-            || bottomBar.frame.contains(point)
-            || (isToolStripExpanded && !toolStrip.isHidden && toolStrip.frame.contains(point))
+        return bottomBar.frame.contains(point)
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        topGradient.frame = topBar.bounds
         bottomGradient.frame = bottomBar.bounds
     }
 
     // MARK: - Barra superior
 
-    private func setupTopBar() {
-        topBar.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(topBar)
-
-        topGradient.colors = [UIColor.black.withAlphaComponent(0.8).cgColor, UIColor.clear.cgColor]
-        topBar.layer.insertSublayer(topGradient, at: 0)
-
-        configure(closeButton, symbol: "chevron.down", action: #selector(closeTapped))
-        configure(toolsButton, symbol: "square.grid.2x2", action: #selector(toolsTapped))
-        configure(subtitleButton, symbol: "captions.bubble", action: #selector(subtitlesTapped))
-        configure(audioButton, symbol: "waveform", action: #selector(audioTapped))
-
-        moreButton.setImage(UIImage(systemName: "ellipsis"), for: .normal)
-        moreButton.tintColor = .white
-        moreButton.setPreferredSymbolConfiguration(
-            UIImage.SymbolConfiguration(pointSize: 17, weight: .medium), forImageIn: .normal)
-        moreButton.translatesAutoresizingMaskIntoConstraints = false
-        moreButton.showsMenuAsPrimaryAction = true
-        moreButton.menu = UIMenu(children: [
-            UIDeferredMenuElement.uncached { [weak self] concluir in
-                concluir(self?.moreMenuProvider?() ?? [])
-            }
-        ])
-
-        titleLabel.textColor = .white
-        titleLabel.font = .systemFont(ofSize: 15, weight: .medium)
-        titleLabel.lineBreakMode = .byTruncatingMiddle
-        titleLabel.translatesAutoresizingMaskIntoConstraints = false
-
-        [closeButton, titleLabel, toolsButton, subtitleButton, audioButton, moreButton]
-            .forEach(topBar.addSubview)
-
-        NSLayoutConstraint.activate([
-            topBar.topAnchor.constraint(equalTo: topAnchor),
-            topBar.leadingAnchor.constraint(equalTo: leadingAnchor),
-            topBar.trailingAnchor.constraint(equalTo: trailingAnchor),
-            topBar.heightAnchor.constraint(equalToConstant: 96),
-
-            closeButton.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 12),
-            closeButton.bottomAnchor.constraint(equalTo: topBar.bottomAnchor, constant: -14),
-            closeButton.widthAnchor.constraint(equalToConstant: 44),
-            closeButton.heightAnchor.constraint(equalToConstant: 44),
-
-            moreButton.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -12),
-            moreButton.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor),
-            moreButton.widthAnchor.constraint(equalToConstant: 44),
-            moreButton.heightAnchor.constraint(equalToConstant: 44),
-
-            audioButton.trailingAnchor.constraint(equalTo: moreButton.leadingAnchor, constant: -4),
-            audioButton.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor),
-            audioButton.widthAnchor.constraint(equalToConstant: 44),
-            audioButton.heightAnchor.constraint(equalToConstant: 44),
-
-            subtitleButton.trailingAnchor.constraint(equalTo: audioButton.leadingAnchor, constant: -4),
-            subtitleButton.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor),
-            subtitleButton.widthAnchor.constraint(equalToConstant: 44),
-            subtitleButton.heightAnchor.constraint(equalToConstant: 44),
-
-            toolsButton.trailingAnchor.constraint(equalTo: subtitleButton.leadingAnchor, constant: -4),
-            toolsButton.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor),
-            toolsButton.widthAnchor.constraint(equalToConstant: 44),
-            toolsButton.heightAnchor.constraint(equalToConstant: 44),
-
-            titleLabel.leadingAnchor.constraint(equalTo: closeButton.trailingAnchor, constant: 6),
-            titleLabel.trailingAnchor.constraint(equalTo: toolsButton.leadingAnchor, constant: -8),
-            titleLabel.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor),
-        ])
-    }
-
-    // MARK: - Rodapé
-
-    /// Duas linhas: tempo e barra em cima, transporte embaixo.
-    ///
-    /// O play fica centralizado no rodapé, e não no meio da tela: ali ele
-    /// cobre a imagem justamente onde a ação acontece. Tocar duas vezes no
-    /// centro continua pausando — o gesto cobre o caso de querer pausar sem
     /// procurar botão.
     private func setupBottomBar() {
         bottomBar.translatesAutoresizingMaskIntoConstraints = false
@@ -229,7 +142,6 @@ final class PlayerControlsView: UIView {
         slider.addTarget(self, action: #selector(sliderTouchUp),
                          for: [.touchUpInside, .touchUpOutside, .touchCancel])
 
-        configure(lockButton, symbol: "lock.open", size: 20, action: #selector(lockTapped))
         configure(previousButton, symbol: "backward.end.fill", size: 27, action: #selector(previousTapped))
         configure(playButton, symbol: "play.fill", size: 38, weight: .semibold, action: #selector(playTapped))
         configure(nextButton, symbol: "forward.end.fill", size: 27, action: #selector(nextTapped))
@@ -242,17 +154,41 @@ final class PlayerControlsView: UIView {
             $0.widthAnchor.constraint(equalToConstant: 60).isActive = true
             $0.heightAnchor.constraint(equalToConstant: 56).isActive = true
         }
-        pipButton.isHidden = true
 
-        // Uma fileira só, em partes iguais: ninguém pode invadir o vizinho.
-        fileiraInferior.axis = .horizontal
-        fileiraInferior.alignment = .center
-        fileiraInferior.distribution = .fillEqually
-        fileiraInferior.translatesAutoresizingMaskIntoConstraints = false
-        [lockButton, previousButton, playButton, nextButton, aspectButton, pipButton]
-            .forEach(fileiraInferior.addArrangedSubview)
+        configure(subtitleButton, symbol: "captions.bubble", size: 20, action: #selector(subtitlesTapped))
+        configure(audioButton, symbol: "music.note", size: 20, action: #selector(audioTapped))
 
-        [elapsedLabel, slider, totalLabel, fileiraInferior].forEach(bottomBar.addSubview)
+        // A engrenagem guarda o resto: modo noturno, velocidade, captura,
+        // temporizador, bloqueio, girar, fechar. Deixar tudo à mostra era o
+        // que enchia a tela de ícones e disputava espaço com o filme.
+        toolsButton.setImage(UIImage(systemName: "gearshape.fill"), for: .normal)
+        toolsButton.tintColor = .white
+        toolsButton.setPreferredSymbolConfiguration(
+            UIImage.SymbolConfiguration(pointSize: 20, weight: .medium), forImageIn: .normal)
+        toolsButton.translatesAutoresizingMaskIntoConstraints = false
+        toolsButton.showsMenuAsPrimaryAction = true
+        toolsButton.menu = UIMenu(children: [
+            UIDeferredMenuElement.uncached { [weak self] concluir in
+                concluir(self?.moreMenuProvider?() ?? [])
+            }
+        ])
+
+        // Dois grupos, como no reprodutor da Apple: o transporte à esquerda,
+        // os ajustes à direita, e o vídeo respirando no meio.
+        transporte.axis = .horizontal
+        transporte.alignment = .center
+        transporte.spacing = 8
+        transporte.translatesAutoresizingMaskIntoConstraints = false
+        [previousButton, playButton, nextButton].forEach(transporte.addArrangedSubview)
+
+        ajustes.axis = .horizontal
+        ajustes.alignment = .center
+        ajustes.spacing = 8
+        ajustes.translatesAutoresizingMaskIntoConstraints = false
+        [subtitleButton, audioButton, toolsButton, pipButton, aspectButton]
+            .forEach(ajustes.addArrangedSubview)
+
+        [elapsedLabel, slider, totalLabel, transporte, ajustes].forEach(bottomBar.addSubview)
 
         NSLayoutConstraint.activate([
             bottomBar.bottomAnchor.constraint(equalTo: bottomAnchor),
@@ -270,14 +206,21 @@ final class PlayerControlsView: UIView {
             // espaço. Uma fileira com distribuição igual tem esse encarregado
             // por construção, e a sobreposição deixa de ser possível em
             // qualquer largura.
-            fileiraInferior.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 8),
-            fileiraInferior.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -8),
-            fileiraInferior.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -8),
-            fileiraInferior.heightAnchor.constraint(equalToConstant: 56),
+            transporte.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 10),
+            transporte.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -8),
+            transporte.heightAnchor.constraint(equalToConstant: 52),
+
+            ajustes.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -10),
+            ajustes.centerYAnchor.constraint(equalTo: transporte.centerYAnchor),
+            ajustes.heightAnchor.constraint(equalToConstant: 52),
+            // Os dois grupos não podem se encontrar: com pouca largura, quem
+            // cede é o da direita, encolhendo os ícones.
+            ajustes.leadingAnchor.constraint(greaterThanOrEqualTo: transporte.trailingAnchor,
+                                             constant: 12),
 
             // Linha de cima: tempo decorrido, barra, duração total.
             elapsedLabel.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 16),
-            elapsedLabel.bottomAnchor.constraint(equalTo: fileiraInferior.topAnchor, constant: -14),
+            elapsedLabel.bottomAnchor.constraint(equalTo: transporte.topAnchor, constant: -14),
 
             totalLabel.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -16),
             totalLabel.centerYAnchor.constraint(equalTo: elapsedLabel.centerYAnchor),
@@ -288,29 +231,11 @@ final class PlayerControlsView: UIView {
         ])
     }
 
-    private func setupToolStrip() {
-        // As barras cobrem boa parte da tela quando aparecem, e um toque em
-        // cima delas — fora de um botão — não chegava a lugar nenhum: a view de
-        // controles capturava e ninguém tratava. Quem quisesse esconder tinha
-        // que acertar a faixa estreita de vídeo que sobrava no meio.
-        //
-        // Os botões continuam ganhando o toque deles: um controle sempre vence
-        // um reconhecedor de gesto do pai.
-        [topBar, bottomBar].forEach { barra in
-            barra.addGestureRecognizer(UITapGestureRecognizer(target: self,
+    /// As barras cobrem boa parte da tela quando aparecem, e um toque em cima
+    /// delas — fora de um botão — precisa esconder, como qualquer outro toque.
+    private func setupGestoDeFundo() {
+        bottomBar.addGestureRecognizer(UITapGestureRecognizer(target: self,
                                                               action: #selector(fundoTocado)))
-        }
-
-        toolStrip.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(toolStrip)
-        NSLayoutConstraint.activate([
-            toolStrip.topAnchor.constraint(equalTo: topBar.bottomAnchor, constant: 4),
-            toolStrip.leadingAnchor.constraint(equalTo: leadingAnchor),
-            toolStrip.trailingAnchor.constraint(equalTo: trailingAnchor),
-            toolStrip.heightAnchor.constraint(equalToConstant: 86),
-        ])
-        toolStrip.alpha = 0
-        toolStrip.isHidden = true
     }
 
     private func setupUnlockButton() {
@@ -374,7 +299,11 @@ final class PlayerControlsView: UIView {
         guard !isUserScrubbing else { return }
 
         elapsedLabel.text = TimeFormat.clock(currentTime)
-        totalLabel.text = duration > 0 ? TimeFormat.clock(duration) : "--:--"
+        // Quanto falta, não quanto dura: é a conta que se faz de cabeça o
+        // tempo todo enquanto se assiste.
+        totalLabel.text = duration > 0
+            ? "-" + TimeFormat.clock(max(0, duration - currentTime))
+            : "--:--"
         slider.value = duration > 0 ? Float(currentTime / duration) : 0
     }
 
@@ -433,34 +362,15 @@ final class PlayerControlsView: UIView {
     /// Antes, cada ação mexia direto na transparência de cada peça, e os
     /// estados saíam de sincronia — o sintoma era a barra voltar sem as
     /// ferramentas. Calculando tudo a partir de `isVisible`, `isLocked` e
-    /// `isToolStripExpanded` num lugar só, essa classe de bug deixa de existir.
     private func applyVisibility(animated: Bool) {
         let barras: CGFloat = (isVisible && !isLocked) ? 1 : 0
-        let fileira: CGFloat = (isVisible && !isLocked && isToolStripExpanded) ? 1 : 0
+        let bloqueio: CGFloat = isLocked ? 0.85 : 0
 
-        toolsButton.tintColor = isToolStripExpanded ? tintColor : .white
-        if fileira > 0 {
-            toolStrip.isHidden = false
-            bringSubviewToFront(toolStrip)
-        }
-
-        let trabalho = {
-            self.topBar.alpha = barras
+        let aplicar = {
             self.bottomBar.alpha = barras
-            self.toolStrip.alpha = fileira
-            self.unlockButton.alpha = self.isLocked ? 0.85 : 0
+            self.unlockButton.alpha = bloqueio
         }
-        let depois = { (_: Bool) in
-            // Transparente ainda receberia toque e roubaria gestos da área do
-            // vídeo; escondida de verdade, não.
-            self.toolStrip.isHidden = fileira == 0
-        }
-        if animated {
-            UIView.animate(withDuration: 0.22, animations: trabalho, completion: depois)
-        } else {
-            trabalho()
-            depois(true)
-        }
+        animated ? UIView.animate(withDuration: 0.22, animations: aplicar) : aplicar()
     }
 
     /// Chamado também pela fileira de ferramentas.
@@ -468,7 +378,6 @@ final class PlayerControlsView: UIView {
 
     // MARK: - Ações
 
-    @objc private func closeTapped()     { onClose?() }
     @objc private func playTapped()      { onPlayPause?() }
     @objc private func previousTapped()  { onPrevious?() }
     @objc private func nextTapped()      { onNext?() }
@@ -477,14 +386,8 @@ final class PlayerControlsView: UIView {
     @objc private func aspectTapped()    { onCycleAspect?() }
     @objc private func pipTapped()       { onTogglePiP?() }
 
-    @objc private func toolsTapped() {
-        isToolStripExpanded.toggle()
-        applyVisibility(animated: true)
-    }
-
     @objc private func lockTapped() {
         isLocked.toggle()
-        lockButton.setImage(UIImage(systemName: isLocked ? "lock.fill" : "lock.open"), for: .normal)
         isVisible = !isLocked
         applyVisibility(animated: true)
         onLockChange?(isLocked)
@@ -514,6 +417,7 @@ final class PlayerControlsView: UIView {
         guard duration > 0 else { return }
         let time = Double(slider.value) * duration
         elapsedLabel.text = TimeFormat.clock(time)
+        totalLabel.text = "-" + TimeFormat.clock(max(0, duration - time))
         onScrub?(time, false)
     }
 
