@@ -21,10 +21,9 @@ struct JellyfinServersView: View {
             }
 
             ForEach(store.servers) { servidor in
-                NavigationLink {
-                    JellyfinLibraryView(server: servidor, parent: nil, title: servidor.name)
-                        .id(servidor.id)
-                } label: {
+                NavigationLink(value: JellyfinRoute(server: servidor, parent: nil,
+                                                    title: servidor.name,
+                                                    collectionType: nil)) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(servidor.name).fontWeight(.medium)
                         Text("\(servidor.displayHost) · \(servidor.username)")
@@ -47,6 +46,16 @@ struct JellyfinServersView: View {
             }
         }
         .navigationTitle("Jellyfin")
+        // Um registro só, aqui na base, valendo para toda a pilha.
+        //
+        // Misturar link por destino com link por valor no mesmo caminho faz o
+        // SwiftUI desistir da navegação e voltar à raiz — era isso que
+        // acontecia ao tocar numa pasta. Agora todos os saltos do Jellyfin
+        // falam a mesma língua.
+        .navigationDestination(for: JellyfinRoute.self) { rota in
+            JellyfinLibraryView(server: rota.server, parent: rota.parent,
+                                title: rota.title, collectionType: rota.collectionType)
+        }
         .alert("Remover servidor?", isPresented: Binding(
             get: { pendingDeletion != nil },
             set: { if !$0 { pendingDeletion = nil } }
@@ -175,7 +184,8 @@ struct JellyfinLoginView: View {
 /// resolvida na hora de navegar.
 struct JellyfinRoute: Hashable {
     let server: JellyfinServer
-    let parent: String
+    /// `nil` na raiz do servidor, onde o que se lista são as bibliotecas.
+    let parent: String?
     let title: String
     let collectionType: String?
 }
@@ -253,10 +263,6 @@ struct JellyfinLibraryView: View {
         }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
-        .navigationDestination(for: JellyfinRoute.self) { rota in
-            JellyfinLibraryView(server: rota.server, parent: rota.parent,
-                                title: rota.title, collectionType: rota.collectionType)
-        }
         .task { await carregar() }
         .overlay {
             if abrindo != nil {

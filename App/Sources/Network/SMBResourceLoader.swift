@@ -26,8 +26,31 @@ final class SMBResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
     private let path: String
     private let contentType: String
 
-    private var reader: FileReader?
-    private var size: UInt64 = 0
+    /// Um leitor, uma leitura por vez.
+    ///
+    /// O `FileReader` guarda posição própria no arquivo, e o AVPlayer pede
+    /// vários trechos ao mesmo tempo — ele abre um pedido novo a cada busca e
+    /// mantém outro correndo à frente. Duas leituras concorrentes embaralham
+    /// esse estado, e o resultado é o vídeo dando erro depois de alguns
+    /// segundos, quando o segundo pedido chega. O ator serializa.
+    private actor Leitor {
+        private let reader: FileReader
+        let size: UInt64
+
+        init(reader: FileReader, size: UInt64) {
+            self.reader = reader
+            self.size = size
+        }
+
+        func read(offset: UInt64, length: UInt32) async throws -> Data {
+            try await reader.read(offset: offset, length: length)
+        }
+    }
+
+    private var leitor: Leitor?
+    private var size: UInt64 { leitor?.size ?? 0 }
+    /// Uma abertura só, mesmo com vários pedidos chegando juntos.
+    private var abertura: Task<Leitor, Error>?
 
     /// Uma tarefa por pedido, para poder cancelar. O AVPlayer cancela muito —
     /// é o que ele faz a cada busca, e insistir num pedido morto significa
@@ -104,14 +127,15 @@ final class SMBResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
 
     private func atender(_ pedido: AVAssetResourceLoadingRequest) async {
         do {
-            let leitor = try await abrir()
+            let fonte = try await abrir()
+            let tamanho = fonte.size
 
             // O AVPlayer sempre pergunta primeiro o que é o arquivo. Sem
             // tamanho e sem aviso de que aceitamos trechos, ele desiste de
             // buscar e passa a tratar tudo como transmissão ao vivo.
             if let informacao = pedido.contentInformationRequest {
                 informacao.contentType = contentType
-                informacao.contentLength = Int64(size)
+                informacao.contentLength = Int64(tamanho)
                 informacao.isByteRangeAccessSupported = true
             }
 
@@ -132,10 +156,10 @@ final class SMBResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
             // trazer gigabytes numa leitura só — o pedido nunca voltava, e o
             // vídeo ficava preto esperando para sempre.
             let total: Int64 = dados.requestsAllDataToEndOfResource
-                ? Int64(size) - inicio
+                ? Int64(tamanho) - inicio
                 : Int64(dados.requestedLength) - (inicio - dados.requestedOffset)
 
-            guard total > 0, inicio < Int64(size) else {
+            guard total > 0, inicio < Int64(tamanho) else {
                 pedido.finishLoading()
                 return
             }
@@ -143,14 +167,14 @@ final class SMBResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
             // Em pedaços, e entregando a cada pedaço: o AVPlayer começa a
             // decodificar com o que já chegou em vez de esperar o fim.
             var posicao = inicio
-            let fim = min(Int64(size), inicio + total)
+            let fim = min(Int64(tamanho), inicio + total)
 
             while posicao < fim {
                 if Task.isCancelled || pedido.isCancelled { return }
 
                 let pedaco = min(Self.blocoDeLeitura, fim - posicao)
-                let trecho = try await leitor.read(offset: UInt64(posicao),
-                                                   length: UInt32(pedaco))
+                let trecho = try await fonte.read(offset: UInt64(posicao),
+                                                  length: UInt32(pedaco))
                 if trecho.isEmpty { break }
 
                 if Task.isCancelled || pedido.isCancelled { return }
@@ -172,12 +196,24 @@ final class SMBResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
     private static let blocoDeLeitura: Int64 = 512 * 1024
 
     /// Uma conexão por reprodução, reaproveitada em todos os pedidos.
-    private func abrir() async throws -> FileReader {
-        if let reader { return reader }
-        let (leitor, tamanho) = try await connection.fileReader(share: share, path: path)
-        reader = leitor
-        size = tamanho
-        return leitor
+    ///
+    /// A tarefa é guardada e compartilhada porque os primeiros pedidos chegam
+    /// juntos: sem isso, cada um abriria a sua sessão SMB.
+    private func abrir() async throws -> Leitor {
+        if let leitor { return leitor }
+        if let abertura { return try await abertura.value }
+
+        let conexao = connection
+        let compartilhamento = share
+        let caminho = path
+        let tarefa = Task<Leitor, Error> {
+            let (reader, tamanho) = try await conexao.fileReader(share: compartilhamento, path: caminho)
+            return Leitor(reader: reader, size: tamanho)
+        }
+        abertura = tarefa
+        let novo = try await tarefa.value
+        leitor = novo
+        return novo
     }
 
     /// O mesmo arquivo do servidor, pronto para o gerador de miniatura da
@@ -192,6 +228,9 @@ final class SMBResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
     private let fila = DispatchQueue(label: "com.mauricio.labplayer.smbLoader.asset")
 
     func teardown() {
+        abertura?.cancel()
+        abertura = nil
+        leitor = nil
         trava.lock()
         tarefas.values.forEach { $0.cancel() }
         tarefas.removeAll()

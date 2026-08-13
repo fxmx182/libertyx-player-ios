@@ -238,6 +238,11 @@ final class PlayerControlsView: UIView {
         transport.alignment = .center
         // Folga generosa: com 22 os botões encostavam uns nos outros e errar o
         // alvo era o resultado normal, não o acidente.
+        //
+        // A folga é só espaçamento, sem amarras de posição contra os botões
+        // das pontas. As amarras que eu tinha posto ficavam impossíveis de
+        // satisfazer numa tela estreita, e o Auto Layout resolvia isso
+        // encolhendo a fileira até os botões sumirem.
         transport.spacing = 34
         transport.translatesAutoresizingMaskIntoConstraints = false
         [previousButton, playButton, nextButton].forEach(transport.addArrangedSubview)
@@ -260,11 +265,7 @@ final class PlayerControlsView: UIView {
 
             transport.centerXAnchor.constraint(equalTo: centerXAnchor),
             transport.centerYAnchor.constraint(equalTo: lockButton.centerYAnchor),
-            // Limite real em vez de esperança: em tela estreita o grupo do
-            // meio encostava no bloqueio de um lado e no enquadramento do
-            // outro. Assim ele encolhe antes de invadir.
-            transport.leadingAnchor.constraint(greaterThanOrEqualTo: lockButton.trailingAnchor, constant: 12),
-            transport.trailingAnchor.constraint(lessThanOrEqualTo: aspectButton.leadingAnchor, constant: -12),
+
 
             pipButton.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -10),
             pipButton.centerYAnchor.constraint(equalTo: lockButton.centerYAnchor),
