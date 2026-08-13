@@ -1022,13 +1022,6 @@ final class PlayerViewController: UIViewController {
         itens.append(UIMenu(title: "Ocultar barra", image: UIImage(systemName: "clock.arrow.circlepath"),
                             children: autoHideActions()))
 
-        // Fechar mora aqui porque a barra de cima saiu — e sem uma saída
-        // visível o usuário fica preso no vídeo.
-        itens.append(UIAction(title: "Fechar vídeo",
-                              image: UIImage(systemName: "xmark"),
-                              attributes: .destructive) { [weak self] _ in
-            self?.close()
-        })
         return itens
     }
 

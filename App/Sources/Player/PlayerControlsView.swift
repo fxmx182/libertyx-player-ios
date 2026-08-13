@@ -66,6 +66,9 @@ final class PlayerControlsView: UIView {
     private let aspectButton = UIButton(type: .system)
     private let pipButton = UIButton(type: .system)
 
+    /// Sair do vídeo. Sozinho no alto, sem barra em volta.
+    private let closeButton = UIButton(type: .system)
+
     /// Aparece sozinho quando tudo está bloqueado.
     private let unlockButton = UIButton(type: .system)
     private let spinner = UIActivityIndicatorView(style: .large)
@@ -80,6 +83,7 @@ final class PlayerControlsView: UIView {
         backgroundColor = .clear
         setupBottomBar()
         setupGestoDeFundo()
+        setupCloseButton()
         setupUnlockButton()
         setupSpinner()
     }
@@ -97,6 +101,7 @@ final class PlayerControlsView: UIView {
         // captura só onde há controle de verdade.
         guard isVisible else { return false }
         return bottomBar.frame.contains(point)
+            || closeButton.frame.insetBy(dx: -8, dy: -8).contains(point)
     }
 
     override func layoutSubviews() {
@@ -238,6 +243,27 @@ final class PlayerControlsView: UIView {
                                                               action: #selector(fundoTocado)))
     }
 
+    /// A saída, e só ela, no alto.
+    ///
+    /// A barra de cima inteira era demais para um botão: título, ferramentas e
+    /// um degradê ocupando um oitavo da tela. Um círculo discreto no canto faz
+    /// o mesmo trabalho e devolve a imagem ao filme. O fundo translúcido existe
+    /// porque uma seta branca some numa cena clara.
+    private func setupCloseButton() {
+        configure(closeButton, symbol: "chevron.down", size: 17, action: #selector(closeTapped))
+        closeButton.backgroundColor = UIColor.black.withAlphaComponent(0.35)
+        closeButton.layer.cornerRadius = 19
+        closeButton.alpha = 0
+        addSubview(closeButton)
+
+        NSLayoutConstraint.activate([
+            closeButton.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 12),
+            closeButton.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 10),
+            closeButton.widthAnchor.constraint(equalToConstant: 38),
+            closeButton.heightAnchor.constraint(equalToConstant: 38),
+        ])
+    }
+
     private func setupUnlockButton() {
         configure(unlockButton, symbol: "lock.fill", action: #selector(lockTapped))
         unlockButton.alpha = 0
@@ -368,6 +394,7 @@ final class PlayerControlsView: UIView {
 
         let aplicar = {
             self.bottomBar.alpha = barras
+            self.closeButton.alpha = barras
             self.unlockButton.alpha = bloqueio
         }
         animated ? UIView.animate(withDuration: 0.22, animations: aplicar) : aplicar()
@@ -378,6 +405,7 @@ final class PlayerControlsView: UIView {
 
     // MARK: - Ações
 
+    @objc private func closeTapped()     { onClose?() }
     @objc private func playTapped()      { onPlayPause?() }
     @objc private func previousTapped()  { onPrevious?() }
     @objc private func nextTapped()      { onNext?() }
