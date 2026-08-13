@@ -23,6 +23,7 @@ struct JellyfinServersView: View {
             ForEach(store.servers) { servidor in
                 NavigationLink {
                     JellyfinLibraryView(server: servidor, parent: nil, title: servidor.name)
+                        .id(servidor.id)
                 } label: {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(servidor.name).fontWeight(.medium)
@@ -167,6 +168,18 @@ struct JellyfinLoginView: View {
     }
 }
 
+/// Para onde um toque leva, como dado.
+///
+/// Ser `Hashable` é o que permite ao SwiftUI empilhar a tela certa: o destino
+/// deixa de ser uma view construída antes da hora e passa a ser uma escolha
+/// resolvida na hora de navegar.
+struct JellyfinRoute: Hashable {
+    let server: JellyfinServer
+    let parent: String
+    let title: String
+    let collectionType: String?
+}
+
 /// Uma biblioteca ou pasta do servidor.
 struct JellyfinLibraryView: View {
 
@@ -205,16 +218,20 @@ struct JellyfinLibraryView: View {
                 LazyVGrid(columns: colunas, spacing: 14) {
                     ForEach(itens) { item in
                         if item.isFolder {
-                            NavigationLink {
-                                JellyfinLibraryView(server: server, parent: item.id,
-                                                    title: item.name,
-                                                    collectionType: item.collectionType)
-                                    // Sem identidade própria, o SwiftUI
-                                    // reaproveita a tela anterior com o estado
-                                    // dela — daí clicar em Filmes e abrir
-                                    // Séries.
-                                    .id(item.id)
-                            } label: {
+                            // Navegação por valor, e não por destino embutido.
+                            //
+                            // Construir a tela de destino dentro de uma grade
+                            // preguiçosa deixa o SwiftUI livre para casar
+                            // destino e célula errados — era isso que abria
+                            // Séries ao tocar em Filmes. Dar identidade não
+                            // bastou; o jeito é o destino ser um dado e a tela
+                            // ser montada só no momento de empilhar.
+                            NavigationLink(value: JellyfinRoute(
+                                server: server,
+                                parent: item.id,
+                                title: item.name,
+                                collectionType: item.collectionType
+                            )) {
                                 JellyfinCard(item: item, client: client)
                             }
                             .buttonStyle(.plain)
@@ -236,6 +253,10 @@ struct JellyfinLibraryView: View {
         }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(for: JellyfinRoute.self) { rota in
+            JellyfinLibraryView(server: rota.server, parent: rota.parent,
+                                title: rota.title, collectionType: rota.collectionType)
+        }
         .task { await carregar() }
         .overlay {
             if abrindo != nil {

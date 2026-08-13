@@ -67,17 +67,35 @@ final class PictureInPicture: NSObject {
     }
 
     /// `true` se a janela chegou a abrir; `false` se o sistema recusou.
+    ///
+    /// Entre "existe controlador" e "dá para abrir agora" há uma diferença que
+    /// custou um diagnóstico errado: numa transmissão o sistema só libera a
+    /// janela depois de ter quadros suficientes em mãos, e antes disso
+    /// `startPictureInPicture()` não faz nada e não reclama. Esperamos um
+    /// pouco por essa liberação antes de dizer que não dá.
     @discardableResult
-    func toggle() -> Bool {
+    func toggle() async -> Bool {
         guard let controller = prepararControlador() else {
-            LabLog.problem("PiP indisponível: o sistema não montou o controlador")
+            LabLog.problem("PiP: o sistema não montou o controlador")
             return false
         }
+
         if controller.isPictureInPictureActive {
             controller.stopPictureInPicture()
-        } else {
-            controller.startPictureInPicture()
+            return true
         }
+
+        for _ in 0..<20 {
+            if controller.isPictureInPicturePossible { break }
+            try? await Task.sleep(nanoseconds: 150_000_000)
+        }
+
+        guard controller.isPictureInPicturePossible else {
+            LabLog.problem("PiP: o sistema não liberou a janela para esta mídia")
+            return false
+        }
+
+        controller.startPictureInPicture()
         return true
     }
 }

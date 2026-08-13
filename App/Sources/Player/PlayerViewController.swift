@@ -999,8 +999,13 @@ final class PlayerViewController: UIViewController {
     /// própria numa superfície que o sistema não sabe transportar para a
     /// janelinha. Não é opção nossa desligada: é uma porta que só a Apple abre.
     private func acionarPiP() {
-        if pip?.toggle() == true { return }
+        Task { @MainActor in
+            if await pip?.toggle() == true { return }
+            explicarPiPIndisponivel()
+        }
+    }
 
+    private func explicarPiPIndisponivel() {
         let alerta = UIAlertController(
             title: "Janela flutuante indisponível",
             message: "O iOS só monta a janelinha sobre o reprodutor da Apple. "
@@ -1061,12 +1066,10 @@ final class PlayerViewController: UIViewController {
             self?.takeSnapshot()
         })
 
-        if pip?.isSupported == true {
-            itens.append(UIAction(title: "Janela flutuante",
-                                  image: UIImage(systemName: "pip.enter")) { [weak self] _ in
-                self?.pip?.toggle()
-            })
-        }
+        itens.append(UIAction(title: "Janela flutuante",
+                              image: UIImage(systemName: "pip.enter")) { [weak self] _ in
+            self?.acionarPiP()
+        })
 
         itens.append(UIMenu(title: "Modo noturno", image: UIImage(systemName: "moon.stars"),
                             children: nightModeActions()))
