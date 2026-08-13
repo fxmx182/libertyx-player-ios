@@ -1272,6 +1272,16 @@ final class PlayerViewController: UIViewController {
     /// A barra de progresso usa o mesmo caminho do arrasto na tela.
     private func handleControlScrub(to time: Double, finished: Bool) {
         if finished {
+            // Um toque na barra chega aqui direto, sem arrasto antes.
+            //
+            // O fim do arrasto não precisava buscar: `endScrub` leva o vídeo ao
+            // último ponto que o dedo pediu. Já o toque não pede nada durante o
+            // caminho — ele só anuncia o destino. Sem esta busca, a bolinha
+            // pulava para o ponto tocado e voltava na atualização seguinte,
+            // porque o vídeo nunca tinha saído do lugar.
+            if !isBarScrubbing {
+                Task { @MainActor in await engine.seek(to: time, precise: true) }
+            }
             engine.endScrub()
             isBarScrubbing = false
             controls.suppressBuffering = false
