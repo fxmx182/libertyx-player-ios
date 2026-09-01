@@ -2,9 +2,10 @@ import SwiftUI
 
 /// A linguagem visual do app.
 ///
-/// Emprestada do painel do datacenter, que já resolveu esse problema: paleta de
-/// sistema da Apple no tom escuro, superfícies de vidro sobre fundo profundo,
-/// cantos generosos e tipografia com espaçamento apertado.
+/// Estrutura emprestada do painel do datacenter — paleta de sistema da Apple no
+/// tom escuro, superfícies de vidro sobre fundo profundo, cantos generosos e
+/// tipografia com espaçamento apertado. Cor vinda da marca do app: o amarelo
+/// que está no ícone.
 ///
 /// Emprestada, não copiada. Lá é uma página web imitando um app da Apple; aqui
 /// já somos um app da Apple, então não faz sentido reconstruir o que o sistema
@@ -15,14 +16,14 @@ enum LabTheme {
 
     // MARK: - Cor
 
-    /// Ciano em vez do azul padrão do sistema.
+    /// O amarelo da marca, colhido do próprio ícone.
     ///
-    /// É o acento do painel, e resolve um problema real: o azul da Apple é o
-    /// azul de todo mundo, e um app pessoal não deveria parecer o ajustes do
-    /// iPhone. O ciano fica bem sobre imagem escura, que é o fundo da maior
-    /// parte deste app.
-    static let accent = Color(red: 0.392, green: 0.824, blue: 1.0)      // #64d2ff
-    static let accentUI = UIColor(red: 0.392, green: 0.824, blue: 1.0, alpha: 1)
+    /// Substitui o ciano emprestado do painel: agora existe uma identidade
+    /// própria, e o acento tem que ser dela. Sobre preto ele rende ainda mais
+    /// contraste que o ciano, que é o que importa num app cujo fundo é imagem
+    /// escura quase o tempo todo.
+    static let accent = Color(red: 0.984, green: 0.773, blue: 0.004)    // #fbc501
+    static let accentUI = UIColor(red: 0.984, green: 0.773, blue: 0.004, alpha: 1)
 
     static let green = Color(red: 0.188, green: 0.820, blue: 0.345)     // #30d158
     static let orange = Color(red: 1.0, green: 0.624, blue: 0.039)      // #ff9f0a

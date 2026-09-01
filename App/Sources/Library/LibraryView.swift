@@ -32,7 +32,7 @@ struct LibraryView: View {
                     lista
                 }
             }
-            .navigationTitle("Vídeos")
+            .navigationTitle("Viper")
             // O Jellyfin abre com pilha de navegação própria.
             //
             // Empilhado dentro da pilha da biblioteca, ele misturava dois
@@ -293,7 +293,15 @@ struct LibraryView: View {
 
     private var vazio: some View {
         ContentUnavailableView {
-            Label("Nenhum vídeo ainda", systemImage: "film.stack")
+            // A marca no lugar do ícone genérico: é a primeira tela de quem
+            // acabou de instalar, e a única chance de o app se apresentar.
+            VStack(spacing: 14) {
+                Image("Logo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: 240)
+                Text("Nenhum vídeo ainda").font(.headline)
+            }
         } description: {
             // A limitação do iOS explicada onde ela é sentida, em vez de o
             // usuário concluir que o app não funciona.
