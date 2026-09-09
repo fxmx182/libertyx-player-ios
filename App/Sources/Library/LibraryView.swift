@@ -21,7 +21,6 @@ struct LibraryView: View {
     @State private var showingInfo: MediaItem?
     @State private var errorMessage: String?
     @State private var pendingDeletion: MediaItem?
-    @State private var showingJellyfin = false
 
     var body: some View {
         NavigationStack {
@@ -33,15 +32,6 @@ struct LibraryView: View {
                 }
             }
             .navigationTitle("Viper")
-            // O Jellyfin abre com pilha de navegação própria.
-            //
-            // Empilhado dentro da pilha da biblioteca, ele misturava dois
-            // jeitos de navegar no mesmo caminho, e o SwiftUI respondia
-            // voltando ao início ao tocar numa pasta. Com pilha separada, o
-            // que acontece lá dentro não depende de nada do lado de fora.
-            .fullScreenCover(isPresented: $showingJellyfin) {
-                NavigationStack { JellyfinServersView() }
-            }
             // Apagar arquivo não tem desfazer no iOS — a confirmação é a
             // única chance de voltar atrás.
             .alert("Excluir vídeo?", isPresented: Binding(
@@ -56,13 +46,6 @@ struct LibraryView: View {
             .toolbar {
                 // SMB à esquerda, separado das ações locais: são dois mundos
                 // diferentes, e misturá-los num menu só esconderia a rede.
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        showingJellyfin = true
-                    } label: {
-                        Image(systemName: "play.rectangle.on.rectangle")
-                    }
-                }
                 ToolbarItem(placement: .topBarLeading) {
                     NavigationLink {
                         SMBServersView()
@@ -315,7 +298,6 @@ struct LibraryView: View {
             } label: {
                 Text("Conectar a um servidor SMB")
             }
-            Button("Conectar ao Jellyfin") { showingJellyfin = true }
         }
     }
 }
