@@ -61,9 +61,17 @@ struct LibraryView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         Button {
-                            showingFolderPicker = true
+                            managingFolders = true
                         } label: {
-                            Label("Adicionar pasta…", systemImage: "folder.badge.plus")
+                            // Uma entrada só para pasta.
+                            //
+                            // Havia duas — "Adicionar pasta" abria o seletor
+                            // direto, e "Adicionar ou remover" abria a tela que
+                            // faz as duas coisas, seletor incluído. A primeira
+                            // era um atalho para dentro da segunda, e menu com
+                            // dois caminhos para o mesmo lugar faz o usuário
+                            // parar para escolher entre coisas iguais.
+                            Label("Pastas…", systemImage: "folder.badge.gearshape")
                         }
                         Button {
                             showingFilePicker = true
@@ -71,11 +79,6 @@ struct LibraryView: View {
                             Label("Abrir arquivo…", systemImage: "doc.badge.plus")
                         }
                         Divider()
-                        Button {
-                            managingFolders = true
-                        } label: {
-                            Label("Adicionar ou remover pastas", systemImage: "folder.badge.gearshape")
-                        }
                         Button {
                             Task { await library.refresh(bookmarks: bookmarks) }
                         } label: {
