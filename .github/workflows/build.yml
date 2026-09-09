@@ -3,7 +3,20 @@ name: Build IPA
 on:
   push:
     branches: [main]
+    # Mexer só no app de Android não deve acordar um runner de macOS.
+    #
+    # Ele conta 10× contra a cota e leva dez minutos para reconstruir o mesmo
+    # .ipa de antes. Hoje três commits de Android dispararam três builds de iOS
+    # idênticos ao anterior — daí a lista.
+    paths-ignore:
+      - "Android/**"
+      - ".github/workflows/android.yml"
+      - "README.md"
+      - "imagens/**"
   pull_request:
+    paths-ignore:
+      - "Android/**"
+      - ".github/workflows/android.yml"
   workflow_dispatch:
 
 concurrency:
