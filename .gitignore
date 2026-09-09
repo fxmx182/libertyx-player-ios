@@ -13,6 +13,14 @@ payload/
 Vendor/
 *.xcframework/
 
+# Android: caminho do SDK da máquina, cache do Gradle e os APKs.
+Android/local.properties
+Android/.gradle/
+Android/app/build/
+Android/build/
+Android/.kotlin/
+*.apk
+
 # macOS / editores
 .DS_Store
 *.swp

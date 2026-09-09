@@ -109,6 +109,25 @@ pelo Wi-Fi. Com conta de desenvolvedor paga ($99/ano) a assinatura dura 1 ano.
 A decisão ainda está em aberto — o projeto não depende dela: não há
 *entitlements* no alvo justamente para continuar assinável pela conta gratuita.
 
+## Android
+
+O mesmo player existe para Android, em [`Android/`](Android/README.md) — Kotlin,
+mesmo motor (libVLC), mesmos gestos, mesmo ícone. Não é um porte do código, que
+é Swift e não roda lá: é a mesma arquitetura reescrita, com a interface falando
+com um `VlcEngine` como aqui ela fala com o protocolo `PlaybackEngine`.
+
+Três coisas que faltavam deste lado e existem lá: a **rolagem quadro a quadro**
+(o Android expõe o `setTime(ms, fast=false)` que o VLCKit do iOS esconde — era
+justamente a lacuna que quase virou um motor FFmpeg próprio), a **janela
+flutuante** com qualquer motor, e **compilar na própria máquina**, sem depender
+de um runner macOS. E o app **acha os vídeos sozinho**: o MediaStore já indexou
+tudo, então não há a dança de autorizar pasta por pasta.
+
+```bash
+cd Android && ./gradlew assembleRelease
+adb install -r app/build/outputs/apk/release/app-arm64-v8a-release.apk
+```
+
 ## Estrutura
 
 ```
@@ -117,7 +136,8 @@ App/Sources/
   Player/    PlayerViewController · GestureHUDView · PlayerControlsView
   Library/   LibraryView · BookmarkStore · FolderScanner · DocumentPicker
 Scripts/     make_icon.py
-.github/     workflows/build.yml
+Android/     o app de Android (Kotlin + libVLC) — README próprio lá dentro
+.github/     workflows/build.yml (iOS) · workflows/android.yml (APK)
 project.yml  definição do projeto (XcodeGen)
 ```
 
