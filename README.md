@@ -123,6 +123,11 @@ flutuante** com qualquer motor, e **compilar na própria máquina**, sem depende
 de um runner macOS. E o app **acha os vídeos sozinho**: o MediaStore já indexou
 tudo, então não há a dança de autorizar pasta por pasta.
 
+E o mesmo APK é o app de **televisão**: instalado num Chromecast com Google TV,
+Fire TV ou Nvidia Shield, ele troca a grade por faixas horizontais, ganha
+realce de foco e passa a obedecer ao controle remoto — com o servidor de casa
+na primeira faixa, porque numa caixinha de TV quase não há vídeo local.
+
 ```bash
 cd Android && ./gradlew assembleRelease
 adb install -r app/build/outputs/apk/release/app-arm64-v8a-release.apk
