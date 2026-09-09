@@ -48,11 +48,11 @@
 	<string>Para salvar a captura de tela do vídeo no seu álbum.</string>
 
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>O LabPlayer precisa da rede local para listar e reproduzir vídeos do seu servidor — compartilhamentos SMB e bibliotecas do Jellyfin.</string>
+	<string>O Viper Player precisa da rede local para encontrar o seu servidor e reproduzir os vídeos dos compartilhamentos SMB.</string>
 
 	<!-- Servidor caseiro fala HTTP puro, e o iOS bloqueia isso por padrão.
 	     NSAllowsLocalNetworking sozinho não bastaria: ele libera as faixas
-	     privadas clássicas (10.x, 172.16.x, 192.168.x), e um Jellyfin
+	     privadas clássicas (10.x, 172.16.x, 192.168.x), e um servidor
 	     alcançado por Tailscale responde em 100.64.x, que fica de fora.
 	     Este app é pessoal e instalado à mão; não passa por revisão da
 	     Apple, então a permissão ampla é escolha consciente e não um
@@ -95,7 +95,7 @@
 	<key>UIUserInterfaceStyle</key>
 	<string>Dark</string>
 
-	<!-- Faz o LabPlayer aparecer em "Abrir com" para qualquer vídeo. -->
+	<!-- Faz o Viper Player aparecer em "Abrir com" para qualquer vídeo. -->
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
