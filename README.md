@@ -130,7 +130,7 @@ na primeira faixa, porque numa caixinha de TV quase não há vídeo local.
 
 ```bash
 cd Android && ./gradlew assembleRelease
-adb install -r app/build/outputs/apk/release/app-arm64-v8a-release.apk
+adb install -r dist/ViperPlayer-Celular-e-TV.apk
 ```
 
 ## Estrutura
