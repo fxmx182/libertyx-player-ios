@@ -70,6 +70,16 @@ final class PlayerControlsView: UIView {
     private let trilhaFundo = UIView()
     private let trilhaCarregada = UIView()
     private var larguraCarregada: NSLayoutConstraint?
+    /// `nil` até a primeira medida, para a primeira acomodação sempre valer.
+    private var estaDeitado: Bool?
+
+    private let lockButton = UIButton(type: .system)
+    private let repeatButton = UIButton(type: .system)
+    private let rotateButton = UIButton(type: .system)
+    private let speedButton = UIButton(type: .system)
+    /// A pastilha flutuante com o que se mexe DURANTE o filme.
+    private let ilha = UIStackView()
+    private let ilhaFundo = UIView()
 
     private let previousButton = UIButton(type: .system)
     private let playButton = UIButton(type: .system)
@@ -89,6 +99,9 @@ final class PlayerControlsView: UIView {
 
     /// Toque no espaço vazio das barras — não num botão delas.
     var onBackgroundTap: (() -> Void)?
+    var onToggleRepeat: (() -> Void)?
+    var onRotate: (() -> Void)?
+    var onShowSpeed: (() -> Void)?
 
     // MARK: - Ciclo de vida
 
@@ -99,6 +112,7 @@ final class PlayerControlsView: UIView {
         setupBottomBar()
         setupGestoDeFundo()
         setupCloseButton()
+        setupIlha()
         setupUnlockButton()
         setupSpinner()
 
@@ -124,13 +138,46 @@ final class PlayerControlsView: UIView {
         // Escondida, a barra deixa o toque passar para os gestos; visível, ela
         // captura só onde há controle de verdade.
         guard isVisible else { return false }
+        // A ilha entra nesta conta.
+        //
+        // Sem isso o toque num botão dela caía na camada de gestos, que
+        // responde ao encostar do dedo escondendo os controles: o botão não
+        // fazia nada E a ilha sumia, como se o dedo tivesse atravessado a
+        // pastilha. Foi o defeito que apareceu no Android.
         return bottomBar.frame.contains(point)
             || closeButton.frame.insetBy(dx: -8, dy: -8).contains(point)
+            || toolsButton.frame.insetBy(dx: -8, dy: -8).contains(point)
+            || ilhaFundo.frame.insetBy(dx: -6, dy: -6).contains(point)
+    }
+
+    /// Deitado sobra largura e falta altura; em pé é o contrário.
+    ///
+    /// Então os botões mudam de lugar em vez de encolher: deitado a ilha se
+    /// dissolve na fileira de baixo, onde há espaço de sobra, e nada fica
+    /// flutuando sobre a imagem. Em pé ela volta a flutuar, porque numa fileira
+    /// estreita não caberia mais nada.
+    ///
+    /// É o mesmo grupo de botões trocando de pai — não existem duas ilhas, e
+    /// por isso não existe o estado "as duas aparecendo".
+    private func acomodarPara(largura: CGFloat, altura: CGFloat) {
+        let deitado = largura > altura
+        guard deitado != estaDeitado else { return }
+        estaDeitado = deitado
+
+        let extras = [audioButton, subtitleButton, repeatButton, rotateButton, speedButton]
+        if deitado {
+            extras.forEach { ajustes.insertArrangedSubview($0, at: 0) }
+        } else {
+            extras.forEach { ilha.addArrangedSubview($0) }
+        }
+        ilhaFundo.isHidden = deitado
+        ilha.isHidden = deitado
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
         bottomGradient.frame = bottomBar.bounds
+        acomodarPara(largura: bounds.width, altura: bounds.height)
     }
 
     // MARK: - Barra superior
@@ -181,7 +228,16 @@ final class PlayerControlsView: UIView {
                          for: [.touchUpInside, .touchUpOutside, .touchCancel])
 
         configure(previousButton, symbol: "backward.end.fill", size: 27, action: #selector(previousTapped))
-        configure(playButton, symbol: "play.fill", size: 38, weight: .semibold, action: #selector(playTapped))
+        configure(playButton, symbol: "play.fill", size: 26, weight: .bold, action: #selector(playTapped))
+        // Disco por trás do play.
+        //
+        // É o botão que se aperta sem olhar, e num grupo de três a mão o acha
+        // pela forma em vez de contar posições. Veio do Android, onde a fileira
+        // uniforme fazia todos parecerem iguais.
+        playButton.backgroundColor = UIColor.white.withAlphaComponent(0.16)
+        playButton.layer.cornerRadius = 25
+        playButton.widthAnchor.constraint(equalToConstant: 50).isActive = true
+        playButton.heightAnchor.constraint(equalToConstant: 50).isActive = true
         configure(nextButton, symbol: "forward.end.fill", size: 27, action: #selector(nextTapped))
         configure(aspectButton, symbol: "arrow.left.and.right", size: 20, action: #selector(aspectTapped))
         configure(pipButton, symbol: "pip.enter", size: 20, action: #selector(pipTapped))
@@ -204,6 +260,8 @@ final class PlayerControlsView: UIView {
         toolsButton.setPreferredSymbolConfiguration(
             UIImage.SymbolConfiguration(pointSize: 20, weight: .medium), forImageIn: .normal)
         toolsButton.translatesAutoresizingMaskIntoConstraints = false
+        toolsButton.backgroundColor = UIColor.black.withAlphaComponent(0.35)
+        toolsButton.layer.cornerRadius = 19
         toolsButton.showsMenuAsPrimaryAction = true
         toolsButton.menu = UIMenu(children: [
             UIDeferredMenuElement.uncached { [weak self] concluir in
@@ -211,11 +269,18 @@ final class PlayerControlsView: UIView {
             }
         ])
 
-        // Dois grupos, como no reprodutor da Apple: o transporte à esquerda,
-        // os ajustes à direita, e o vídeo respirando no meio.
+        configure(lockButton, symbol: "lock.open", size: 20, action: #selector(lockTapped))
+
+        // Três grupos, e não uma fileira uniforme.
+        //
+        // Cadeado à esquerda, transporte no centro, ferramentas de imagem à
+        // direita. Separar por função é o que deixa o dedo acertar sem olhar:
+        // no meio está sempre o play, na borda esquerda sempre o cadeado, e a
+        // posição vira memória. Veio do irmão Android, onde a fileira uniforme
+        // de nove botões espremia todos.
         transporte.axis = .horizontal
         transporte.alignment = .center
-        transporte.spacing = 8
+        transporte.spacing = 10
         transporte.translatesAutoresizingMaskIntoConstraints = false
         [previousButton, playButton, nextButton].forEach(transporte.addArrangedSubview)
 
@@ -223,11 +288,10 @@ final class PlayerControlsView: UIView {
         ajustes.alignment = .center
         ajustes.spacing = 8
         ajustes.translatesAutoresizingMaskIntoConstraints = false
-        [subtitleButton, audioButton, toolsButton, pipButton, aspectButton]
-            .forEach(ajustes.addArrangedSubview)
+        [aspectButton, pipButton].forEach(ajustes.addArrangedSubview)
 
-        [elapsedLabel, trilhaFundo, trilhaCarregada, slider, totalLabel, transporte, ajustes]
-            .forEach(bottomBar.addSubview)
+        [elapsedLabel, trilhaFundo, trilhaCarregada, slider, totalLabel,
+         lockButton, transporte, ajustes].forEach(bottomBar.addSubview)
 
         NSLayoutConstraint.activate([
             bottomBar.bottomAnchor.constraint(equalTo: bottomAnchor),
@@ -245,21 +309,28 @@ final class PlayerControlsView: UIView {
             // espaço. Uma fileira com distribuição igual tem esse encarregado
             // por construção, e a sobreposição deixa de ser possível em
             // qualquer largura.
-            transporte.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 10),
-            transporte.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -2),
+            lockButton.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 10),
+            lockButton.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -2),
+            lockButton.widthAnchor.constraint(equalToConstant: 48),
+            lockButton.heightAnchor.constraint(equalToConstant: 48),
+
+            transporte.centerXAnchor.constraint(equalTo: centerXAnchor),
+            transporte.centerYAnchor.constraint(equalTo: lockButton.centerYAnchor),
             transporte.heightAnchor.constraint(equalToConstant: 48),
+            // Nenhum grupo invade o vizinho: com pouca largura quem cede é o
+            // do meio, encolhendo o espaçamento antes de encostar.
+            transporte.leadingAnchor.constraint(greaterThanOrEqualTo: lockButton.trailingAnchor,
+                                                constant: 8),
 
             ajustes.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -10),
-            ajustes.centerYAnchor.constraint(equalTo: transporte.centerYAnchor),
+            ajustes.centerYAnchor.constraint(equalTo: lockButton.centerYAnchor),
             ajustes.heightAnchor.constraint(equalToConstant: 48),
-            // Os dois grupos não podem se encontrar: com pouca largura, quem
-            // cede é o da direita, encolhendo os ícones.
             ajustes.leadingAnchor.constraint(greaterThanOrEqualTo: transporte.trailingAnchor,
-                                             constant: 12),
+                                             constant: 8),
 
             // Linha de cima: tempo decorrido, barra, duração total.
             elapsedLabel.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 16),
-            elapsedLabel.bottomAnchor.constraint(equalTo: transporte.topAnchor, constant: -8),
+            elapsedLabel.bottomAnchor.constraint(equalTo: lockButton.topAnchor, constant: -8),
 
             totalLabel.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -16),
             totalLabel.centerYAnchor.constraint(equalTo: elapsedLabel.centerYAnchor),
@@ -306,6 +377,71 @@ final class PlayerControlsView: UIView {
             closeButton.widthAnchor.constraint(equalToConstant: 38),
             closeButton.heightAnchor.constraint(equalToConstant: 38),
         ])
+
+        // A engrenagem sobe para o canto oposto: sair e ajustar são as duas
+        // ações que não pertencem ao filme, e ficam longe do que pertence.
+        addSubview(toolsButton)
+        NSLayoutConstraint.activate([
+            toolsButton.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -12),
+            toolsButton.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor),
+            toolsButton.widthAnchor.constraint(equalToConstant: 38),
+            toolsButton.heightAnchor.constraint(equalToConstant: 38),
+        ])
+    }
+
+    /// A pastilha flutuante do topo.
+    ///
+    /// Guarda o que se mexe **durante** o filme — faixa de áudio, legenda,
+    /// repetir, girar e velocidade —, separado do que se ajusta uma vez e se
+    /// esquece, que mora na engrenagem. Some junto com o resto dos controles,
+    /// porque é parte deles e não um enfeite fixo sobre a imagem.
+    private func setupIlha() {
+        ilhaFundo.backgroundColor = UIColor.black.withAlphaComponent(0.55)
+        ilhaFundo.layer.cornerRadius = 22
+        ilhaFundo.layer.cornerCurve = .continuous
+        ilhaFundo.layer.borderWidth = 0.5
+        ilhaFundo.layer.borderColor = UIColor.white.withAlphaComponent(0.12).cgColor
+        ilhaFundo.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(ilhaFundo)
+
+        configure(repeatButton, symbol: "repeat", size: 17, action: #selector(repeatTapped))
+        configure(rotateButton, symbol: "rotate.right", size: 17, action: #selector(rotateTapped))
+        configure(speedButton, symbol: "speedometer", size: 17, action: #selector(speedTapped))
+
+        ilha.axis = .horizontal
+        ilha.alignment = .center
+        ilha.spacing = 2
+        ilha.translatesAutoresizingMaskIntoConstraints = false
+        [audioButton, subtitleButton, repeatButton, rotateButton, speedButton]
+            .forEach(ilha.addArrangedSubview)
+        addSubview(ilha)
+
+        NSLayoutConstraint.activate([
+            ilha.centerXAnchor.constraint(equalTo: centerXAnchor),
+            ilha.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 10),
+            ilha.heightAnchor.constraint(equalToConstant: 44),
+
+            ilhaFundo.leadingAnchor.constraint(equalTo: ilha.leadingAnchor, constant: -6),
+            ilhaFundo.trailingAnchor.constraint(equalTo: ilha.trailingAnchor, constant: 6),
+            ilhaFundo.topAnchor.constraint(equalTo: ilha.topAnchor),
+            ilhaFundo.bottomAnchor.constraint(equalTo: ilha.bottomAnchor),
+        ])
+        [audioButton, subtitleButton, repeatButton, rotateButton, speedButton].forEach {
+            $0.widthAnchor.constraint(equalToConstant: 44).isActive = true
+            $0.heightAnchor.constraint(equalToConstant: 44).isActive = true
+        }
+    }
+
+    /// Aceso quer dizer ligado.
+    ///
+    /// Sem sinal, liga-se o repetir, esquece-se, e três horas depois o filme
+    /// recomeça sozinho sem explicação.
+    func setRepeating(_ ligado: Bool) {
+        repeatButton.tintColor = ligado ? LabTheme.accentUI : .white
+    }
+
+    func setSpeedActive(_ ligado: Bool) {
+        speedButton.tintColor = ligado ? LabTheme.accentUI : .white
     }
 
     private func setupUnlockButton() {
@@ -450,6 +586,9 @@ final class PlayerControlsView: UIView {
         let aplicar = {
             self.bottomBar.alpha = barras
             self.closeButton.alpha = barras
+            self.toolsButton.alpha = barras
+            self.ilha.alpha = barras
+            self.ilhaFundo.alpha = barras
             self.unlockButton.alpha = bloqueio
         }
         animated ? UIView.animate(withDuration: 0.22, animations: aplicar) : aplicar()
@@ -461,6 +600,9 @@ final class PlayerControlsView: UIView {
     // MARK: - Ações
 
     @objc private func closeTapped()     { onClose?() }
+    @objc private func repeatTapped()    { onToggleRepeat?() }
+    @objc private func rotateTapped()    { onRotate?() }
+    @objc private func speedTapped()     { onShowSpeed?() }
     @objc private func playTapped()      { onPlayPause?() }
     @objc private func previousTapped()  { onPrevious?() }
     @objc private func nextTapped()      { onNext?() }
@@ -470,6 +612,10 @@ final class PlayerControlsView: UIView {
     @objc private func pipTapped()       { onTogglePiP?() }
 
     @objc private func lockTapped() {
+        // O ícone tem que dizer o que vai acontecer, não o que já aconteceu.
+        defer {
+            lockButton.setImage(UIImage(systemName: isLocked ? "lock.fill" : "lock.open"), for: .normal)
+        }
         isLocked.toggle()
         isVisible = !isLocked
         applyVisibility(animated: true)

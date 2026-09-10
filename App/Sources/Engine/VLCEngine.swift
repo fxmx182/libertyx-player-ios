@@ -143,6 +143,7 @@ final class VLCEngine: NSObject, PlaybackEngine {
         }
 
         let media = VLCMedia(url: url)
+        Self.credenciais(para: item.origin).forEach(media.addOption)
         Self.configurarBuffer(media, origem: item.origin)
         tamanhoDoArquivo = item.fileSize
         bytesNaBusca = nil
@@ -203,17 +204,41 @@ final class VLCEngine: NSObject, PlaybackEngine {
             guard let servidor = SMBServerStore.shared.servers.first(where: { $0.id == referencia.serverID }) else {
                 throw PlaybackError.loadFailed("servidor não encontrado")
             }
-            var credenciais = ""
-            if !servidor.isGuest {
-                let senha = SMBServerStore.shared.password(for: servidor) ?? ""
-                // Codificar é obrigatório: senha com @ ou / quebraria a URL.
-                let usuario = escape(servidor.username)
-                credenciais = senha.isEmpty ? "\(usuario)@" : "\(usuario):\(escape(senha))@"
-            }
+            // Só endereço e caminho: as credenciais vão por opção do media.
             let partes = caminho.split(separator: "/").map { escape(String($0)) }.joined(separator: "/")
-            let texto = "smb://\(credenciais)\(servidor.host)/\(escape(referencia.share))/\(partes)"
+            let texto = "smb://\(servidor.host)/\(escape(referencia.share))/\(partes)"
             return URL(string: texto)
         }
+    }
+
+    /// Credenciais do SMB, do jeito que o libsmb2 as recebe.
+    ///
+    /// Antes elas iam embutidas na URL — `smb://usuario:senha@servidor` —, que é
+    /// o jeito óbvio e está errado: o VLC aceita a URL, avisa no log que senha
+    /// em URI está obsoleta e **segue sem ela**. A conexão chega ao servidor
+    /// como anônima.
+    ///
+    /// O sintoma aponta para todo lugar menos para a causa: no servidor não
+    /// aparece falha de autenticação nenhuma, porque o usuário nunca foi
+    /// enviado — o que faz parecer problema de rede ou de digitação. Foi
+    /// descoberto no irmão Android e vale igual aqui, porque a biblioteca por
+    /// baixo é a mesma.
+    ///
+    /// De quebra some uma classe inteira de defeito: senha com `@`, `/`, `:` ou
+    /// acento não precisa mais sobreviver a uma codificação de URL.
+    static func credenciais(para origem: MediaOrigin) -> [String] {
+        guard case .smb(let referencia, _) = origem,
+              let servidor = SMBServerStore.shared.servers.first(where: { $0.id == referencia.serverID }),
+              !servidor.isGuest else { return [] }
+
+        var opcoes = [":smb-user=\(servidor.username)"]
+        if let senha = SMBServerStore.shared.password(for: servidor), !senha.isEmpty {
+            opcoes.append(":smb-pwd=\(senha)")
+        }
+        // O grupo de trabalho padrão do Samba. Sem ele o libsmb2 manda domínio
+        // vazio, e há servidor que recusa por isso.
+        opcoes.append(":smb-domain=WORKGROUP")
+        return opcoes
     }
 
     private static func escape(_ texto: String) -> String {

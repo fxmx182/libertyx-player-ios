@@ -178,6 +178,14 @@ final class PlayerViewController: UIViewController {
         controls.onBackgroundTap = { [weak self] in
             self?.controls.setVisible(false, animated: true)
         }
+        controls.onToggleRepeat = { [weak self] in
+            guard let self else { return }
+            self.repeatMode = self.repeatMode == .one ? .off : .one
+            self.controls.setRepeating(self.repeatMode == .one)
+            self.scheduleControlsHide()
+        }
+        controls.onRotate = { [weak self] in self?.toggleOrientation() }
+        controls.onShowSpeed = { [weak self] in self?.showSpeedSheet() }
         controls.onCycleAspect = { [weak self] in self?.cycleAspect() }
         controls.onTogglePiP = { [weak self] in self?.acionarPiP() }
         controls.moreMenuProvider = { [weak self] in self?.buildToolsMenu() ?? [] }
@@ -278,6 +286,7 @@ final class PlayerViewController: UIViewController {
             }
 
             self.controls.update(currentTime: time, duration: self.engine.duration)
+            self.refreshIndicadores()
             self.controls.setBuffered(self.engine.bufferedTime)
             self.saveResumePoint(time)
             self.refreshNowPlaying()
@@ -853,6 +862,12 @@ final class PlayerViewController: UIViewController {
         hud.show(.text(proximo == 0 ? "Modo noturno desligado"
                                     : "Modo noturno \(Int(proximo * 100))%"))
         hud.hideAfterDelay(1.2)
+    }
+
+    /// Aceso quer dizer ligado — vale para velocidade como vale para repetir.
+    private func refreshIndicadores() {
+        controls.setRepeating(repeatMode == .one)
+        controls.setSpeedActive(playbackSpeed != 1.0)
     }
 
     private func showSpeedSheet() {
