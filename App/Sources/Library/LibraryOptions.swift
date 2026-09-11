@@ -40,6 +40,13 @@ final class LibraryOptions: ObservableObject {
     @Published var sort: LibrarySort { didSet { salvar() } }
     @Published var ascending: Bool { didSet { salvar() } }
 
+    /// Quais pastas estão abertas.
+    ///
+    /// Guardado entre sessões de propósito: quem tem trinta pastas e assiste de
+    /// uma delas não quer reabri-la toda vez que volta ao app. É o mesmo
+    /// princípio do resto das preferências — o app lembra o que você fez.
+    @Published private(set) var abertas: Set<String> = []
+
     private init() {
         let padroes = UserDefaults.standard
         layout = LibraryLayout(rawValue: padroes.string(forKey: "labplayer.layout") ?? "") ?? .grid
@@ -47,6 +54,23 @@ final class LibraryOptions: ObservableObject {
         // Título e tamanho fazem sentido do menor para o maior; data e duração,
         // do mais recente e mais longo. Mas a escolha é do usuário, e fica.
         ascending = padroes.object(forKey: "labplayer.ascending") as? Bool ?? true
+        abertas = Set(padroes.stringArray(forKey: "library.abertas") ?? [])
+    }
+
+    func estaAberta(_ caminho: String) -> Bool { abertas.contains(caminho) }
+
+    func alternar(_ caminho: String) {
+        if abertas.contains(caminho) { abertas.remove(caminho) } else { abertas.insert(caminho) }
+        UserDefaults.standard.set(Array(abertas), forKey: "library.abertas")
+    }
+
+    /// Uma pasta só abre sozinha.
+    ///
+    /// Recolher tudo é o certo em quem tem muitas pastas — é o motivo da
+    /// mudança —, mas abrir o app numa única linha fechada, sem nada abaixo,
+    /// parece tela vazia e não lista recolhida.
+    func abrirSePastaUnica(_ grupos: [VideoGroup]) {
+        if grupos.count == 1, abertas.isEmpty { alternar(grupos[0].path) }
     }
 
     private func salvar() {

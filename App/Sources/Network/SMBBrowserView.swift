@@ -83,7 +83,7 @@ struct SMBServersView: View {
             Text("Remove “\(server.name)” da lista e apaga a senha guardada no Keychain do aparelho.")
         }
         .navigationTitle("Servidores")
-        .task { discovery.start() }
+        .task { discovery.start(conhecidos: store.servers.map(\.host)) }
         .onDisappear { discovery.stop() }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -109,7 +109,7 @@ struct SMBServersView: View {
             !store.servers.contains { $0.host.caseInsensitiveCompare(achado.host) == .orderedSame }
         }
 
-        if discovery.isSearching || !novos.isEmpty {
+        if discovery.isSearching || !novos.isEmpty || discovery.hasFinished {
             Section {
                 ForEach(novos) { achado in
                     Button {
@@ -136,6 +136,15 @@ struct SMBServersView: View {
                         ProgressView().controlSize(.small)
                         Text("Procurando na rede…").font(.caption).foregroundStyle(.secondary)
                     }
+                } else if novos.isEmpty {
+                    // Silêncio no fim da busca parece busca quebrada. Diz o que
+                    // houve — inclusive quando ela achou, mas só o que já
+                    // estava salvo.
+                    Text(discovery.results.isEmpty
+                         ? "Nada encontrado na rede. É comum quando o servidor não se anuncia — adicione pelo endereço, no botão +."
+                         : "Na rede só apareceram servidores que já estão salvos.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             } header: {
                 Text("Encontrados na rede")
@@ -292,76 +301,168 @@ struct SMBDirectoryView: View {
     let title: String
     let server: SMBServer
 
+    /// As mesmas opções da biblioteca local, e não um conjunto à parte: quem
+    /// escolheu grade e ordem por data espera encontrar a pasta de rede igual.
+    @ObservedObject private var options = LibraryOptions.shared
+
     @State private var entries: [SMBConnection.Entry] = []
+    /// Um item por arquivo, criado uma vez por listagem.
+    ///
+    /// Recriar a cada desenho daria identidade nova ao mesmo vídeo, e o player
+    /// não o acharia na própria lista de reprodução — "próximo" iria para o
+    /// começo em vez de seguir.
+    @State private var itensPorCaminho: [String: MediaItem] = [:]
     @State private var loading = true
     @State private var failure: String?
     @State private var playing: MediaItem?
     @State private var showingInfo: SMBConnection.Entry?
+    @State private var mostrandoOpcoes = false
 
-    /// A pasta inteira vira lista de reprodução, igual às pastas locais.
-    private var playlist: [MediaItem] {
-        entries.filter { !$0.isDirectory && isVideo($0.name) }.map(mediaItem(for:))
+    /// Subpastas sempre em cima e por nome: são caminho, não conteúdo, e
+    /// ordená-las por tamanho ou duração não diria nada.
+    private var pastas: [SMBConnection.Entry] {
+        entries.filter(\.isDirectory)
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
-    private func mediaItem(for entry: SMBConnection.Entry) -> MediaItem {
-        MediaItem(
-            title: entry.name,
-            origin: .smb(share: SMBShareRef(serverID: server.id, host: server.host, share: share),
-                         path: entry.path),
-            fileSize: Int64(entry.size),
-            modifiedAt: entry.modifiedAt
-        )
+    /// Só os vídeos, na ordem escolhida. A lista de reprodução segue esta ordem:
+    /// "próximo" vai para o que está à frente na tela.
+    private var videos: [MediaItem] {
+        options.sorted(entries
+            .filter { !$0.isDirectory && isVideo($0.name) }
+            .compactMap { itensPorCaminho[$0.path] })
     }
 
     var body: some View {
-        List {
-            if loading {
-                HStack { ProgressView(); Text("Lendo…").foregroundStyle(.secondary) }
-            } else if let failure {
-                ContentUnavailableView("Erro", systemImage: "exclamationmark.triangle",
-                                       description: Text(failure))
+        conteudo
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { mostrandoOpcoes = true } label: {
+                        Image(systemName: "slider.horizontal.3")
+                    }
+                }
             }
+            .task { await carregar() }
+            .sheet(isPresented: $mostrandoOpcoes) {
+                LibraryOptionsSheet(options: options)
+            }
+            .sheet(item: $showingInfo) { entry in
+                SMBMediaInfoView(connection: connection, share: share,
+                                 path: entry.path, title: entry.name, size: entry.size)
+            }
+            .fullScreenCover(item: $playing) { item in
+                PlayerScreen(item: item, playlist: videos).ignoresSafeArea()
+            }
+    }
 
-            ForEach(entries) { entry in
-                if entry.isDirectory {
-                    NavigationLink {
-                        SMBDirectoryView(connection: connection, share: share,
-                                         path: entry.path, title: entry.name, server: server)
-                    } label: {
-                        Label(entry.name, systemImage: "folder")
-                    }
-                } else if isVideo(entry.name) {
-                    Button {
-                        playing = mediaItem(for: entry)
-                    } label: {
-                        // Mesma linha da biblioteca local, para o servidor não
-                        // parecer um lugar de segunda classe dentro do app.
-                        VideoRow(item: mediaItem(for: entry))
-                    }
-                    .buttonStyle(.plain)
-                    .contextMenu {
-                        Button {
-                            showingInfo = entry
-                        } label: {
-                            Label("Detalhes do arquivo", systemImage: "info.circle")
+    @ViewBuilder
+    private var conteudo: some View {
+        if loading {
+            ProgressView("Lendo…")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let failure {
+            ContentUnavailableView("Erro", systemImage: "exclamationmark.triangle",
+                                   description: Text(failure))
+        } else if pastas.isEmpty && videos.isEmpty {
+            ContentUnavailableView("Nenhum vídeo nesta pasta", systemImage: "folder")
+        } else if options.layout == .grid {
+            grade
+        } else {
+            lista
+        }
+    }
+
+    // MARK: - Lista e grade
+
+    private var lista: some View {
+        List {
+            if !pastas.isEmpty {
+                Section {
+                    ForEach(pastas) { pasta in
+                        NavigationLink { destino(pasta) } label: {
+                            Label(pasta.name, systemImage: "folder")
                         }
                     }
                 }
             }
+            if !videos.isEmpty {
+                Section {
+                    ForEach(videos) { item in
+                        Button { playing = item } label: {
+                            // Mesma linha da biblioteca local, para o servidor
+                            // não parecer um lugar de segunda classe no app.
+                            VideoRow(item: item)
+                        }
+                        .buttonStyle(.plain)
+                        .contextMenu { menu(item) }
+                    }
+                }
+            }
         }
-        .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.inline)
-        .task { await carregar() }
-        .sheet(item: $showingInfo) { entry in
-            SMBMediaInfoView(connection: connection, share: share,
-                             path: entry.path, title: entry.name, size: entry.size)
+        .listStyle(.insetGrouped)
+    }
+
+    private var grade: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                if !pastas.isEmpty {
+                    VStack(spacing: 0) {
+                        ForEach(pastas) { pasta in
+                            NavigationLink { destino(pasta) } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: "folder.fill")
+                                        .foregroundStyle(LabTheme.accent)
+                                    Text(pasta.name)
+                                        .foregroundStyle(LabTheme.text)
+                                        .lineLimit(1)
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(LabTheme.faint)
+                                }
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 12)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+
+                            if pasta.id != pastas.last?.id {
+                                Divider().padding(.leading, 44)
+                            }
+                        }
+                    }
+                    .labCard()
+                }
+
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 14) {
+                    ForEach(videos) { item in
+                        Button { playing = item } label: { VideoCard(item: item) }
+                            .buttonStyle(.plain)
+                            .contextMenu { menu(item) }
+                    }
+                }
+            }
+            .padding(16)
         }
-        .fullScreenCover(item: $playing) { item in
-            PlayerScreen(item: item, playlist: playlist).ignoresSafeArea()
-        }
-        .overlay {
-            if !loading, failure == nil, entries.isEmpty {
-                ContentUnavailableView("Pasta vazia", systemImage: "folder")
+    }
+
+    // MARK: - Peças
+
+    private func destino(_ pasta: SMBConnection.Entry) -> some View {
+        SMBDirectoryView(connection: connection, share: share,
+                         path: pasta.path, title: pasta.name, server: server)
+    }
+
+    @ViewBuilder
+    private func menu(_ item: MediaItem) -> some View {
+        if case .smb(_, let caminho) = item.origin,
+           let entrada = entries.first(where: { $0.path == caminho }) {
+            Button {
+                showingInfo = entrada
+            } label: {
+                Label("Detalhes do arquivo", systemImage: "info.circle")
             }
         }
     }
@@ -372,7 +473,19 @@ struct SMBDirectoryView: View {
 
     private func carregar() async {
         do {
-            entries = try await connection.list(share: share, path: path)
+            let lidas = try await connection.list(share: share, path: path)
+            let referencia = SMBShareRef(serverID: server.id, host: server.host, share: share)
+            var itens: [String: MediaItem] = [:]
+            for entrada in lidas where !entrada.isDirectory && isVideo(entrada.name) {
+                itens[entrada.path] = MediaItem(
+                    title: entrada.name,
+                    origin: .smb(share: referencia, path: entrada.path),
+                    fileSize: Int64(entrada.size),
+                    modifiedAt: entrada.modifiedAt
+                )
+            }
+            itensPorCaminho = itens
+            entries = lidas
         } catch {
             failure = error.localizedDescription
         }

@@ -25,6 +25,12 @@ final class SMBDiscovery: ObservableObject {
 
     @Published private(set) var results: [Found] = []
     @Published private(set) var isSearching = false
+    /// A busca já rodou até o fim ao menos uma vez — para a tela poder dizer o
+    /// que achou em vez de ficar em silêncio.
+    @Published private(set) var hasFinished = false
+
+    /// Endereços dos servidores já salvos: a rede deles também é varrida.
+    private var conhecidos: [String] = []
 
     private var browser: NWBrowser?
     private var scanTask: Task<Void, Never>?
@@ -34,9 +40,11 @@ final class SMBDiscovery: ObservableObject {
     /// inteira demorar.
     private let timeout: TimeInterval = 1.2
 
-    func start() {
+    func start(conhecidos: [String] = []) {
         guard !isSearching else { return }
+        self.conhecidos = conhecidos
         isSearching = true
+        hasFinished = false
         results = []
         startBonjour()
         startSubnetScan()
@@ -73,24 +81,41 @@ final class SMBDiscovery: ObservableObject {
 
     // MARK: - Varredura da sub-rede
 
+    /// Varre a rede do aparelho e, depois dela, a de cada servidor já salvo.
+    ///
+    /// A segunda parte veio do Android e cobre um caso real: o aparelho numa
+    /// rede e o servidor em outra — Wi-Fi de convidados, repetidor, VPN. A
+    /// varredura só da própria rede nunca o acharia, enquanto conectar pelo
+    /// endereço digitado funciona. A rede do aparelho vem primeiro porque é a
+    /// que mais provavelmente tem o que procurar.
     private func startSubnetScan() {
-        guard let base = Self.prefixoDaRede() else {
+        var alvos: [String] = []
+        if let propria = Self.prefixoDaRede() { alvos.append(propria) }
+        for host in conhecidos {
+            if let prefixo = Self.prefixoPrivado(de: host), !alvos.contains(prefixo) {
+                alvos.append(prefixo)
+            }
+        }
+
+        guard !alvos.isEmpty else {
             isSearching = false
+            hasFinished = true
             return
         }
 
         scanTask = Task { [weak self] in
             guard let self else { return }
+            let enderecos = alvos.flatMap { prefixo in (1...254).map { "\(prefixo).\($0)" } }
 
             // 24 por vez: rápido o bastante para varrer 254 endereços em
             // segundos, e leve o bastante para não afogar o Wi-Fi.
             await withTaskGroup(of: String?.self) { grupo in
-                var proximo = 1
+                var proximo = 0
                 let limite = 24
 
                 func enfileirar() {
-                    guard proximo <= 254 else { return }
-                    let endereco = "\(base).\(proximo)"
+                    guard proximo < enderecos.count else { return }
+                    let endereco = enderecos[proximo]
                     proximo += 1
                     grupo.addTask { await Self.responde(endereco, timeout: self.timeout) ? endereco : nil }
                 }
@@ -103,12 +128,32 @@ final class SMBDiscovery: ObservableObject {
                             self.adicionar(Found(host: achado, name: achado, viaBonjour: false))
                         }
                     }
+                    if Task.isCancelled { break }
                     enfileirar()
                 }
             }
 
-            await MainActor.run { self.isSearching = false }
+            await MainActor.run {
+                self.isSearching = false
+                self.hasFinished = true
+            }
         }
+    }
+
+    /// A rede de um servidor salvo, se ele estiver numa faixa privada IPv4.
+    ///
+    /// Nome de máquina fica de fora — resolver custaria uma consulta por
+    /// servidor —, e o endereço do Tailscale (100.64/10) também: não é rede de
+    /// casa, e varrê-lo inteiro seria bater em aparelhos de outras pessoas da
+    /// mesma conta.
+    private static func prefixoPrivado(de host: String) -> String? {
+        let partes = host.split(separator: ".").compactMap { Int($0) }
+        guard partes.count == 4, partes.allSatisfy({ (0...255).contains($0) }) else { return nil }
+        let privado = partes[0] == 10
+            || (partes[0] == 172 && (16...31).contains(partes[1]))
+            || (partes[0] == 192 && partes[1] == 168)
+        guard privado else { return nil }
+        return partes.prefix(3).map(String.init).joined(separator: ".")
     }
 
     /// Uma conexão TCP que completa na porta 445 é um servidor SMB — não

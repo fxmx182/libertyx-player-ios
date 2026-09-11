@@ -145,6 +145,12 @@ struct LibraryView: View {
         Group {
             if options.layout == .grid { grade } else { linhas }
         }
+        // Cada pasta chega fechada, mostrando nome e contagem — quem tem muitos
+        // vídeos abria o app numa lista que rolava sem fim. A exceção é pasta
+        // única, que abre sozinha.
+        .onChange(of: library.groups.map(\.path), initial: true) {
+            options.abrirSePastaUnica(library.groups)
+        }
         .overlay(alignment: .bottom) {
             if library.isScanning {
                 HStack(spacing: 8) {
@@ -163,14 +169,16 @@ struct LibraryView: View {
         List {
             ForEach(library.groups) { grupo in
                 Section {
-                    ForEach(options.sorted(grupo.items)) { item in
-                        Button {
-                            abrir(item, em: grupo)
-                        } label: {
-                            VideoRow(item: item)
+                    if options.estaAberta(grupo.path) {
+                        ForEach(options.sorted(grupo.items)) { item in
+                            Button {
+                                abrir(item, em: grupo)
+                            } label: {
+                                VideoRow(item: item)
+                            }
+                            .buttonStyle(.plain)
+                            .contextMenu { menuDoItem(item) }
                         }
-                        .buttonStyle(.plain)
-                        .contextMenu { menuDoItem(item) }
                     }
                 } header: {
                     cabecalho(grupo)
@@ -187,19 +195,21 @@ struct LibraryView: View {
             LazyVStack(alignment: .leading, spacing: 20, pinnedViews: [.sectionHeaders]) {
                 ForEach(library.groups) { grupo in
                     Section {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)],
-                                  spacing: 14) {
-                            ForEach(options.sorted(grupo.items)) { item in
-                                Button {
-                                    abrir(item, em: grupo)
-                                } label: {
-                                    VideoCard(item: item)
+                        if options.estaAberta(grupo.path) {
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)],
+                                      spacing: 14) {
+                                ForEach(options.sorted(grupo.items)) { item in
+                                    Button {
+                                        abrir(item, em: grupo)
+                                    } label: {
+                                        VideoCard(item: item)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .contextMenu { menuDoItem(item) }
                                 }
-                                .buttonStyle(.plain)
-                                .contextMenu { menuDoItem(item) }
                             }
+                            .padding(.horizontal, 16)
                         }
-                        .padding(.horizontal, 16)
                     } header: {
                         cabecalho(grupo)
                             .padding(.horizontal, 16)
@@ -213,19 +223,37 @@ struct LibraryView: View {
         }
     }
 
+    /// Cabeçalho de pasta, que também é o botão de abrir e fechar.
+    ///
+    /// O alvo é a linha inteira, e não uma setinha de canto: quem tem muitas
+    /// pastas passa o polegar por elas abrindo e fechando, e alvo pequeno ali
+    /// vira toque perdido.
     private func cabecalho(_ grupo: VideoGroup) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: "folder.fill").font(.caption2)
-            Text(grupo.name)
-            Spacer()
-            // A contagem numa pastilha em vez de solta: vira informação, e não
-            // um número perdido na ponta da linha.
-            Text("\(grupo.items.count)")
-                .font(.caption2.monospacedDigit().weight(.semibold))
-                .padding(.horizontal, 7)
-                .padding(.vertical, 2)
-                .background(LabTheme.glass, in: Capsule())
+        let aberta = options.estaAberta(grupo.path)
+        return Button {
+            withAnimation(.snappy(duration: 0.22)) { options.alternar(grupo.path) }
+        } label: {
+            HStack(spacing: 6) {
+                // A seta gira em vez de trocar de desenho: o movimento diz que
+                // a mesma coisa mudou de estado, e não que surgiu outro botão.
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.bold))
+                    .rotationEffect(.degrees(aberta ? 90 : 0))
+                    .foregroundStyle(aberta ? LabTheme.accent : LabTheme.faint)
+                Image(systemName: "folder.fill").font(.caption2)
+                Text(grupo.name)
+                Spacer()
+                // A contagem numa pastilha em vez de solta: vira informação, e
+                // não um número perdido na ponta da linha.
+                Text("\(grupo.items.count)")
+                    .font(.caption2.monospacedDigit().weight(.semibold))
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(LabTheme.glass, in: Capsule())
+            }
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
         .labSectionTitle()
     }
 
