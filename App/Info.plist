@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>pt-BR</string>
 	<key>CFBundleDisplayName</key>
-	<string>Viper Player</string>
+	<string>LibertyX Player</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -48,7 +48,7 @@
 	<string>Para salvar a captura de tela do vídeo no seu álbum.</string>
 
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>O Viper Player precisa da rede local para encontrar o seu servidor e reproduzir os vídeos dos compartilhamentos SMB.</string>
+	<string>O LibertyX Player precisa da rede local para encontrar o seu servidor e reproduzir os vídeos dos compartilhamentos SMB.</string>
 
 	<!-- Servidor caseiro fala HTTP puro, e o iOS bloqueia isso por padrão.
 	     NSAllowsLocalNetworking sozinho não bastaria: ele libera as faixas
@@ -95,7 +95,7 @@
 	<key>UIUserInterfaceStyle</key>
 	<string>Dark</string>
 
-	<!-- Faz o Viper Player aparecer em "Abrir com" para qualquer vídeo. -->
+	<!-- Faz o LibertyX Player aparecer em "Abrir com" para qualquer vídeo. -->
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>

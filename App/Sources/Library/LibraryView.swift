@@ -31,7 +31,7 @@ struct LibraryView: View {
                     lista
                 }
             }
-            .navigationTitle("Viper")
+            .navigationTitle("LibertyX")
             // Apagar arquivo não tem desfazer no iOS — a confirmação é a
             // única chance de voltar atrás.
             .alert("Excluir vídeo?", isPresented: Binding(
