@@ -14,8 +14,16 @@ final class PlayerViewController: UIViewController {
         /// Quantos segundos de vídeo por largura de tela arrastada.
         /// MX Player escala isso com a duração; abaixo de 2 min fica fino.
         static let seekSecondsPerScreenWidth: Double = 120
-        /// Fração da altura da tela para percorrer 0→100% de brilho/volume.
-        static let verticalTravelFraction: CGFloat = 0.6
+        /// Distância do dedo, em pontos, para percorrer 0→100% de brilho ou
+        /// volume.
+        ///
+        /// Fixa, e não uma fração da altura da tela — que era o problema. A
+        /// altura deitado é menos da metade da altura em pé, então o mesmo
+        /// gesto valia mais que o dobro justamente quando se assiste vídeo. E
+        /// o volume do iPhone anda em 16 degraus: com a faixa inteira em pouco
+        /// espaço, cada milímetro pulava um degrau. Em 360 pontos cada degrau
+        /// pede uns 22 — dá para parar onde se quer.
+        static let verticalTravel: CGFloat = 360
         /// Distância mínima antes de decidir se o gesto é horizontal ou vertical.
         static let axisLockThreshold: CGFloat = 12
         static let doubleTapSeconds: Double = 10
@@ -41,6 +49,8 @@ final class PlayerViewController: UIViewController {
     private var panStartTime: Double = 0
     private var panStartBrightness: CGFloat = 0
     private var panStartVolume: Float = 1
+    /// Último valor efetivamente enviado ao sistema no gesto em curso.
+    private var ultimoVolumeAplicado: Float = -1
     private var panIsOnLeftHalf = true
 
     private var pendingSeekTarget: Double?
@@ -69,7 +79,6 @@ final class PlayerViewController: UIViewController {
     /// Camada escura por cima do vídeo — o "modo noturno" é escurecer além do
     /// mínimo do sistema, útil para assistir no escuro sem queimar os olhos.
     private let dimView = UIView()
-    private var pip: PictureInPicture?
     private let systemVolume = SystemVolume()
     private var volumeObservation: NSKeyValueObservation?
 
@@ -187,13 +196,8 @@ final class PlayerViewController: UIViewController {
         controls.onRotate = { [weak self] in self?.toggleOrientation() }
         controls.onShowSpeed = { [weak self] in self?.showSpeedSheet() }
         controls.onCycleAspect = { [weak self] in self?.cycleAspect() }
-        controls.onTogglePiP = { [weak self] in self?.acionarPiP() }
         controls.moreMenuProvider = { [weak self] in self?.buildToolsMenu() ?? [] }
 
-        // A janela flutuante só é montada depois da carga: quem toca o
-        // arquivo é decidido ali, e só o AVPlayer oferece a camada que o
-        // sistema aceita para PiP.
-        controls.setPiPAvailable(false)
 
         // Enquanto o vídeo toca, ninguém disputa disco e CPU com ele. A
         // retomada fica em `viewWillDisappear` — e precisa ficar, porque sem
@@ -221,8 +225,6 @@ final class PlayerViewController: UIViewController {
         // que demoram mais para chegar na vez, nunca tinham a sua.
         ThumbnailStore.isSuspended = false
 
-        // Sair com a janela flutuante aberta é legítimo: o vídeo continua nela.
-        guard pip?.isActive != true else { return }
         volumeObservation?.invalidate()
         volumeObservation = nil
         cancelSleepTimer()
@@ -312,7 +314,6 @@ final class PlayerViewController: UIViewController {
         Task { @MainActor in
             do {
                 try await engine.load(item)
-                configurarPiP()
                 controls.update(currentTime: 0, duration: engine.duration)
 
                 // Retomar é pergunta, não regra: às vezes se quer rever o
@@ -339,15 +340,6 @@ final class PlayerViewController: UIViewController {
     /// Com ele o sistema controlaria pausa e avanço sozinho. O VLC desenha por
     /// conta própria e não oferece essa camada, então hoje não há janela — o
     /// botão fica e explica, em vez de sumir sem motivo aparente.
-    private func configurarPiP() {
-        // O botão fica sempre à mostra. Esconder quando não dá transformava um
-        // limite conhecido num sumiço inexplicável.
-        controls.setPiPAvailable(true)
-
-        // Sem AVPlayer não há camada sobre a qual o iOS monte a janelinha.
-        pip = nil
-    }
-
     /// Pergunta antes de retomar.
     ///
     /// Voltar sozinho ao meio do filme é útil na maioria das vezes e péssimo
@@ -914,26 +906,6 @@ final class PlayerViewController: UIViewController {
     /// tudo o que vem do servidor — quem toca é o VLC, que desenha por conta
     /// própria numa superfície que o sistema não sabe transportar para a
     /// janelinha. Não é opção nossa desligada: é uma porta que só a Apple abre.
-    private func acionarPiP() {
-        Task { @MainActor in
-            if await pip?.toggle() == true { return }
-            explicarPiPIndisponivel()
-        }
-    }
-
-    private func explicarPiPIndisponivel() {
-        let alerta = UIAlertController(
-            title: "Janela flutuante indisponível",
-            message: "O iOS só monta a janelinha sobre o reprodutor da Apple. "
-                   + "Este arquivo está tocando no VLC, que abre formatos que a "
-                   + "Apple recusa — e aí o sistema não tem como transportar a imagem.",
-            preferredStyle: .alert)
-        alerta.addAction(UIAlertAction(title: "Entendi", style: .default) { [weak self] _ in
-            self?.scheduleControlsHide()
-        })
-        presentSheet(alerta)
-    }
-
     /// Quanto acelera enquanto o dedo fica na tela.
     private func holdSpeedActions() -> [UIAction] {
         let atual = PlayerPreferences.holdSpeed
@@ -1000,11 +972,6 @@ final class PlayerViewController: UIViewController {
         itens.append(UIAction(title: "Captura de tela",
                               image: UIImage(systemName: "camera")) { [weak self] _ in
             self?.takeSnapshot()
-        })
-
-        itens.append(UIAction(title: "Janela flutuante",
-                              image: UIImage(systemName: "pip.enter")) { [weak self] _ in
-            self?.acionarPiP()
         })
 
         itens.append(UIAction(title: "Velocidade",
@@ -1184,6 +1151,7 @@ final class PlayerViewController: UIViewController {
             // Parte do volume que o aparelho está de fato tocando, e não de um
             // número interno — senão o gesto dá um salto ao começar.
             panStartVolume = systemVolume.value
+            ultimoVolumeAplicado = panStartVolume
             panIsOnLeftHalf = gesture.location(in: view).x < view.bounds.midX
 
         case .changed:
@@ -1261,7 +1229,7 @@ final class PlayerViewController: UIViewController {
 
     private func updateVerticalPan(_ dy: CGFloat) {
         // Para cima aumenta: invertemos porque dy cresce para baixo no UIKit.
-        let travel = view.bounds.height * Tuning.verticalTravelFraction
+        let travel = Tuning.verticalTravel
         let fraction = -dy / travel
 
         if panIsOnLeftHalf {
@@ -1270,11 +1238,22 @@ final class PlayerViewController: UIViewController {
             hud.show(.brightness(Float(value)))
         } else {
             let value = max(0, min(1, panStartVolume + Float(fraction)))
-            // Volume do aparelho, o mesmo dos botões laterais. Se o controle do
-            // sistema não estiver acessível, cai no ganho interno do player
-            // para o gesto não ficar inerte.
-            if !systemVolume.set(value) {
-                engine.volume = value
+
+            // Só escreve quando o valor muda de verdade.
+            //
+            // O volume do sistema tem 16 degraus, e escrever a cada movimento
+            // do dedo mandava dezenas de valores por segundo que caíam todos
+            // no mesmo degrau — trabalho jogado fora, e o controle do sistema
+            // reagindo a cada um deles. Meio degrau de folga basta para o
+            // gesto continuar contínuo sem repetir o que já está valendo.
+            if abs(value - ultimoVolumeAplicado) >= 1.0 / 32 {
+                ultimoVolumeAplicado = value
+                // Volume do aparelho, o mesmo dos botões laterais. Se o
+                // controle do sistema não estiver acessível, cai no ganho
+                // interno do player para o gesto não ficar inerte.
+                if !systemVolume.set(value) {
+                    engine.volume = value
+                }
             }
             // Mostra o que o aparelho tem agora, não o que pedimos: se algo
             // limitar o valor, o número na tela seguiria mentindo.
