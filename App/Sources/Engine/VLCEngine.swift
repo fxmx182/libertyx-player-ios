@@ -22,6 +22,9 @@ final class VLCEngine: NSObject, PlaybackEngine {
 
     /// Tamanho do arquivo, quando a listagem soube dizer. É o que permite
     /// traduzir "bytes lidos" em "segundos prontos".
+    /// De onde vem o que está tocando — o tamanho do buffer depende disso.
+    private var origemAtual: MediaOrigin?
+
     private var tamanhoDoArquivo: Int64?
     /// Quantos bytes já tinham sido lidos quando a posição atual começou.
     private var bytesNaBusca: (bytes: Int64, instante: Double)?
@@ -147,6 +150,7 @@ final class VLCEngine: NSObject, PlaybackEngine {
         Self.configurarBuffer(media, origem: item.origin)
         tamanhoDoArquivo = item.fileSize
         bytesNaBusca = nil
+        origemAtual = item.origin
 
         player.media = media
         state = .ready
@@ -336,6 +340,30 @@ final class VLCEngine: NSObject, PlaybackEngine {
 
     func selectAudioTrack(_ id: Int32) async {
         player.currentAudioTrackIndex = id
+        await recomecarDoPonto()
+    }
+
+    /// Descarta o que já estava no buffer e recomeça do ponto atual.
+    ///
+    /// Trocar a faixa de áudio troca o decodificador, mas **não** joga fora o
+    /// que já foi lido: o VLC continua consumindo o buffer antigo, montado com
+    /// a faixa anterior, e o áudio novo só aparece quando esse buffer acaba.
+    /// Em rede isso são os cinco segundos de `network-caching` — a mesma folga
+    /// que deixa a rolagem suave cobra o preço aqui.
+    ///
+    /// Uma busca de volta de um décimo de segundo força o descarte. O ponto é
+    /// praticamente o mesmo, e no servidor ela sai de graça: está muito dentro
+    /// do bloco que já está em memória, então não há ida à rede.
+    ///
+    /// Só em rede. No arquivo local o buffer é de meio segundo, a troca já é
+    /// imediata, e a busca só acrescentaria um solavanco sem motivo.
+    private func recomecarDoPonto() async {
+        switch origemAtual {
+        case .smb, .remote:
+            await seek(to: max(0, currentTime - 0.12), precise: false)
+        default:
+            break
+        }
     }
 
     func selectSubtitleTrack(_ id: Int32?) async {
