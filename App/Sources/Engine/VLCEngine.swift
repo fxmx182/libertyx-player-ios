@@ -290,7 +290,7 @@ final class VLCEngine: NSObject, PlaybackEngine {
         onTimeUpdate?(alvo)
 
         let agora = CACurrentMediaTime()
-        guard agora - lastScrubApplied >= 0.08 else {
+        guard agora - lastScrubApplied >= cadenciaDeRolagem else {
             agendarScrubPendente()
             return
         }
@@ -315,10 +315,36 @@ final class VLCEngine: NSObject, PlaybackEngine {
             }
         }
         scrubWork = trabalho
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: trabalho)
+        DispatchQueue.main.asyncAfter(deadline: .now() + cadenciaDeRolagem, execute: trabalho)
     }
 
-    func endScrub() {}
+    /// Intervalo mínimo entre buscas durante o arrasto.
+    ///
+    /// No arquivo local, 80 ms: o disco responde a tempo de mostrar o quadro
+    /// antes da busca seguinte. No servidor não — cada busca descarta o buffer
+    /// e pede um bloco novo pela rede, e com buscas a cada 80 ms nenhuma chega
+    /// a terminar: o VLC aborta uma para começar a outra e a imagem congela até
+    /// o dedo parar. A 300 ms cada uma tem chance de mostrar algo.
+    private var cadenciaDeRolagem: CFTimeInterval {
+        switch origemAtual {
+        case .smb, .remote: return 0.3
+        default:            return 0.08
+        }
+    }
+
+    /// Ao soltar o dedo, vai exatamente ao último ponto pedido.
+    ///
+    /// Antes isto não fazia nada e o ponto final dependia de o agendamento da
+    /// rolagem ainda estar pendente — com a cadência maior do servidor, soltar
+    /// logo depois de uma busca deixava o vídeo até 300 ms atrás de onde a
+    /// barra mostrava. Agora a última palavra é sempre a do dedo.
+    func endScrub() {
+        scrubWork?.cancel()
+        scrubWork = nil
+        guard let alvo = pendingScrub else { return }
+        aplicarScrub(alvo, em: CACurrentMediaTime())
+        marcarBusca(em: alvo)
+    }
 
     // MARK: - Faixas
 

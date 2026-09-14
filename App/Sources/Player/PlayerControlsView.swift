@@ -62,7 +62,9 @@ final class PlayerControlsView: UIView {
 
     private let elapsedLabel = UILabel()
     private let totalLabel = UILabel()
-    private let slider = UISlider()
+    private let slider = FineScrubSlider()
+    /// Diz em que precisão a rolagem fina está, enquanto ela não é a normal.
+    private let rotuloFino = UILabel()
     /// Trilha própria atrás do controle: o fundo escuro e, sobre ele, o quanto
     /// já está carregado. O `UISlider` não sabe desenhar três camadas, então a
     /// dele fica transparente e estas duas ficam por baixo.
@@ -212,6 +214,15 @@ final class PlayerControlsView: UIView {
         slider.setThumbImage(Self.thumbImage(diameter: 15), for: .normal)
         slider.setThumbImage(Self.thumbImage(diameter: 22), for: .highlighted)
         slider.translatesAutoresizingMaskIntoConstraints = false
+        // Sem aviso, a rolagem fina parece a barra emperrando: o dedo anda e
+        // ela anda menos. Dizendo a velocidade, vira ferramenta.
+        rotuloFino.font = .systemFont(ofSize: 12, weight: .semibold)
+        rotuloFino.textColor = LabTheme.accentUI
+        rotuloFino.alpha = 0
+        rotuloFino.translatesAutoresizingMaskIntoConstraints = false
+        slider.onVelocidade = { [weak self] velocidade in
+            self?.mostrarVelocidade(velocidade)
+        }
         slider.addTarget(self, action: #selector(sliderChanged), for: .valueChanged)
         // Um toque na barra leva o vídeo até ali.
         //
@@ -287,7 +298,7 @@ final class PlayerControlsView: UIView {
         ajustes.translatesAutoresizingMaskIntoConstraints = false
         ajustes.addArrangedSubview(aspectButton)
 
-        [elapsedLabel, trilhaFundo, trilhaCarregada, slider, totalLabel,
+        [elapsedLabel, trilhaFundo, trilhaCarregada, slider, totalLabel, rotuloFino,
          lockButton, transporte, ajustes].forEach(bottomBar.addSubview)
 
         NSLayoutConstraint.activate([
@@ -335,6 +346,9 @@ final class PlayerControlsView: UIView {
             slider.leadingAnchor.constraint(equalTo: elapsedLabel.trailingAnchor, constant: 12),
             slider.trailingAnchor.constraint(equalTo: totalLabel.leadingAnchor, constant: -12),
             slider.centerYAnchor.constraint(equalTo: elapsedLabel.centerYAnchor),
+
+            rotuloFino.centerXAnchor.constraint(equalTo: slider.centerXAnchor),
+            rotuloFino.bottomAnchor.constraint(equalTo: slider.topAnchor, constant: -2),
 
             // As trilhas seguem a do controle: a bolinha precisa de folga nas
             // pontas, e desenhar de borda a borda deixaria as três desalinhadas.
@@ -631,6 +645,18 @@ final class PlayerControlsView: UIView {
     }
 
     @objc private func fundoTocado() { onBackgroundTap?() }
+
+    private func mostrarVelocidade(_ velocidade: Float) {
+        let texto: String?
+        switch velocidade {
+        case 0.5:  texto = "Rolagem fina · metade"
+        case 0.25: texto = "Rolagem fina · um quarto"
+        case 0.1:  texto = "Rolagem fina · um décimo"
+        default:   texto = nil
+        }
+        if let texto { rotuloFino.text = texto }
+        UIView.animate(withDuration: 0.15) { self.rotuloFino.alpha = texto == nil ? 0 : 1 }
+    }
 
     @objc private func sliderTouchDown() { isUserScrubbing = true }
 

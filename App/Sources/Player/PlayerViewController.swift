@@ -62,6 +62,8 @@ final class PlayerViewController: UIViewController {
     private let nowPlaying = NowPlayingCenter()
 
     private var rateBeforeHold: Float = 1.0
+    /// O "segurar para acelerar" está valendo agora.
+    private var aceleracaoAtiva = false
     private var controlsHideWorkItem: DispatchWorkItem?
     private var didPresentError = false
     private var playbackSpeed: Float = 1.0
@@ -562,6 +564,15 @@ final class PlayerViewController: UIViewController {
     private func installGestures() {
         let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan))
         pan.maximumNumberOfTouches = 1
+        // Arrastar e segurar reconhecem juntos.
+        //
+        // Sem isto eles disputavam o mesmo toque e quem reconhecia primeiro
+        // vencia. Arrastar só é reconhecido depois de o dedo andar; segurar,
+        // depois de um terço de segundo parado. Quem encosta com cuidado para
+        // mirar um tempo — exatamente quem mais precisa do arrasto — fica
+        // parado esse terço de segundo: o segurar vencia, o vídeo ia a 2× e o
+        // arrasto era descartado. Parecia que arrastar na tela não fazia nada.
+        pan.delegate = self
         view.addGestureRecognizer(pan)
 
         let doubleTap = UITapGestureRecognizer(target: self, action: #selector(handleDoubleTap))
@@ -570,6 +581,7 @@ final class PlayerViewController: UIViewController {
 
         let longPress = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress))
         longPress.minimumPressDuration = 0.35
+        longPress.delegate = self
         view.addGestureRecognizer(longPress)
 
         let pinch = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch))
@@ -704,17 +716,29 @@ final class PlayerViewController: UIViewController {
         guard gesturesEnabled else { return }
         switch gesture.state {
         case .began:
-            guard engine.state == .playing else { return }
+            // Um arrasto já em andamento tem prioridade: o dedo está mirando
+            // um tempo, não pedindo pressa.
+            guard engine.state == .playing, panAxis == .undecided else { return }
             rateBeforeHold = engine.rate
             engine.rate = PlayerPreferences.holdSpeed
+            aceleracaoAtiva = true
             hud.show(.rate(PlayerPreferences.holdSpeed))
         case .ended, .cancelled, .failed:
-            guard engine.rate == PlayerPreferences.holdSpeed else { return }
-            engine.rate = rateBeforeHold
-            hud.hideAfterDelay()
+            desfazerAceleracao()
         default:
             break
         }
+    }
+
+    /// Volta à velocidade de antes, uma vez só.
+    ///
+    /// Pode ser pedido por dois caminhos — soltar o dedo e começar a arrastar
+    /// —, e restaurar duas vezes gravaria a velocidade errada.
+    private func desfazerAceleracao() {
+        guard aceleracaoAtiva else { return }
+        aceleracaoAtiva = false
+        engine.rate = rateBeforeHold
+        hud.hideAfterDelay()
     }
 
     /// Pinça amplia e reduz a imagem, como em qualquer foto no iPhone.
@@ -1161,6 +1185,9 @@ final class PlayerViewController: UIViewController {
                 panAxis = dx > dy ? .horizontal : .vertical
                 // Qualquer gesto em curso segura os controles na tela.
                 controlsHideWorkItem?.cancel()
+                // Se o segurar já tinha acelerado, o dedo que começou a andar
+                // mudou de ideia: desfaz o 2× antes de virar busca ou volume.
+                desfazerAceleracao()
                 if panAxis == .horizontal {
                     controls.suppressBuffering = true
                     engine.beginScrub()
