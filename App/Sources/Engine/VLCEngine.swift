@@ -177,7 +177,16 @@ final class VLCEngine: NSObject, PlaybackEngine {
     private static func configurarBuffer(_ media: VLCMedia, origem: MediaOrigin) {
         switch origem {
         case .smb, .remote:
-            media.addOption(":network-caching=5000")
+            // Um segundo e meio, e não cinco.
+            //
+            // Este número é quanto o VLC espera acumular antes de mostrar
+            // imagem — no começo do vídeo e **depois de cada busca**. Em cinco
+            // segundos, cada soltada do dedo na barra virava cinco segundos de
+            // tela parada, e a troca de faixa de áudio, que também busca,
+            // pagava o mesmo. Quem mantém a reprodução contínua sem engasgar é
+            // o prefetch logo abaixo, que lê adiantado; este aqui só atrasava a
+            // volta da imagem.
+            media.addOption(":network-caching=1500")
             // 32 MB adiantados: uns 20 segundos de um filme 1080p comum.
             media.addOption(":prefetch-buffer-size=32768")
             // Blocos de 256 KB em vez dos 16 KB padrão — menos idas ao
