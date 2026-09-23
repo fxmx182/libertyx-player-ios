@@ -13,7 +13,9 @@ final class PlayerViewController: UIViewController {
     private enum Tuning {
         /// Quantos segundos de vídeo por largura de tela arrastada.
         /// MX Player escala isso com a duração; abaixo de 2 min fica fino.
-        static let seekSecondsPerScreenWidth: Double = 120
+        /// Teto da rolagem fina: quantos segundos uma largura de tela vale
+        /// com o dedo devagar. A aceleração multiplica isso quando o dedo corre.
+        static let seekSecondsPerScreenWidth: Double = 90
         /// Distância do dedo, em pontos, para percorrer 0→100% de brilho ou
         /// volume.
         ///
@@ -47,6 +49,10 @@ final class PlayerViewController: UIViewController {
 
     private var panAxis: PanAxis = .undecided
     private var panStartTime: Double = 0
+    /// Destino acumulado do arrasto na tela, e onde o dedo estava no evento
+    /// anterior — o movimento é somado aos pedaços, cada um com a sua escala.
+    private var panSeekTarget: Double = 0
+    private var panUltimoX: CGFloat = 0
     private var panStartBrightness: CGFloat = 0
     private var panStartVolume: Float = 1
     /// Último valor efetivamente enviado ao sistema no gesto em curso.
@@ -167,7 +173,10 @@ final class PlayerViewController: UIViewController {
             controls.trailingAnchor.constraint(equalTo: view.trailingAnchor),
 
             hud.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            hud.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            // No alto, logo abaixo da fileira de cima, e não no centro da
+            // imagem — é onde o próprio iOS mostra o volume. O centro é onde
+            // está a cena que se quer ver enquanto se ajusta.
+            hud.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 60),
         ])
 
         controls.title = item.title
@@ -1171,6 +1180,8 @@ final class PlayerViewController: UIViewController {
         case .began:
             panAxis = .undecided
             panStartTime = engine.currentTime
+            panSeekTarget = panStartTime
+            panUltimoX = 0
             panStartBrightness = UIScreen.main.brightness
             // Parte do volume que o aparelho está de fato tocando, e não de um
             // número interno — senão o gesto dá um salto ao começar.
@@ -1195,7 +1206,7 @@ final class PlayerViewController: UIViewController {
             }
 
             switch panAxis {
-            case .horizontal: updateSeekPan(translation.x)
+            case .horizontal: updateSeekPan(translation.x, velocidade: gesture.velocity(in: view).x)
             case .vertical:   updateVerticalPan(translation.y)
             case .undecided:  break
             }
@@ -1215,26 +1226,38 @@ final class PlayerViewController: UIViewController {
         }
     }
 
-    private func updateSeekPan(_ dx: CGFloat) {
+    /// Arrasto na tela com aceleração.
+    ///
+    /// Antes a distância valia sempre o mesmo, e as duas pontas saíam
+    /// perdendo: devagar era grosseiro demais para parar num minuto, e depressa
+    /// não ia longe — num filme de duas horas, voltar meia hora pedia quinze
+    /// arrastos, o que parecia o vídeo "não voltar".
+    ///
+    /// Agora a escala depende da velocidade do dedo, como no ponteiro de um
+    /// computador: devagar, uma largura de tela vale até um minuto e meio, e
+    /// dá para parar no segundo; correndo, até doze vezes isso. O mesmo gesto
+    /// leva perto e depois afina, sem soltar o dedo.
+    private func updateSeekPan(_ dx: CGFloat, velocidade: CGFloat) {
         guard engine.duration > 0 else { return }
 
-        // Escala a sensibilidade com a duração: num vídeo de 3 h, arrastar a
-        // tela inteira por 2 min é inútil; num clipe de 40 s, 2 min é grosseiro.
-        let span = min(max(engine.duration / 4, 30), Tuning.seekSecondsPerScreenWidth * 4)
-        let secondsPerPoint = min(span, Tuning.seekSecondsPerScreenWidth) / Double(view.bounds.width)
+        let passo = dx - panUltimoX
+        panUltimoX = dx
 
-        let delta = Double(dx) * secondsPerPoint
-        let target = max(0, min(panStartTime + delta, engine.duration))
+        // Vídeo curto não precisa de tanto: um clipe de 40 s não deve atravessar
+        // inteiro num milímetro.
+        let base = min(max(engine.duration / 20, 10), Tuning.seekSecondsPerScreenWidth)
+        let segundosPorPonto = base / Double(max(view.bounds.width, 1))
+
+        let rapidez = Double(abs(velocidade))
+        let fator = min(max(1 + (rapidez - 250) / 250, 1), 12)
+
+        panSeekTarget = max(0, min(panSeekTarget + Double(passo) * segundosPorPonto * fator,
+                                   engine.duration))
 
         // Só o tempo, sem caixa em volta: informa o destino sem tapar a cena.
-        hud.show(.time(target))
-        controls.update(currentTime: target, duration: engine.duration)
-
-        // É aqui que mora a "rolagem integral": em vez de só mostrar um rótulo e
-        // seekar no final, mandamos seeks precisos durante o arrasto. A coalescência
-        // abaixo garante no máximo um seek em voo — sem isso a fila de seeks cresce
-        // e o vídeo fica arrastando segundos atrás do dedo.
-        requestScrubSeek(to: target)
+        hud.show(.time(panSeekTarget))
+        controls.update(currentTime: panSeekTarget, duration: engine.duration)
+        requestScrubSeek(to: panSeekTarget)
     }
 
     /// Durante o arrasto quem manda é `scrub`, não `seek`.

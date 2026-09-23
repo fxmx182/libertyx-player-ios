@@ -70,6 +70,21 @@ final class VLCEngine: NSObject, PlaybackEngine {
     private var scrubWork: DispatchWorkItem?
     private var lastScrubApplied: CFTimeInterval = 0
 
+    /// O último destino pedido ao arrastar — não é apagado quando aplicado,
+    /// para o fim do arrasto sempre ter a palavra final.
+    private var alvoDaRolagem: Double?
+    /// Enquanto o dedo arrasta, o tempo que o VLC informa não vai para a tela.
+    private var emRolagem = false
+
+    /// Destino de uma busca que o VLC ainda não alcançou.
+    ///
+    /// Enquanto uma busca não termina, o VLC continua respondendo o tempo
+    /// **antigo** — em rede, por um ou dois segundos. Era a causa do "às vezes
+    /// não volta": solta-se o dedo lá atrás, o VLC ainda diz o ponto de antes,
+    /// a barra pula de volta para ele, e um segundo arrasto nesse intervalo
+    /// partia do lugar errado. Até o VLC chegar, quem responde é o destino.
+    private var alvoPendente: (tempo: Double, desde: CFTimeInterval, tentativas: Int)?
+
     /// Permissão de leitura do arquivo, mantida enquanto a reprodução durar.
     ///
     /// No iOS quem autoriza é a pasta escolhida no seletor, e o acesso só vale
@@ -94,7 +109,18 @@ final class VLCEngine: NSObject, PlaybackEngine {
 
     // MARK: - Estado básico
 
-    var currentTime: Double { Double(player.time.intValue) / 1000 }
+    var currentTime: Double {
+        if let alvo = alvoPendente { return alvo.tempo }
+        return tempoDoVLC
+    }
+
+    private var tempoDoVLC: Double { Double(player.time.intValue) / 1000 }
+
+    /// Toda ida a um ponto passa por aqui, para o destino ficar registrado.
+    private func irPara(_ alvo: Double) {
+        player.time = VLCTime(int: Int32(alvo * 1000))
+        alvoPendente = (alvo, CACurrentMediaTime(), 0)
+    }
 
     var duration: Double {
         let ms = player.media?.length.intValue ?? 0
@@ -277,14 +303,17 @@ final class VLCEngine: NSObject, PlaybackEngine {
         let alvo = max(0, min(time, duration))
         // Sem acender a roda: o VLC busca rápido, e o pisca-pisca do indicador
         // incomodava mais do que a espera que ele anunciava.
-        player.time = VLCTime(int: Int32(alvo * 1000))
+        irPara(alvo)
         marcarBusca(em: alvo)
         onTimeUpdate?(alvo)
     }
 
     // MARK: - Rolagem
 
-    func beginScrub() {}
+    func beginScrub() {
+        emRolagem = true
+        alvoDaRolagem = nil
+    }
 
     /// Rolagem com ritmo controlado.
     ///
@@ -296,6 +325,7 @@ final class VLCEngine: NSObject, PlaybackEngine {
         guard duration > 0 else { return }
         let alvo = max(0, min(time, duration))
         pendingScrub = alvo
+        alvoDaRolagem = alvo
         onTimeUpdate?(alvo)
 
         let agora = CACurrentMediaTime()
@@ -309,7 +339,7 @@ final class VLCEngine: NSObject, PlaybackEngine {
     private func aplicarScrub(_ alvo: Double, em instante: CFTimeInterval) {
         lastScrubApplied = instante
         pendingScrub = nil
-        player.time = VLCTime(int: Int32(alvo * 1000))
+        irPara(alvo)
     }
 
     /// Garante que o último ponto arrastado seja aplicado mesmo que o dedo
@@ -343,16 +373,20 @@ final class VLCEngine: NSObject, PlaybackEngine {
 
     /// Ao soltar o dedo, vai exatamente ao último ponto pedido.
     ///
-    /// Antes isto não fazia nada e o ponto final dependia de o agendamento da
-    /// rolagem ainda estar pendente — com a cadência maior do servidor, soltar
-    /// logo depois de uma busca deixava o vídeo até 300 ms atrás de onde a
-    /// barra mostrava. Agora a última palavra é sempre a do dedo.
+    /// Sempre, e não só quando havia algo agendado: a busca que já tinha saído
+    /// pode ter sido abortada pela seguinte, e sem repetir aqui o vídeo
+    /// ficaria num ponto intermediário do caminho do dedo.
     func endScrub() {
         scrubWork?.cancel()
         scrubWork = nil
-        guard let alvo = pendingScrub else { return }
-        aplicarScrub(alvo, em: CACurrentMediaTime())
+        pendingScrub = nil
+        emRolagem = false
+        guard let alvo = alvoDaRolagem else { return }
+        alvoDaRolagem = nil
+        lastScrubApplied = CACurrentMediaTime()
+        irPara(alvo)
         marcarBusca(em: alvo)
+        onTimeUpdate?(alvo)
     }
 
     // MARK: - Faixas
@@ -474,7 +508,37 @@ extension VLCEngine: VLCMediaPlayerDelegate {
         // que o estado que o VLC anuncia. Como só emite na transição, isto não
         // volta a fazer o transporte piscar.
         buffering = false
-        onTimeUpdate?(currentTime)
+
+        if let pendente = alvoPendente {
+            if abs(tempoDoVLC - pendente.tempo) < 3 {
+                alvoPendente = nil
+            } else {
+                // Não chegou. Em rede a busca demora mais para assentar; passado
+                // o prazo, pede de novo uma vez — busca abortada no meio de uma
+                // rajada é o caso comum — e, se ainda assim não chegar, aceita
+                // onde o VLC está, para a tela não mentir para sempre.
+                let prazo: CFTimeInterval
+                switch origemAtual {
+                case .smb, .remote: prazo = 2.5
+                default:            prazo = 1.2
+                }
+                if CACurrentMediaTime() - pendente.desde > prazo {
+                    if pendente.tentativas == 0 {
+                        player.time = VLCTime(int: Int32(pendente.tempo * 1000))
+                        alvoPendente = (pendente.tempo, CACurrentMediaTime(), 1)
+                    } else {
+                        alvoPendente = nil
+                    }
+                }
+                if alvoPendente != nil { return }
+            }
+        }
+
+        // Com o dedo na barra, quem manda na tela é o dedo. O tempo do VLC
+        // pula de quadro-chave em quadro-chave e brigava com o destino
+        // arrastado — a barra e o número tremiam entre os dois.
+        guard !emRolagem else { return }
+        onTimeUpdate?(tempoDoVLC)
     }
 }
 

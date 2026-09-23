@@ -257,8 +257,8 @@ final class PlayerControlsView: UIView {
             $0.heightAnchor.constraint(equalToConstant: 56).isActive = true
         }
 
-        configure(subtitleButton, symbol: "captions.bubble", size: 20, action: #selector(subtitlesTapped))
-        configure(audioButton, symbol: "music.note", size: 20, action: #selector(audioTapped))
+        configure(subtitleButton, symbol: "captions.bubble", size: 15, action: #selector(subtitlesTapped))
+        configure(audioButton, symbol: "music.note", size: 15, action: #selector(audioTapped))
 
         // A engrenagem guarda o resto: modo noturno, velocidade, captura,
         // temporizador, bloqueio, girar, fechar. Deixar tudo à mostra era o
@@ -407,17 +407,19 @@ final class PlayerControlsView: UIView {
     /// esquece, que mora na engrenagem. Some junto com o resto dos controles,
     /// porque é parte deles e não um enfeite fixo sobre a imagem.
     private func setupIlha() {
-        ilhaFundo.backgroundColor = UIColor.black.withAlphaComponent(0.55)
-        ilhaFundo.layer.cornerRadius = 22
+        // Quase sem fundo: um véu leve e nenhuma borda. A pastilha escura de
+        // antes era um retângulo sólido no alto da imagem — chamava mais
+        // atenção que o filme. Os ícones levam sombra para continuarem
+        // legíveis sobre cena clara.
+        ilhaFundo.backgroundColor = UIColor.black.withAlphaComponent(0.18)
+        ilhaFundo.layer.cornerRadius = 18
         ilhaFundo.layer.cornerCurve = .continuous
-        ilhaFundo.layer.borderWidth = 0.5
-        ilhaFundo.layer.borderColor = UIColor.white.withAlphaComponent(0.12).cgColor
         ilhaFundo.translatesAutoresizingMaskIntoConstraints = false
         addSubview(ilhaFundo)
 
-        configure(repeatButton, symbol: "repeat", size: 17, action: #selector(repeatTapped))
-        configure(rotateButton, symbol: "rotate.right", size: 17, action: #selector(rotateTapped))
-        configure(speedButton, symbol: "speedometer", size: 17, action: #selector(speedTapped))
+        configure(repeatButton, symbol: "repeat", size: 15, action: #selector(repeatTapped))
+        configure(rotateButton, symbol: "rotate.right", size: 15, action: #selector(rotateTapped))
+        configure(speedButton, symbol: "speedometer", size: 15, action: #selector(speedTapped))
 
         ilha.axis = .horizontal
         ilha.alignment = .center
@@ -430,7 +432,7 @@ final class PlayerControlsView: UIView {
         NSLayoutConstraint.activate([
             ilha.centerXAnchor.constraint(equalTo: centerXAnchor),
             ilha.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 10),
-            ilha.heightAnchor.constraint(equalToConstant: 44),
+            ilha.heightAnchor.constraint(equalToConstant: 36),
 
             ilhaFundo.leadingAnchor.constraint(equalTo: ilha.leadingAnchor, constant: -6),
             ilhaFundo.trailingAnchor.constraint(equalTo: ilha.trailingAnchor, constant: 6),
@@ -438,8 +440,12 @@ final class PlayerControlsView: UIView {
             ilhaFundo.bottomAnchor.constraint(equalTo: ilha.bottomAnchor),
         ])
         [audioButton, subtitleButton, repeatButton, rotateButton, speedButton].forEach {
-            $0.widthAnchor.constraint(equalToConstant: 44).isActive = true
-            $0.heightAnchor.constraint(equalToConstant: 44).isActive = true
+            $0.widthAnchor.constraint(equalToConstant: 38).isActive = true
+            $0.heightAnchor.constraint(equalToConstant: 36).isActive = true
+            $0.layer.shadowColor = UIColor.black.cgColor
+            $0.layer.shadowOpacity = 0.7
+            $0.layer.shadowRadius = 3
+            $0.layer.shadowOffset = .zero
         }
     }
 

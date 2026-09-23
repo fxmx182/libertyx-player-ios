@@ -42,17 +42,20 @@ final class GestureHUDView: UIView {
         // O arredondamento vai no fundo, não no contêiner: recortar o
         // contêiner cortaria junto as sombras do texto, que são o que mantém
         // a leitura possível agora que o fundo é translúcido.
-        fundo.layer.cornerRadius = 14
+        // Pastilha horizontal, como a do volume do próprio iOS, em vez de um
+        // quadro no meio da imagem: diz o que precisa dizer ocupando uma faixa
+        // fina, e o fundo mal aparece.
+        fundo.layer.cornerRadius = 17
         fundo.layer.cornerCurve = .continuous
-        fundo.backgroundColor = UIColor.black.withAlphaComponent(0.32)
+        fundo.backgroundColor = UIColor.black.withAlphaComponent(0.26)
         fundo.translatesAutoresizingMaskIntoConstraints = false
         addSubview(fundo)
 
         icon.tintColor = .white
         icon.contentMode = .scaleAspectFit
-        icon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 26, weight: .medium)
+        icon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 14, weight: .semibold)
 
-        primary.font = .monospacedDigitSystemFont(ofSize: 22, weight: .semibold)
+        primary.font = .monospacedDigitSystemFont(ofSize: 15, weight: .semibold)
         primary.textColor = .white
         primary.textAlignment = .center
         [primary, secondary, icon].forEach { view in
@@ -62,16 +65,16 @@ final class GestureHUDView: UIView {
             view.layer.shadowOffset = .zero
         }
 
-        secondary.font = .monospacedDigitSystemFont(ofSize: 13, weight: .regular)
+        secondary.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
         secondary.textColor = UIColor.white.withAlphaComponent(0.65)
         secondary.textAlignment = .center
 
         bar.progressTintColor = .white
         bar.trackTintColor = UIColor.white.withAlphaComponent(0.25)
 
-        stack.axis = .vertical
+        stack.axis = .horizontal
         stack.alignment = .center
-        stack.spacing = 6
+        stack.spacing = 8
         stack.translatesAutoresizingMaskIntoConstraints = false
         [icon, primary, secondary, bar].forEach { stack.addArrangedSubview($0) }
         addSubview(stack)
@@ -82,13 +85,12 @@ final class GestureHUDView: UIView {
             fundo.leadingAnchor.constraint(equalTo: leadingAnchor),
             fundo.trailingAnchor.constraint(equalTo: trailingAnchor),
 
-            stack.topAnchor.constraint(equalTo: topAnchor, constant: 16),
-            stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -16),
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20),
-            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -20),
+            stack.topAnchor.constraint(equalTo: topAnchor, constant: 8),
+            stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
 
-            widthAnchor.constraint(greaterThanOrEqualToConstant: 150),
-            bar.widthAnchor.constraint(equalToConstant: 120),
+            bar.widthAnchor.constraint(equalToConstant: 70),
         ])
     }
 
@@ -144,9 +146,9 @@ final class GestureHUDView: UIView {
         // Sem caixa nem barra, o número é a única referência na tela — e
         // precisa ser lido de relance, com o dedo em movimento.
         if case .time = content {
-            primary.font = .monospacedDigitSystemFont(ofSize: 34, weight: .bold)
+            primary.font = .monospacedDigitSystemFont(ofSize: 24, weight: .bold)
         } else {
-            primary.font = .monospacedDigitSystemFont(ofSize: 22, weight: .semibold)
+            primary.font = .monospacedDigitSystemFont(ofSize: 15, weight: .semibold)
         }
 
         // O fundo some no modo tempo: a sombra do texto basta para ele ficar
