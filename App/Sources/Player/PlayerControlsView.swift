@@ -24,7 +24,8 @@ final class PlayerControlsView: UIView {
 
     /// Montado na hora de abrir: os itens mostram estado que muda enquanto o
     /// player está aberto.
-    var moreMenuProvider: (() -> [UIMenuElement])?
+    /// A engrenagem abre o painel de ferramentas.
+    var onShowTools: (() -> Void)?
 
     enum TrackKind { case audio, subtitle }
 
@@ -81,6 +82,7 @@ final class PlayerControlsView: UIView {
     /// A pastilha flutuante com o que se mexe DURANTE o filme.
     private let ilha = UIStackView()
     private let ilhaFundo = UIView()
+    private let vidroDaIlha = CAGradientLayer()
 
     private let previousButton = UIButton(type: .system)
     private let playButton = UIButton(type: .system)
@@ -177,6 +179,7 @@ final class PlayerControlsView: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         bottomGradient.frame = bottomBar.bounds
+        vidroDaIlha.frame = ilhaFundo.bounds
         acomodarPara(largura: bounds.width, altura: bounds.height)
     }
 
@@ -187,7 +190,14 @@ final class PlayerControlsView: UIView {
         bottomBar.translatesAutoresizingMaskIntoConstraints = false
         addSubview(bottomBar)
 
-        bottomGradient.colors = [UIColor.clear.cgColor, UIColor.black.withAlphaComponent(0.85).cgColor]
+        // Três paradas: com duas, o escuro morava só no rodapé e os botões
+        // ficavam no meio do caminho — numa cena clara o cadeado e o play
+        // sumiam dentro da imagem. A do meio puxa o escuro para onde eles
+        // estão, e o topo segue transparente para não cortar a cena.
+        bottomGradient.colors = [UIColor.clear.cgColor,
+                                 UIColor.black.withAlphaComponent(0.62).cgColor,
+                                 UIColor.black.withAlphaComponent(0.9).cgColor]
+        bottomGradient.locations = [0, 0.5, 1]
         bottomBar.layer.insertSublayer(bottomGradient, at: 0)
 
         [elapsedLabel, totalLabel].forEach {
@@ -207,11 +217,11 @@ final class PlayerControlsView: UIView {
         trilhaFundo.backgroundColor = UIColor.white.withAlphaComponent(0.28)
         trilhaCarregada.backgroundColor = UIColor.white.withAlphaComponent(0.55)
         [trilhaFundo, trilhaCarregada].forEach {
-            $0.layer.cornerRadius = 2.5
+            $0.layer.cornerRadius = 1.5
             $0.isUserInteractionEnabled = false
             $0.translatesAutoresizingMaskIntoConstraints = false
         }
-        slider.setThumbImage(Self.thumbImage(diameter: 15), for: .normal)
+        slider.setThumbImage(Self.thumbImage(diameter: 16), for: .normal)
         slider.setThumbImage(Self.thumbImage(diameter: 22), for: .highlighted)
         slider.translatesAutoresizingMaskIntoConstraints = false
         // Sem aviso, a rolagem fina parece a barra emperrando: o dedo anda e
@@ -237,15 +247,10 @@ final class PlayerControlsView: UIView {
                          for: [.touchUpInside, .touchUpOutside, .touchCancel])
 
         configure(previousButton, symbol: "backward.end.fill", size: 27, action: #selector(previousTapped))
-        configure(playButton, symbol: "play.fill", size: 26, weight: .bold, action: #selector(playTapped))
-        // Disco por trás do play.
-        //
-        // É o botão que se aperta sem olhar, e num grupo de três a mão o acha
-        // pela forma em vez de contar posições. Veio do Android, onde a fileira
-        // uniforme fazia todos parecerem iguais.
-        playButton.backgroundColor = UIColor.white.withAlphaComponent(0.16)
-        playButton.layer.cornerRadius = 25
-        playButton.widthAnchor.constraint(equalToConstant: 50).isActive = true
+        // Sem o disco cinza: o play é achado pela forma, maior que os vizinhos,
+        // e não por um círculo que tapava um pedaço a mais da imagem.
+        configure(playButton, symbol: "play.fill", size: 32, weight: .bold, action: #selector(playTapped))
+        playButton.widthAnchor.constraint(equalToConstant: 54).isActive = true
         playButton.heightAnchor.constraint(equalToConstant: 50).isActive = true
         configure(nextButton, symbol: "forward.end.fill", size: 27, action: #selector(nextTapped))
         configure(aspectButton, symbol: "arrow.left.and.right", size: 20, action: #selector(aspectTapped))
@@ -270,12 +275,7 @@ final class PlayerControlsView: UIView {
         toolsButton.translatesAutoresizingMaskIntoConstraints = false
         toolsButton.backgroundColor = UIColor.black.withAlphaComponent(0.35)
         toolsButton.layer.cornerRadius = 19
-        toolsButton.showsMenuAsPrimaryAction = true
-        toolsButton.menu = UIMenu(children: [
-            UIDeferredMenuElement.uncached { [weak self] concluir in
-                concluir(self?.moreMenuProvider?() ?? [])
-            }
-        ])
+        toolsButton.addTarget(self, action: #selector(toolsTapped), for: .touchUpInside)
 
         configure(lockButton, symbol: "lock.open", size: 20, action: #selector(lockTapped))
 
@@ -355,11 +355,11 @@ final class PlayerControlsView: UIView {
             trilhaFundo.leadingAnchor.constraint(equalTo: slider.leadingAnchor, constant: 2),
             trilhaFundo.trailingAnchor.constraint(equalTo: slider.trailingAnchor, constant: -2),
             trilhaFundo.centerYAnchor.constraint(equalTo: slider.centerYAnchor),
-            trilhaFundo.heightAnchor.constraint(equalToConstant: 5),
+            trilhaFundo.heightAnchor.constraint(equalToConstant: 3),
 
             trilhaCarregada.leadingAnchor.constraint(equalTo: trilhaFundo.leadingAnchor),
             trilhaCarregada.centerYAnchor.constraint(equalTo: trilhaFundo.centerYAnchor),
-            trilhaCarregada.heightAnchor.constraint(equalToConstant: 5),
+            trilhaCarregada.heightAnchor.constraint(equalToConstant: 3),
         ])
     }
 
@@ -411,9 +411,18 @@ final class PlayerControlsView: UIView {
         // antes era um retângulo sólido no alto da imagem — chamava mais
         // atenção que o filme. Os ícones levam sombra para continuarem
         // legíveis sobre cena clara.
-        ilhaFundo.backgroundColor = UIColor.black.withAlphaComponent(0.18)
+        // Lâmina de vidro: degradê de cima para baixo em vez de cor chapada —
+        // é o que faz a superfície parecer vidro e não adesivo — e um fio
+        // claro na borda para ela existir mesmo sobre um quadro claro.
+        vidroDaIlha.colors = [UIColor(red: 0.10, green: 0.09, blue: 0.08, alpha: 0.42).cgColor,
+                              UIColor(red: 0.03, green: 0.03, blue: 0.02, alpha: 0.40).cgColor]
+        vidroDaIlha.cornerRadius = 18
+        vidroDaIlha.cornerCurve = .continuous
+        ilhaFundo.layer.insertSublayer(vidroDaIlha, at: 0)
         ilhaFundo.layer.cornerRadius = 18
         ilhaFundo.layer.cornerCurve = .continuous
+        ilhaFundo.layer.borderWidth = 1
+        ilhaFundo.layer.borderColor = UIColor.white.withAlphaComponent(0.12).cgColor
         ilhaFundo.translatesAutoresizingMaskIntoConstraints = false
         addSubview(ilhaFundo)
 
@@ -496,7 +505,7 @@ final class PlayerControlsView: UIView {
 
     /// Trilha com altura própria. O UISlider não expõe espessura, mas aceita
     /// uma imagem esticável — que é o jeito de engrossar sem deformar o resto.
-    private static func trackImage(color: UIColor, height: CGFloat = 5) -> UIImage {
+    private static func trackImage(color: UIColor, height: CGFloat = 3) -> UIImage {
         let tamanho = CGSize(width: height, height: height)
         let imagem = UIGraphicsImageRenderer(size: tamanho).image { _ in
             color.setFill()
@@ -510,7 +519,9 @@ final class PlayerControlsView: UIView {
     private static func thumbImage(diameter: CGFloat) -> UIImage {
         let size = CGSize(width: diameter, height: diameter)
         return UIGraphicsImageRenderer(size: size).image { context in
-            UIColor.white.setFill()
+            // Dourada: a bolinha é a marca do ponto atual, e na cor da marca
+            // ela se acha sobre qualquer quadro.
+            LabTheme.accentUI.setFill()
             context.cgContext.fillEllipse(in: CGRect(origin: .zero, size: size))
         }
     }
@@ -619,6 +630,7 @@ final class PlayerControlsView: UIView {
     @objc private func playTapped()      { onPlayPause?() }
     @objc private func previousTapped()  { onPrevious?() }
     @objc private func nextTapped()      { onNext?() }
+    @objc private func toolsTapped()     { onShowTools?() }
     @objc private func subtitlesTapped() { onShowTracks?(.subtitle) }
     @objc private func audioTapped()     { onShowTracks?(.audio) }
     @objc private func aspectTapped()    { onCycleAspect?() }

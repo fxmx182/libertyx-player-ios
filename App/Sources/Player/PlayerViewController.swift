@@ -44,6 +44,9 @@ final class PlayerViewController: UIViewController {
 
     private var renderView: UIView!
     private let hud = GestureHUDView()
+    /// Os avisos na borda — toque duplo e segurar —, um de cada lado.
+    private let haloEsq = EdgeHaloView(frente: false)
+    private let haloDir = EdgeHaloView(frente: true)
     private let controls = PlayerControlsView()
     private let subtitleLabel = UILabel()
 
@@ -151,6 +154,8 @@ final class PlayerViewController: UIViewController {
         hud.translatesAutoresizingMaskIntoConstraints = false
         hud.isUserInteractionEnabled = false
         view.addSubview(hud)
+        view.addSubview(haloEsq)
+        view.addSubview(haloDir)
 
         setupSubtitleLabel()
         systemVolume.attach(to: view)
@@ -177,6 +182,11 @@ final class PlayerViewController: UIViewController {
             // imagem — é onde o próprio iOS mostra o volume. O centro é onde
             // está a cena que se quer ver enquanto se ajusta.
             hud.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 60),
+
+            haloEsq.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            haloEsq.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 12),
+            haloDir.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            haloDir.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -12),
         ])
 
         controls.title = item.title
@@ -207,7 +217,7 @@ final class PlayerViewController: UIViewController {
         controls.onRotate = { [weak self] in self?.toggleOrientation() }
         controls.onShowSpeed = { [weak self] in self?.showSpeedSheet() }
         controls.onCycleAspect = { [weak self] in self?.cycleAspect() }
-        controls.moreMenuProvider = { [weak self] in self?.buildToolsMenu() ?? [] }
+        controls.onShowTools = { [weak self] in self?.showToolsPanel() }
 
 
         // Enquanto o vídeo toca, ninguém disputa disco e CPU com ele. A
@@ -647,7 +657,11 @@ final class PlayerViewController: UIViewController {
     }
 
     /// Com a tela bloqueada, todo gesto é ignorado — é para isso que serve.
-    private var gesturesEnabled: Bool { !controls.isLocked }
+    /// Com o painel aberto os gestos de fundo ficam parados: eles moram na
+    /// tela inteira, por baixo dele, e um toque longo num anel aceleraria o
+    /// filme atrás.
+    private var gesturesEnabled: Bool { !controls.isLocked && !painelAberto }
+    private var painelAberto = false
 
     /// Faz os botões físicos de volume mostrarem o nosso indicador.
     ///
@@ -716,9 +730,71 @@ final class PlayerViewController: UIViewController {
 
     private func jump(by delta: Double) {
         let target = max(0, min(engine.currentTime + delta, engine.duration))
-        hud.show(.seek(delta: delta, target: target, duration: engine.duration))
+        mostrarSalto(delta)
         Task { await engine.seek(to: target, precise: false) }
-        hud.hideAfterDelay()
+    }
+
+    // MARK: - Avisos da borda
+
+    /// Quanto os toques seguidos já somaram, e quando foi o último.
+    private var saltoSomado: Double = 0
+    private var saltoEm: CFTimeInterval = 0
+    private var esconderSaltoWork: DispatchWorkItem?
+
+    /// O aviso do toque duplo, do lado em que o dedo tocou.
+    ///
+    /// Toques seguidos somam: três toques mostram "+30 s", e não o mesmo
+    /// "+10 s" piscando três vezes — que não dizia quanto já se tinha andado.
+    private func mostrarSalto(_ delta: Double) {
+        let agora = CACurrentMediaTime()
+        let continua = saltoSomado != 0 && (saltoSomado > 0) == (delta > 0) && agora - saltoEm < 0.9
+        saltoSomado = continua ? saltoSomado + delta : delta
+        saltoEm = agora
+
+        let frente = saltoSomado > 0
+        let halo = frente ? haloDir : haloEsq
+        (frente ? haloEsq : haloDir).alpha = 0
+        halo.texto.attributedText = nil
+        halo.texto.text = "\(frente ? "+" : "−")\(Int(abs(saltoSomado))) s"
+        halo.aparecer()
+
+        esconderSaltoWork?.cancel()
+        let trabalho = DispatchWorkItem { [weak self] in
+            self?.saltoSomado = 0
+            self?.haloEsq.sumir()
+            self?.haloDir.sumir()
+        }
+        esconderSaltoWork = trabalho
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.75, execute: trabalho)
+    }
+
+    /// O aviso de segurar, no meio da borda do lado em que se anda: a
+    /// velocidade em dourado e, voltando, o ponto em que se está — que é o que
+    /// se procura quando se volta.
+    private func mostrarAceleracao(frente: Bool) {
+        esconderSaltoWork?.cancel()
+        saltoSomado = 0
+        (frente ? haloEsq : haloDir).alpha = 0
+        let halo = frente ? haloDir : haloEsq
+        halo.texto.attributedText = textoDaAceleracao(frente: frente)
+        halo.aparecer()
+    }
+
+    private func textoDaAceleracao(frente: Bool) -> NSAttributedString {
+        let velocidade = PlayerPreferences.holdSpeed
+        let rotulo = velocidade == rintf(velocidade) ? "\(Int(velocidade))×"
+                                                     : String(format: "%.1f×", velocidade)
+        let texto = NSMutableAttributedString(
+            string: rotulo,
+            attributes: [.foregroundColor: LabTheme.accentUI,
+                         .font: UIFont.systemFont(ofSize: 19, weight: .bold)])
+        if !frente {
+            texto.append(NSAttributedString(
+                string: "\n" + TimeFormat.clock(alvoDaVolta),
+                attributes: [.foregroundColor: UIColor.white,
+                             .font: UIFont.monospacedDigitSystemFont(ofSize: 14, weight: .semibold)]))
+        }
+        return texto
     }
 
     @objc private func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
@@ -728,10 +804,16 @@ final class PlayerViewController: UIViewController {
             // Um arrasto já em andamento tem prioridade: o dedo está mirando
             // um tempo, não pedindo pressa.
             guard engine.state == .playing, panAxis == .undecided else { return }
-            rateBeforeHold = engine.rate
-            engine.rate = PlayerPreferences.holdSpeed
             aceleracaoAtiva = true
-            hud.show(.rate(PlayerPreferences.holdSpeed))
+            // No terço esquerdo volta, no resto avança — o mesmo lado que, no
+            // toque duplo, volta dez segundos.
+            if gesture.location(in: view).x < view.bounds.width / 3 {
+                comecarVolta()
+            } else {
+                rateBeforeHold = engine.rate
+                engine.rate = PlayerPreferences.holdSpeed
+                mostrarAceleracao(frente: true)
+            }
         case .ended, .cancelled, .failed:
             desfazerAceleracao()
         default:
@@ -746,8 +828,55 @@ final class PlayerViewController: UIViewController {
     private func desfazerAceleracao() {
         guard aceleracaoAtiva else { return }
         aceleracaoAtiva = false
-        engine.rate = rateBeforeHold
-        hud.hideAfterDelay()
+        if let relogio = relogioDaVolta {
+            relogio.invalidate()
+            relogioDaVolta = nil
+            engine.endScrub()
+            controls.suppressBuffering = false
+            engine.play()
+        } else {
+            engine.rate = rateBeforeHold
+        }
+        haloEsq.sumir()
+        haloDir.sumir()
+    }
+
+    // MARK: - Voltar acelerado
+
+    /// Voltar acelerado não existe no VLC — ele não toca de trás para frente.
+    ///
+    /// O que se faz é o que os players de mesa fazem: o vídeo pausa e o ponto
+    /// anda para trás na velocidade escolhida, com a mesma busca da rolagem por
+    /// arrasto. A cada passo a imagem mostra onde se está; ao soltar, o vídeo
+    /// volta a tocar dali.
+    private var relogioDaVolta: Timer?
+    private var alvoDaVolta: Double = 0
+    private var ultimoPassoDaVolta: CFTimeInterval = 0
+
+    private func comecarVolta() {
+        engine.pause()
+        engine.beginScrub()
+        controls.suppressBuffering = true
+        alvoDaVolta = engine.currentTime
+        ultimoPassoDaVolta = CACurrentMediaTime()
+        mostrarAceleracao(frente: false)
+
+        relogioDaVolta = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] relogio in
+            Task { @MainActor in
+                guard let self else { relogio.invalidate(); return }
+                // Pelo relógio, e não por um passo fixo: um quadro atrasado não
+                // pode deixar a volta mais lenta que a velocidade prometida.
+                let agora = CACurrentMediaTime()
+                let decorrido = agora - self.ultimoPassoDaVolta
+                self.ultimoPassoDaVolta = agora
+                self.alvoDaVolta = max(0, self.alvoDaVolta - Double(PlayerPreferences.holdSpeed) * decorrido)
+                self.engine.scrub(to: self.alvoDaVolta)
+                self.controls.update(currentTime: self.alvoDaVolta, duration: self.engine.duration)
+                self.haloEsq.texto.attributedText = self.textoDaAceleracao(frente: false)
+                // No começo do vídeo, para: continuar segurando não faz nada.
+                if self.alvoDaVolta <= 0 { relogio.invalidate() }
+            }
+        }
     }
 
     /// Pinça amplia e reduz a imagem, como em qualquer foto no iPhone.
@@ -912,6 +1041,95 @@ final class PlayerViewController: UIViewController {
         presentSheet(sheet)
     }
 
+    /// Quanto acelera enquanto o dedo fica na tela.
+    private func showHoldSpeedSheet() {
+        let atual = PlayerPreferences.holdSpeed
+        let sheet = UIAlertController(title: "Acelerar ao segurar", message: nil, preferredStyle: .actionSheet)
+        for valor in PlayerPreferences.holdSpeedOptions {
+            let marca = valor == atual ? "✓ " : ""
+            sheet.addAction(UIAlertAction(title: marca + String(format: "%g×", valor), style: .default) { _ in
+                PlayerPreferences.holdSpeed = valor
+            })
+        }
+        sheet.addAction(UIAlertAction(title: "Fechar", style: .cancel))
+        presentSheet(sheet)
+    }
+
+    /// O painel de ferramentas, em grade, na ordem de uso.
+    ///
+    /// O que se procura no meio do filme — faixa, legenda, proporção,
+    /// velocidade — vem primeiro, onde o polegar já está. "Bloquear" não entra:
+    /// o cadeado é botão fixo da barra de baixo, e a mesma ação em dois lugares
+    /// faz parar para escolher entre coisas iguais.
+    private func showToolsPanel() {
+        controlsHideWorkItem?.cancel()
+
+        func velocidade(_ valor: Float) -> String {
+            valor == rintf(valor) ? "\(Int(valor))×"
+                                  : String(format: "%.1f×", valor).replacingOccurrences(of: ".", with: ",")
+        }
+        let deitado = view.window?.windowScene?.interfaceOrientation.isLandscape ?? false
+
+        var itens: [ToolsPanelView.Ferramenta] = [
+            .init(rotulo: "Faixa de áudio", simbolo: "music.note") { [weak self] in self?.showTracks(.audio) },
+            .init(rotulo: "Legenda", simbolo: "captions.bubble") { [weak self] in self?.showTracks(.subtitle) },
+            .init(rotulo: "Proporção", simbolo: "aspectratio") { [weak self] in self?.cycleAspect() },
+            .init(rotulo: "Velocidade", simbolo: "speedometer", aceso: playbackSpeed != 1,
+                  noAnel: velocidade(playbackSpeed)) { [weak self] in self?.showSpeedSheet() },
+            .init(rotulo: "Acelerar ao segurar", simbolo: "hand.tap",
+                  noAnel: velocidade(PlayerPreferences.holdSpeed)) { [weak self] in self?.showHoldSpeedSheet() },
+            .init(rotulo: "Repetir", simbolo: "repeat.1", aceso: repeatMode == .one) { [weak self] in
+                guard let self else { return }
+                self.repeatMode = self.repeatMode == .one ? .off : .one
+                self.controls.setRepeating(self.repeatMode == .one)
+            },
+        ]
+        if playlist.count > 1 {
+            itens.append(.init(rotulo: "Aleatório", simbolo: "shuffle", aceso: isShuffling) { [weak self] in
+                self?.isShuffling.toggle()
+            })
+        }
+        itens += [
+            .init(rotulo: "Mudo", simbolo: engine.isMuted ? "speaker.slash.fill" : "speaker.wave.2",
+                  aceso: engine.isMuted) { [weak self] in self?.engine.isMuted.toggle() },
+            .init(rotulo: "Modo noturno", simbolo: "moon.stars", aceso: dimView.alpha > 0.01) { [weak self] in
+                self?.cycleNightMode()
+            },
+            .init(rotulo: "Captura de tela", simbolo: "camera") { [weak self] in self?.takeSnapshot() },
+            .init(rotulo: "Girar", simbolo: "rotate.right", valor: deitado ? "deitado" : "em pé") { [weak self] in
+                self?.toggleOrientation()
+            },
+            .init(rotulo: "Ampliação normal", simbolo: "arrow.up.left.and.arrow.down.right") { [weak self] in
+                self?.resetZoom()
+            },
+            .init(rotulo: "Tempo para dormir", simbolo: "timer", aceso: sleepTimer != nil) { [weak self] in
+                self?.showSleepSheet()
+            },
+            .init(rotulo: "Ocultar barra", simbolo: "clock.arrow.circlepath",
+                  valor: PlayerPreferences.autoHide.title) { [weak self] in self?.showAutoHideSheet() },
+        ]
+
+        let painel = ToolsPanelView(ferramentas: itens)
+        // Os controles saem enquanto o painel está aberto: com ele transparente,
+        // a barra de baixo apareceria atrás da última fileira e os nomes se
+        // embolariam com o relógio e o play.
+        controls.setVisible(false, animated: true)
+        painelAberto = true
+        painel.onClose = { [weak self] in
+            self?.painelAberto = false
+            self?.controls.setVisible(true, animated: true)
+            self?.scheduleControlsHide()
+        }
+        view.addSubview(painel)
+        NSLayoutConstraint.activate([
+            painel.topAnchor.constraint(equalTo: view.topAnchor),
+            painel.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            painel.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            painel.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        ])
+        painel.aparecer()
+    }
+
     private func showSleepSheet() {
         let sheet = UIAlertController(title: sleepTimerTitle(), message: nil, preferredStyle: .actionSheet)
         sheet.addAction(UIAlertAction(title: sleepTimer == nil ? "✓ Desligado" : "Desligado",
@@ -932,34 +1150,6 @@ final class PlayerViewController: UIViewController {
         presentSheet(sheet)
     }
 
-    /// Abre a janela flutuante, ou explica por que este vídeo não a tem.
-    ///
-    /// A janela do iOS é montada pelo sistema sobre a camada do AVPlayer. Nos
-    /// arquivos que o AVFoundation recusa — HEVC marcado como `hev1`, MKV,
-    /// tudo o que vem do servidor — quem toca é o VLC, que desenha por conta
-    /// própria numa superfície que o sistema não sabe transportar para a
-    /// janelinha. Não é opção nossa desligada: é uma porta que só a Apple abre.
-    /// Quanto acelera enquanto o dedo fica na tela.
-    private func holdSpeedActions() -> [UIAction] {
-        let atual = PlayerPreferences.holdSpeed
-        return PlayerPreferences.holdSpeedOptions.map { valor in
-            UIAction(title: String(format: "%g×", valor),
-                     state: valor == atual ? .on : .off) { _ in
-                PlayerPreferences.holdSpeed = valor
-            }
-        }
-    }
-
-    private func autoHideActions() -> [UIAction] {
-        let atual = PlayerPreferences.autoHide
-        return PlayerPreferences.AutoHide.allCases.map { opcao in
-            UIAction(title: opcao.title, state: opcao == atual ? .on : .off) { [weak self] _ in
-                PlayerPreferences.autoHide = opcao
-                self?.scheduleControlsHide()
-            }
-        }
-    }
-
     /// Quanto tempo a barra fica na tela — o "Interface auto hide" do MX Player.
     private func showAutoHideSheet() {
         let atual = PlayerPreferences.autoHide
@@ -978,101 +1168,10 @@ final class PlayerViewController: UIViewController {
         presentSheet(sheet)
     }
 
-    private func buildToolsMenu() -> [UIMenuElement] {
-        var itens: [UIMenuElement] = []
-
-        itens.append(UIAction(title: engine.isMuted ? "Desativar mudo" : "Mudo",
-                              image: UIImage(systemName: engine.isMuted ? "speaker.slash.fill" : "speaker.wave.2"),
-                              state: engine.isMuted ? .on : .off) { [weak self] _ in
-            self?.engine.isMuted.toggle()
-        })
-
-        itens.append(UIAction(title: "Repetir este vídeo",
-                              image: UIImage(systemName: "repeat.1"),
-                              state: repeatMode == .one ? .on : .off) { [weak self] _ in
-            guard let self else { return }
-            self.repeatMode = self.repeatMode == .one ? .off : .one
-        })
-
-        if playlist.count > 1 {
-            itens.append(UIAction(title: "Aleatório",
-                                  image: UIImage(systemName: "shuffle"),
-                                  state: isShuffling ? .on : .off) { [weak self] _ in
-                self?.isShuffling.toggle()
-            })
-        }
-
-        itens.append(UIAction(title: "Captura de tela",
-                              image: UIImage(systemName: "camera")) { [weak self] _ in
-            self?.takeSnapshot()
-        })
-
-        itens.append(UIAction(title: "Velocidade",
-                              image: UIImage(systemName: "speedometer")) { [weak self] _ in
-            self?.showSpeedSheet()
-        })
-
-        itens.append(UIAction(title: "Ampliação normal",
-                              image: UIImage(systemName: "arrow.up.left.and.arrow.down.right")) { [weak self] _ in
-            self?.resetZoom()
-        })
-
-        itens.append(UIAction(title: "Girar tela",
-                              image: UIImage(systemName: "rotate.right")) { [weak self] _ in
-            self?.toggleOrientation()
-        })
-
-        itens.append(UIAction(title: "Bloquear tela",
-                              image: UIImage(systemName: "lock")) { [weak self] _ in
-            self?.controls.toggleLock()
-        })
-
-        itens.append(UIMenu(title: "Modo noturno", image: UIImage(systemName: "moon.stars"),
-                            children: nightModeActions()))
-        itens.append(UIMenu(title: sleepTimerTitle(), image: UIImage(systemName: "timer"),
-                            children: sleepTimerActions()))
-        itens.append(UIMenu(title: "Segurar para acelerar",
-                            image: UIImage(systemName: "hand.tap"),
-                            children: holdSpeedActions()))
-        itens.append(UIMenu(title: "Ocultar barra", image: UIImage(systemName: "clock.arrow.circlepath"),
-                            children: autoHideActions()))
-
-        return itens
-    }
-
-    private func nightModeActions() -> [UIAction] {
-        // O iOS já tem brilho mínimo; escurecer por cima vai além dele, que é
-        // o que serve para assistir no escuro sem incomodar os olhos.
-        let niveis: [(String, CGFloat)] = [("Desligado", 0), ("Leve", 0.25),
-                                           ("Médio", 0.45), ("Forte", 0.65)]
-        return niveis.map { nome, valor in
-            UIAction(title: nome, state: abs(dimView.alpha - valor) < 0.01 ? .on : .off) { [weak self] _ in
-                UIView.animate(withDuration: 0.2) { self?.dimView.alpha = valor }
-            }
-        }
-    }
-
     private func sleepTimerTitle() -> String {
         guard let sleepDeadline else { return "Tempo para dormir" }
         let restante = max(0, sleepDeadline.timeIntervalSinceNow)
         return "Dormir em \(Int(restante / 60) + 1) min"
-    }
-
-    private func sleepTimerActions() -> [UIAction] {
-        var acoes = [UIAction(title: "Desligado", state: sleepTimer == nil ? .on : .off) { [weak self] _ in
-            self?.cancelSleepTimer()
-        }]
-        for minutos in [15, 30, 45, 60] {
-            acoes.append(UIAction(title: "\(minutos) minutos") { [weak self] _ in
-                self?.startSleepTimer(minutes: minutos)
-            })
-        }
-        acoes.append(UIAction(title: "No fim do vídeo") { [weak self] _ in
-            guard let self else { return }
-            let restante = max(1, self.engine.duration - self.engine.currentTime)
-            self.startSleepTimer(minutes: nil, seconds: restante)
-        })
-        return acoes
     }
 
     private func startSleepTimer(minutes: Int?, seconds: Double? = nil) {
