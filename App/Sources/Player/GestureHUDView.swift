@@ -26,6 +26,9 @@ final class GestureHUDView: UIView {
     private let secondary = UILabel()
     private let bar = UIProgressView(progressViewStyle: .default)
     private let stack = UIStackView()
+    /// Valor em cima, o que ele é embaixo. Antes eram duas linhas iguais lado
+    /// a lado, e o olho não sabia qual ler primeiro.
+    private let textos = UIStackView()
 
     private var hideWork: DispatchWorkItem?
 
@@ -55,7 +58,7 @@ final class GestureHUDView: UIView {
         icon.contentMode = .scaleAspectFit
         icon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 14, weight: .semibold)
 
-        primary.font = .monospacedDigitSystemFont(ofSize: 15, weight: .semibold)
+        primary.font = LabFont.ui(15, .semibold, mono: true)
         primary.textColor = .white
         primary.textAlignment = .center
         [primary, secondary, icon].forEach { view in
@@ -65,7 +68,7 @@ final class GestureHUDView: UIView {
             view.layer.shadowOffset = .zero
         }
 
-        secondary.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+        secondary.font = LabFont.ui(12, .semibold, mono: true)
         secondary.textColor = UIColor.white.withAlphaComponent(0.65)
         secondary.textAlignment = .center
 
@@ -76,7 +79,11 @@ final class GestureHUDView: UIView {
         stack.alignment = .center
         stack.spacing = 8
         stack.translatesAutoresizingMaskIntoConstraints = false
-        [icon, primary, secondary, bar].forEach { stack.addArrangedSubview($0) }
+        textos.axis = .vertical
+        textos.alignment = .center
+        textos.spacing = 1
+        [primary, secondary].forEach { textos.addArrangedSubview($0) }
+        [icon, textos, bar].forEach { stack.addArrangedSubview($0) }
         addSubview(stack)
 
         NSLayoutConstraint.activate([
@@ -118,10 +125,12 @@ final class GestureHUDView: UIView {
             icon.isHidden = true
             let sign = delta >= 0 ? "+" : "−"
             primary.text = TimeFormat.clock(target)
+            // O salto em dourado: é ele que diz "para frente" ou "para trás".
             secondary.isHidden = false
-            secondary.text = "\(sign)\(TimeFormat.clock(abs(delta)))  ·  \(TimeFormat.clock(duration))"
-            bar.isHidden = false
-            bar.progress = duration > 0 ? Float(target / duration) : 0
+            secondary.text = "\(sign)\(TimeFormat.clock(abs(delta)))"
+            secondary.textColor = LabTheme.accentUI
+            bar.isHidden = true
+            _ = duration
 
         case .rate(let value):
             icon.image = UIImage(systemName: "forward.fill")
@@ -145,18 +154,19 @@ final class GestureHUDView: UIView {
 
         // Sem caixa nem barra, o número é a única referência na tela — e
         // precisa ser lido de relance, com o dedo em movimento.
-        if case .time = content {
-            primary.font = .monospacedDigitSystemFont(ofSize: 24, weight: .bold)
-        } else {
-            primary.font = .monospacedDigitSystemFont(ofSize: 15, weight: .semibold)
+        switch content {
+        case .time, .seek:
+            primary.font = LabFont.ui(24, .bold, mono: true)
+        default:
+            primary.font = LabFont.ui(15, .semibold, mono: true)
+            secondary.textColor = UIColor.white.withAlphaComponent(0.65)
         }
 
         // O fundo some no modo tempo: a sombra do texto basta para ele ficar
         // legível, e nada cobre a cena que se está procurando.
-        if case .time = content {
-            fundo.alpha = 0
-        } else {
-            fundo.alpha = 1
+        switch content {
+        case .time, .seek: fundo.alpha = 0
+        default:           fundo.alpha = 1
         }
 
         guard alpha < 1 else { return }
@@ -174,6 +184,16 @@ final class GestureHUDView: UIView {
 }
 
 enum TimeFormat {
+    /// "1 h 12 min", "8 min", "40 s" — para ler, não para cronometrar. É como
+    /// se diz quanto falta de um filme.
+    static func spoken(_ segundos: Double) -> String {
+        let total = Int(segundos.rounded())
+        let h = total / 3600, m = (total % 3600) / 60
+        if h > 0 { return m > 0 ? "\(h) h \(m) min" : "\(h) h" }
+        if m > 0 { return "\(m) min" }
+        return "\(max(total, 1)) s"
+    }
+
     /// h:mm:ss quando passa de uma hora, mm:ss quando não passa.
     static func clock(_ seconds: Double) -> String {
         guard seconds.isFinite, seconds >= 0 else { return "--:--" }

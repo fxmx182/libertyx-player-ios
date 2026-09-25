@@ -31,7 +31,7 @@ final class EdgeHaloView: UIView {
         icone.tintColor = .white
         icone.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 28, weight: .semibold)
 
-        texto.font = .systemFont(ofSize: 19, weight: .bold)
+        texto.font = LabFont.ui(19, .bold, mono: true)
         texto.textColor = .white
         texto.textAlignment = .center
         texto.numberOfLines = 2

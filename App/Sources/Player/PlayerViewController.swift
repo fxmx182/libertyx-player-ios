@@ -768,33 +768,23 @@ final class PlayerViewController: UIViewController {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.75, execute: trabalho)
     }
 
-    /// O aviso de segurar, no meio da borda do lado em que se anda: a
-    /// velocidade em dourado e, voltando, o ponto em que se está — que é o que
-    /// se procura quando se volta.
-    private func mostrarAceleracao(frente: Bool) {
+    /// O aviso de segurar, no meio da borda direita: a velocidade em dourado.
+    private func mostrarAceleracao() {
         esconderSaltoWork?.cancel()
         saltoSomado = 0
-        (frente ? haloEsq : haloDir).alpha = 0
-        let halo = frente ? haloDir : haloEsq
-        halo.texto.attributedText = textoDaAceleracao(frente: frente)
-        halo.aparecer()
+        haloEsq.alpha = 0
+        haloDir.texto.attributedText = textoDaAceleracao()
+        haloDir.aparecer()
     }
 
-    private func textoDaAceleracao(frente: Bool) -> NSAttributedString {
+    private func textoDaAceleracao() -> NSAttributedString {
         let velocidade = PlayerPreferences.holdSpeed
         let rotulo = velocidade == rintf(velocidade) ? "\(Int(velocidade))×"
                                                      : String(format: "%.1f×", velocidade)
-        let texto = NSMutableAttributedString(
+        return NSAttributedString(
             string: rotulo,
             attributes: [.foregroundColor: LabTheme.accentUI,
-                         .font: UIFont.systemFont(ofSize: 19, weight: .bold)])
-        if !frente {
-            texto.append(NSAttributedString(
-                string: "\n" + TimeFormat.clock(alvoDaVolta),
-                attributes: [.foregroundColor: UIColor.white,
-                             .font: UIFont.monospacedDigitSystemFont(ofSize: 14, weight: .semibold)]))
-        }
-        return texto
+                         .font: LabFont.ui(19, .bold)])
     }
 
     @objc private func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
@@ -805,15 +795,14 @@ final class PlayerViewController: UIViewController {
             // um tempo, não pedindo pressa.
             guard engine.state == .playing, panAxis == .undecided else { return }
             aceleracaoAtiva = true
-            // No terço esquerdo volta, no resto avança — o mesmo lado que, no
-            // toque duplo, volta dez segundos.
-            if gesture.location(in: view).x < view.bounds.width / 3 {
-                comecarVolta()
-            } else {
-                rateBeforeHold = engine.rate
-                engine.rate = PlayerPreferences.holdSpeed
-                mostrarAceleracao(frente: true)
-            }
+            // Só para frente, em qualquer ponto da tela. Já houve voltar
+            // acelerado segurando o terço esquerdo; saiu. O VLC não toca de
+            // trás para frente, então era pausa e busca em passos — a imagem
+            // andava aos trancos, e o lado esquerdo virava armadilha para quem
+            // só queria acelerar. Para voltar, o toque duplo e o arrasto servem.
+            rateBeforeHold = engine.rate
+            engine.rate = PlayerPreferences.holdSpeed
+            mostrarAceleracao()
         case .ended, .cancelled, .failed:
             desfazerAceleracao()
         default:
@@ -828,55 +817,9 @@ final class PlayerViewController: UIViewController {
     private func desfazerAceleracao() {
         guard aceleracaoAtiva else { return }
         aceleracaoAtiva = false
-        if let relogio = relogioDaVolta {
-            relogio.invalidate()
-            relogioDaVolta = nil
-            engine.endScrub()
-            controls.suppressBuffering = false
-            engine.play()
-        } else {
-            engine.rate = rateBeforeHold
-        }
+        engine.rate = rateBeforeHold
         haloEsq.sumir()
         haloDir.sumir()
-    }
-
-    // MARK: - Voltar acelerado
-
-    /// Voltar acelerado não existe no VLC — ele não toca de trás para frente.
-    ///
-    /// O que se faz é o que os players de mesa fazem: o vídeo pausa e o ponto
-    /// anda para trás na velocidade escolhida, com a mesma busca da rolagem por
-    /// arrasto. A cada passo a imagem mostra onde se está; ao soltar, o vídeo
-    /// volta a tocar dali.
-    private var relogioDaVolta: Timer?
-    private var alvoDaVolta: Double = 0
-    private var ultimoPassoDaVolta: CFTimeInterval = 0
-
-    private func comecarVolta() {
-        engine.pause()
-        engine.beginScrub()
-        controls.suppressBuffering = true
-        alvoDaVolta = engine.currentTime
-        ultimoPassoDaVolta = CACurrentMediaTime()
-        mostrarAceleracao(frente: false)
-
-        relogioDaVolta = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] relogio in
-            Task { @MainActor in
-                guard let self else { relogio.invalidate(); return }
-                // Pelo relógio, e não por um passo fixo: um quadro atrasado não
-                // pode deixar a volta mais lenta que a velocidade prometida.
-                let agora = CACurrentMediaTime()
-                let decorrido = agora - self.ultimoPassoDaVolta
-                self.ultimoPassoDaVolta = agora
-                self.alvoDaVolta = max(0, self.alvoDaVolta - Double(PlayerPreferences.holdSpeed) * decorrido)
-                self.engine.scrub(to: self.alvoDaVolta)
-                self.controls.update(currentTime: self.alvoDaVolta, duration: self.engine.duration)
-                self.haloEsq.texto.attributedText = self.textoDaAceleracao(frente: false)
-                // No começo do vídeo, para: continuar segurando não faz nada.
-                if self.alvoDaVolta <= 0 { relogio.invalidate() }
-            }
-        }
     }
 
     /// Pinça amplia e reduz a imagem, como em qualquer foto no iPhone.
@@ -1354,7 +1297,8 @@ final class PlayerViewController: UIViewController {
                                    engine.duration))
 
         // Só o tempo, sem caixa em volta: informa o destino sem tapar a cena.
-        hud.show(.time(panSeekTarget))
+        hud.show(.seek(delta: panSeekTarget - panStartTime, target: panSeekTarget,
+                       duration: engine.duration))
         controls.update(currentTime: panSeekTarget, duration: engine.duration)
         requestScrubSeek(to: panSeekTarget)
     }

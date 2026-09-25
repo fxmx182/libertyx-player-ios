@@ -21,17 +21,18 @@ struct LibraryView: View {
     @State private var showingInfo: MediaItem?
     @State private var errorMessage: String?
     @State private var pendingDeletion: MediaItem?
+    /// Conta as voltas do player. A marca de onde parou muda enquanto o filme
+    /// toca; sem reler ao voltar, "continuar" mostraria o ponto de antes.
+    @State private var volta = 0
 
     var body: some View {
         NavigationStack {
-            Group {
-                if library.groups.isEmpty {
-                    vazio
-                } else {
-                    lista
+            raiz
+                .navigationDestination(for: VideoGroup.self) { grupo in
+                    PastaView(grupo: grupo, volta: volta,
+                              onTocar: tocar, menu: menuDoItem)
                 }
-            }
-            .navigationTitle("LibertyX")
+                .toolbar(.hidden, for: .navigationBar)
             // Apagar arquivo não tem desfazer no iOS — a confirmação é a
             // única chance de voltar atrás.
             .alert("Excluir vídeo?", isPresented: Binding(
@@ -43,53 +44,6 @@ struct LibraryView: View {
             } message: { item in
                 Text("“\(item.title)” será apagado do aparelho. Não dá para desfazer.")
             }
-            .toolbar {
-                // SMB à esquerda, separado das ações locais: são dois mundos
-                // diferentes, e misturá-los num menu só esconderia a rede.
-                ToolbarItem(placement: .topBarLeading) {
-                    NavigationLink {
-                        SMBServersView()
-                    } label: {
-                        Image(systemName: "server.rack")
-                    }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { showingOptions = true } label: {
-                        Image(systemName: "slider.horizontal.3")
-                    }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Button {
-                            managingFolders = true
-                        } label: {
-                            // Uma entrada só para pasta.
-                            //
-                            // Havia duas — "Adicionar pasta" abria o seletor
-                            // direto, e "Adicionar ou remover" abria a tela que
-                            // faz as duas coisas, seletor incluído. A primeira
-                            // era um atalho para dentro da segunda, e menu com
-                            // dois caminhos para o mesmo lugar faz o usuário
-                            // parar para escolher entre coisas iguais.
-                            Label("Pastas…", systemImage: "folder.badge.gearshape")
-                        }
-                        Button {
-                            showingFilePicker = true
-                        } label: {
-                            Label("Abrir arquivo…", systemImage: "doc.badge.plus")
-                        }
-                        Divider()
-                        Button {
-                            Task { await library.refresh(bookmarks: bookmarks) }
-                        } label: {
-                            Label("Varrer de novo", systemImage: "arrow.clockwise")
-                        }
-                    } label: {
-                        Image(systemName: "plus")
-                    }
-                }
-            }
-            .refreshable { await library.refresh(bookmarks: bookmarks) }
             .task { await library.refresh(bookmarks: bookmarks) }
             .sheet(isPresented: $showingFolderPicker) {
                 DocumentPicker(mode: .folder) { urls in
@@ -125,7 +79,7 @@ struct LibraryView: View {
             .sheet(item: $showingInfo) { item in
                 MediaInfoView(item: item)
             }
-            .fullScreenCover(item: $playing) { item in
+            .fullScreenCover(item: $playing, onDismiss: { volta += 1 }) { item in
                 PlayerScreen(item: item, playlist: playlist).ignoresSafeArea()
             }
             .alert("Ops", isPresented: Binding(
@@ -139,122 +93,140 @@ struct LibraryView: View {
         }
     }
 
-    // MARK: - Conteúdo
+    // MARK: - A estante
 
-    private var lista: some View {
-        Group {
-            if options.layout == .grid { grade } else { linhas }
-        }
-        // Cada pasta chega fechada, mostrando nome e contagem — quem tem muitos
-        // vídeos abria o app numa lista que rolava sem fim. A exceção é pasta
-        // única, que abre sozinha.
-        .onChange(of: library.groups.map(\.path), initial: true) {
-            options.abrirSePastaUnica(library.groups)
-        }
-        .overlay(alignment: .bottom) {
-            if library.isScanning {
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text("Procurando vídeos…").font(.caption)
-                }
-                .padding(.horizontal, 14).padding(.vertical, 8)
-                .background(.regularMaterial, in: Capsule())
-                .padding(.bottom, 12)
-            }
-        }
+    /// O que se estava vendo por último, para o fundo e para a faixa de cima.
+    ///
+    /// Casado pela chave de retomada, e não pelo identificador: cada varredura
+    /// cria itens novos, e a marca de onde parou precisa sobreviver a ela.
+    private var continuar: [MediaItem] {
+        _ = volta
+        let porChave = Dictionary(library.groups.flatMap(\.items).map { ($0.origin.resumeKey, $0) },
+                                  uniquingKeysWith: { a, _ in a })
+        return ResumeStore.shared.recent().compactMap { porChave[$0] }.prefix(12).map { $0 }
     }
 
-    /// Lista compacta: mais itens por tela, bom para pastas com muitos vídeos.
-    private var linhas: some View {
-        List {
-            ForEach(library.groups) { grupo in
-                Section {
-                    if options.estaAberta(grupo.path) {
-                        ForEach(options.sorted(grupo.items)) { item in
-                            Button {
-                                abrir(item, em: grupo)
-                            } label: {
-                                VideoRow(item: item)
-                            }
-                            .buttonStyle(.plain)
-                            .contextMenu { menuDoItem(item) }
-                        }
-                    }
-                } header: {
-                    cabecalho(grupo)
-                }
-            }
-        }
-        .listStyle(.insetGrouped)
-    }
+    /// Navega como uma estante, e não como uma árvore: a primeira tela mostra o
+    /// que você estava vendo e as pastas como capas; tocar numa pasta entra
+    /// nela. A versão anterior abria e fechava as pastas ali mesmo, numa lista
+    /// só — com três pastas é prático, com trinta vira uma parede de títulos em
+    /// caixa alta onde nada se destaca.
+    @ViewBuilder
+    private var raiz: some View {
+        let pastaUnica = library.groups.count == 1 ? library.groups.first : nil
+        let continuando = continuar
 
-    /// Grade: a miniatura vira o elemento principal, com a duração sobre ela —
-    /// é como se reconhece um vídeo gravado, cujo nome é só data e hora.
-    private var grade: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 20, pinnedViews: [.sectionHeaders]) {
-                ForEach(library.groups) { grupo in
-                    Section {
-                        if options.estaAberta(grupo.path) {
-                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)],
-                                      spacing: 14) {
-                                ForEach(options.sorted(grupo.items)) { item in
-                                    Button {
-                                        abrir(item, em: grupo)
-                                    } label: {
-                                        VideoCard(item: item)
-                                    }
-                                    .buttonStyle(.plain)
-                                    .contextMenu { menuDoItem(item) }
+        ZStack(alignment: .bottom) {
+            FundoDeCapa(capa: continuando.first ?? library.groups.first.flatMap(capaDa))
+
+            if library.groups.isEmpty {
+                if library.isScanning { Color.clear } else { vazio }
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        barraDoTopo
+                        if let pastaUnica {
+                            // Uma pasta só não vira estante de uma capa: os
+                            // vídeos dela já são a biblioteca, e entrar nela
+                            // seria um toque a mais para nada.
+                            TituloDeTela(titulo: "Biblioteca", subtitulo: resumoDa(pastaUnica))
+                            faixaDeContinuar(continuando)
+                            if !continuando.isEmpty { Secao(titulo: pastaUnica.name) }
+                            ListaDeVideos(itens: options.sorted(pastaUnica.items), layout: options.layout,
+                                          onTocar: tocar, menu: menuDoItem)
+                        } else {
+                            let total = library.groups.reduce(0) { $0 + $1.items.count }
+                            TituloDeTela(titulo: "Biblioteca",
+                                         subtitulo: "\(total) vídeos  ·  \(library.groups.count) pastas")
+                            faixaDeContinuar(continuando)
+                            Secao(titulo: "Pastas", extra: "\(library.groups.count)")
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 14)], spacing: 18) {
+                                ForEach(library.groups) { grupo in
+                                    NavigationLink(value: grupo) { CapaDePasta(grupo: grupo) }
+                                        .buttonStyle(.plain)
                                 }
                             }
-                            .padding(.horizontal, 16)
                         }
-                    } header: {
-                        cabecalho(grupo)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(LabTheme.background.opacity(0.92))
                     }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 72)
                 }
+                .refreshable { await library.refresh(bookmarks: bookmarks) }
             }
-            .padding(.vertical, 8)
+
+            if library.isScanning {
+                HStack(spacing: 10) {
+                    ProgressView().controlSize(.small).tint(LabTheme.accent)
+                    Text("Procurando vídeos…")
+                        .font(LabFont.swiftUI(12, .medium))
+                        .foregroundStyle(LabTheme.muted)
+                }
+                .padding(.horizontal, 16).padding(.vertical, 9)
+                .background(Color(white: 0.09).opacity(0.92), in: Capsule())
+                .overlay(Capsule().strokeBorder(LabTheme.glassBorder, lineWidth: 0.5))
+                .padding(.bottom, 18)
+            }
         }
     }
 
-    /// Cabeçalho de pasta, que também é o botão de abrir e fechar.
-    ///
-    /// O alvo é a linha inteira, e não uma setinha de canto: quem tem muitas
-    /// pastas passa o polegar por elas abrindo e fechando, e alvo pequeno ali
-    /// vira toque perdido.
-    private func cabecalho(_ grupo: VideoGroup) -> some View {
-        let aberta = options.estaAberta(grupo.path)
-        return Button {
-            withAnimation(.snappy(duration: 0.22)) { options.alternar(grupo.path) }
-        } label: {
-            HStack(spacing: 6) {
-                // A seta gira em vez de trocar de desenho: o movimento diz que
-                // a mesma coisa mudou de estado, e não que surgiu outro botão.
-                Image(systemName: "chevron.right")
-                    .font(.caption2.weight(.bold))
-                    .rotationEffect(.degrees(aberta ? 90 : 0))
-                    .foregroundStyle(aberta ? LabTheme.accent : LabTheme.faint)
-                Image(systemName: "folder.fill").font(.caption2)
-                Text(grupo.name)
-                Spacer()
-                // A contagem numa pastilha em vez de solta: vira informação, e
-                // não um número perdido na ponta da linha.
-                Text("\(grupo.items.count)")
-                    .font(.caption2.monospacedDigit().weight(.semibold))
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 2)
-                    .background(LabTheme.glass, in: Capsule())
-            }
-            .contentShape(Rectangle())
+    private var barraDoTopo: some View {
+        HStack(spacing: 10) {
+            MarcaDoApp()
+            Spacer()
+            NavigationLink { SMBServersView() } label: { BotaoRedondo(simbolo: "server.rack") }
+            Button { showingOptions = true } label: { BotaoRedondo(simbolo: "slider.horizontal.3") }
+            Menu {
+                // Uma entrada só para pasta: "Pastas…" leva à tela que conecta
+                // e desconecta. Dois caminhos para o mesmo lugar fazem parar
+                // para escolher entre coisas iguais.
+                Button { managingFolders = true } label: {
+                    Label("Pastas…", systemImage: "folder.badge.gearshape")
+                }
+                Button { showingFilePicker = true } label: {
+                    Label("Abrir arquivo…", systemImage: "doc.badge.plus")
+                }
+                Divider()
+                Button { Task { await library.refresh(bookmarks: bookmarks) } } label: {
+                    Label("Procurar de novo", systemImage: "arrow.clockwise")
+                }
+            } label: { BotaoRedondo(simbolo: "plus") }
         }
-        .buttonStyle(.plain)
-        .labSectionTitle()
+        .frame(height: 52)
+    }
+
+    @ViewBuilder
+    private func faixaDeContinuar(_ itens: [MediaItem]) -> some View {
+        if !itens.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                Secao(titulo: "Continuar assistindo")
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(spacing: 12) {
+                        ForEach(itens) { item in
+                            Button { tocar(item, itens) } label: { CartaoDeContinuar(item: item) }
+                                .buttonStyle(.plain)
+                                .contextMenu { menuDoItem(item) }
+                        }
+                    }
+                }
+                .scrollClipDisabled()
+            }
+        }
+    }
+
+    private func resumoDa(_ grupo: VideoGroup) -> String {
+        let n = grupo.items.count
+        let bytes = grupo.items.reduce(Int64(0)) { $0 + ($1.fileSize ?? 0) }
+        return [n == 1 ? "1 vídeo" : "\(n) vídeos", FolderScanner.humanSize(bytes)]
+            .compactMap { $0 }.joined(separator: "  ·  ")
+    }
+
+    // MARK: - Ações
+
+    /// A lista de reprodução segue a ordem exibida — "próxima" deve ir para o
+    /// que está à frente na tela, não para uma ordem interna invisível.
+    private func tocar(_ item: MediaItem, _ fila: [MediaItem]) {
+        playlist = fila
+        playing = item
     }
 
     @ViewBuilder
@@ -298,36 +270,143 @@ struct LibraryView: View {
         }
     }
 
-    /// A lista de reprodução segue a ordem exibida — "próxima" deve ir para o
-    /// que está à frente na tela, não para uma ordem interna invisível.
-    private func abrir(_ item: MediaItem, em grupo: VideoGroup) {
-        playlist = options.sorted(grupo.items)
-        playing = item
-    }
-
     private var vazio: some View {
-        ContentUnavailableView {
-            // A marca no lugar do ícone genérico: é a primeira tela de quem
-            // acabou de instalar, e a única chance de o app se apresentar.
-            VStack(spacing: 14) {
+        ScrollView {
+            VStack(spacing: 0) {
+                // A marca no lugar do ícone genérico: é a primeira tela de quem
+                // acabou de instalar, e a única chance de o app se apresentar.
                 Image("Logo")
                     .resizable()
                     .scaledToFit()
-                    .frame(maxWidth: 240)
-                Text("Nenhum vídeo ainda").font(.headline)
+                    .frame(maxWidth: 220)
+                    .padding(.top, 80)
+                Text("Nenhum vídeo ainda")
+                    .font(LabFont.swiftUI(18, .bold))
+                    .foregroundStyle(LabTheme.text)
+                    .padding(.top, 20)
+                // A limitação do iOS explicada onde ela é sentida, em vez de o
+                // usuário concluir que o app não funciona.
+                Text("O iOS não deixa um app varrer o aparelho inteiro. Autorize uma pasta uma vez — pendrive na USB-C, iCloud ou local — e o LibertyX varre ela sozinho daí em diante, incluindo as subpastas.")
+                    .font(LabFont.swiftUI(13, .medium))
+                    .foregroundStyle(LabTheme.muted)
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(3)
+                    .padding(.top, 8)
+
+                Button { showingFolderPicker = true } label: {
+                    Text("Adicionar pasta")
+                        .font(LabFont.swiftUI(15, .bold))
+                        .foregroundStyle(.black)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(LabTheme.accent, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+                .padding(.top, 24)
+                Button("Abrir um arquivo avulso") { showingFilePicker = true }
+                    .font(LabFont.swiftUI(14, .semibold))
+                    .padding(.top, 12)
+
+                // O cartão da rede fica só aqui: com vídeos, a barra de cima já
+                // tem o botão de servidores, e repetir ao pé da tela disputaria
+                // atenção com as capas.
+                NavigationLink { SMBServersView() } label: { CartaoDaRede() }
+                    .buttonStyle(.plain)
+                    .padding(.top, 24)
             }
-        } description: {
-            // A limitação do iOS explicada onde ela é sentida, em vez de o
-            // usuário concluir que o app não funciona.
-            Text("O iOS não deixa um app varrer o aparelho inteiro. Autorize uma pasta uma vez — pendrive na USB-C, iCloud ou local — e o LabPlayer varre ela sozinho daí em diante, incluindo as subpastas.")
-        } actions: {
-            Button("Adicionar pasta") { showingFolderPicker = true }
-                .buttonStyle(.borderedProminent)
-            Button("Abrir um arquivo avulso") { showingFilePicker = true }
-            NavigationLink {
-                SMBServersView()
-            } label: {
-                Text("Conectar a um servidor SMB")
+            .padding(.horizontal, 32)
+        }
+    }
+}
+
+// MARK: - Dentro da pasta
+
+/// Uma pasta aberta: título grande, o resumo, e os vídeos em grade ou lista.
+///
+/// Empilhada na navegação do sistema — e não trocada no lugar —, para o gesto
+/// de voltar deslizando da borda funcionar como em qualquer app de iPhone.
+struct PastaView: View {
+    let grupo: VideoGroup
+    let volta: Int
+    let onTocar: (MediaItem, [MediaItem]) -> Void
+    let menu: (MediaItem) -> AnyView
+
+    @ObservedObject private var options = LibraryOptions.shared
+    @State private var showingOptions = false
+
+    init<Menu: View>(grupo: VideoGroup, volta: Int,
+                     onTocar: @escaping (MediaItem, [MediaItem]) -> Void,
+                     menu: @escaping (MediaItem) -> Menu) {
+        self.grupo = grupo
+        self.volta = volta
+        self.onTocar = onTocar
+        self.menu = { AnyView(menu($0)) }
+    }
+
+    var body: some View {
+        let ordenados = options.sorted(grupo.items)
+        let n = grupo.items.count
+        let bytes = grupo.items.reduce(Int64(0)) { $0 + ($1.fileSize ?? 0) }
+        let resumo = [n == 1 ? "1 vídeo" : "\(n) vídeos", FolderScanner.humanSize(bytes)]
+            .compactMap { $0 }.joined(separator: "  ·  ")
+
+        ZStack {
+            FundoDeCapa(capa: capaDa(grupo))
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    TituloDeTela(titulo: grupo.name, subtitulo: resumo)
+                    ListaDeVideos(itens: ordenados, layout: options.layout,
+                                  onTocar: onTocar, menu: menu)
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 72)
+                .id(volta)
+            }
+        }
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { showingOptions = true } label: { Image(systemName: "slider.horizontal.3") }
+            }
+        }
+        .sheet(isPresented: $showingOptions) {
+            LibraryOptionsSheet(options: options)
+        }
+    }
+}
+
+/// Os vídeos de uma pasta, em grade ou em lista, na ordem escolhida.
+struct ListaDeVideos: View {
+    let itens: [MediaItem]
+    let layout: LibraryLayout
+    let onTocar: (MediaItem, [MediaItem]) -> Void
+    let menu: (MediaItem) -> AnyView
+
+    init<Menu: View>(itens: [MediaItem], layout: LibraryLayout,
+                     onTocar: @escaping (MediaItem, [MediaItem]) -> Void,
+                     menu: @escaping (MediaItem) -> Menu) {
+        self.itens = itens
+        self.layout = layout
+        self.onTocar = onTocar
+        self.menu = { AnyView(menu($0)) }
+    }
+
+    var body: some View {
+        if layout == .grid {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 14)], spacing: 18) {
+                ForEach(itens) { item in
+                    Button { onTocar(item, itens) } label: { VideoCard(item: item) }
+                        .buttonStyle(.plain)
+                        .contextMenu { menu(item) }
+                }
+            }
+        } else {
+            LazyVStack(spacing: 4) {
+                ForEach(itens) { item in
+                    Button { onTocar(item, itens) } label: { VideoRow(item: item) }
+                        .buttonStyle(.plain)
+                        .contextMenu { menu(item) }
+                }
             }
         }
     }
@@ -398,144 +477,6 @@ struct ManageFoldersView: View {
                 for url in urls {
                     try? bookmarks.add(url: url)
                 }
-            }
-        }
-    }
-}
-
-struct VideoRow: View {
-    let item: MediaItem
-    @State private var miniatura: UIImage?
-
-    var body: some View {
-        HStack(spacing: 12) {
-            ThumbnailView(item: item, image: $miniatura)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(item.title).lineLimit(2)
-                HStack(spacing: 6) {
-                    if let tamanho = FolderScanner.humanSize(item.fileSize) {
-                        Text(tamanho)
-                    }
-                    // Mostrar que há retomada guardada evita a dúvida de "será
-                    // que ele volta de onde parei?".
-                    if let retomada = ResumeStore.shared.position(for: item.origin.resumeKey) {
-                        Text("· parou em \(TimeFormat.clock(retomada))")
-                            .foregroundStyle(.tint)
-                    }
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-        }
-        .padding(.vertical, 2)
-    }
-}
-
-/// Cartão da grade: a miniatura ocupa o lugar principal, com a duração no
-/// canto — em vídeo gravado pelo celular, cujo nome é só data e hora, a imagem
-/// é a única coisa que identifica o arquivo.
-struct VideoCard: View {
-    let item: MediaItem
-    @State private var miniatura: UIImage?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ZStack(alignment: .bottomTrailing) {
-                ThumbnailView(item: item, image: $miniatura, largura: nil, altura: 96)
-
-                if let duracao = ThumbnailStore.shared.duration(item) {
-                    Text(TimeFormat.clock(duracao))
-                        .font(.caption2.monospacedDigit().weight(.medium))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(.black.opacity(0.7), in: Capsule())
-                        .padding(7)
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(item.title)
-                    // Espaçamento apertado: é o que a Apple faz nos títulos, e
-                    // o que distingue texto de interface de texto de conteúdo.
-                    .font(.footnote.weight(.medium))
-                    .tracking(-0.2)
-                    .foregroundStyle(LabTheme.text)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-
-                if let retomada = ResumeStore.shared.position(for: item.origin.resumeKey) {
-                    Text("parou em \(TimeFormat.clock(retomada))")
-                        .font(.caption2)
-                        .foregroundStyle(LabTheme.accent)
-                }
-            }
-            .padding(.horizontal, 10)
-            .padding(.bottom, 10)
-        }
-        .labCard()
-    }
-}
-
-/// Miniatura da lista: mostra o quadro quando existe, e um espaço reservado
-/// enquanto não existe.
-///
-/// O espaço tem o mesmo tamanho da imagem final para a lista não pular quando
-/// as miniaturas chegam — nada mais desagradável que a linha que você ia tocar
-/// se mexer no instante do toque.
-struct ThumbnailView: View {
-    let item: MediaItem
-    @Binding var image: UIImage?
-    /// `nil` ocupa toda a largura disponível — é assim na grade.
-    var largura: CGFloat? = 64
-    var altura: CGFloat = 40
-
-    /// Na grade a miniatura é o topo de um cartão, então arredonda só em cima;
-    /// na lista ela é um selo solto e arredonda por inteiro.
-    private var cantos: UnevenRoundedRectangle {
-        largura == nil
-            ? UnevenRoundedRectangle(topLeadingRadius: LabTheme.radiusCard,
-                                     bottomLeadingRadius: 0, bottomTrailingRadius: 0,
-                                     topTrailingRadius: LabTheme.radiusCard, style: .continuous)
-            : UnevenRoundedRectangle(topLeadingRadius: 6, bottomLeadingRadius: 6,
-                                     bottomTrailingRadius: 6, topTrailingRadius: 6,
-                                     style: .continuous)
-    }
-
-    var body: some View {
-        ZStack {
-            cantos.fill(Color.white.opacity(0.06))
-
-            if let image {
-                Image(uiImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .clipShape(cantos)
-            } else {
-                Image(systemName: "film")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .frame(width: largura, height: altura)
-        .frame(maxWidth: largura == nil ? .infinity : nil)
-        .clipped()
-        .task(id: item.id) {
-            if let pronta = ThumbnailStore.shared.cached(item) {
-                image = pronta
-                return
-            }
-            // Só duas miniaturas são geradas por vez; quem não pegou vez volta
-            // a tentar, senão a linha ficaria sem imagem para sempre depois de
-            // uma rolagem rápida.
-            for _ in 0..<12 {
-                if let pronta = await ThumbnailStore.shared.load(item) {
-                    image = pronta
-                    return
-                }
-                if Task.isCancelled { return }
-                try? await Task.sleep(nanoseconds: 900_000_000)
             }
         }
     }

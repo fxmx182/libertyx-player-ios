@@ -37,6 +37,18 @@
 	<true/>
 
 	<!-- Áudio continua com a tela bloqueada. Não exige entitlement pago. -->
+	<!-- A letra do app, embutida em cinco pesos (licença OFL, junto dos
+	     arquivos). Estática e não variável: é o que o Android também usa, e
+	     os dois apps saem com a mesma cara. -->
+	<key>UIAppFonts</key>
+	<array>
+		<string>manrope_regular.ttf</string>
+		<string>manrope_medium.ttf</string>
+		<string>manrope_semibold.ttf</string>
+		<string>manrope_bold.ttf</string>
+		<string>manrope_extrabold.ttf</string>
+	</array>
+
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>

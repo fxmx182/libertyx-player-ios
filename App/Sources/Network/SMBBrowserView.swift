@@ -82,6 +82,7 @@ struct SMBServersView: View {
         } message: { server in
             Text("Remove “\(server.name)” da lista e apaga a senha guardada no Keychain do aparelho.")
         }
+        .fundoDaRede()
         .navigationTitle("Servidores")
         .task { discovery.start(conhecidos: store.servers.map(\.host)) }
         .onDisappear { discovery.stop() }
@@ -270,11 +271,13 @@ struct SMBShareListView: View {
                         SMBDirectoryView(connection: connection, share: share,
                                          path: "", title: share, server: server)
                     } label: {
-                        Label(share, systemImage: "externaldrive.connected.to.line.below")
+                        LinhaDePastaDeRede(nome: share, simbolo: "externaldrive.fill.badge.wifi", seta: false)
                     }
+                    .linhaDeVidro()
                 }
             }
         }
+        .fundoDaRede()
         .navigationTitle(server.name)
         .navigationBarTitleDisplayMode(.inline)
         .task { await conectar() }
@@ -382,8 +385,9 @@ struct SMBDirectoryView: View {
                 Section {
                     ForEach(pastas) { pasta in
                         NavigationLink { destino(pasta) } label: {
-                            Label(pasta.name, systemImage: "folder")
+                            LinhaDePastaDeRede(nome: pasta.name, seta: false)
                         }
+                        .linhaDeVidro()
                     }
                 }
             }
@@ -397,43 +401,27 @@ struct SMBDirectoryView: View {
                         }
                         .buttonStyle(.plain)
                         .contextMenu { menu(item) }
+                        .linhaDeVidro()
                     }
                 }
             }
         }
-        .listStyle(.insetGrouped)
+        .listStyle(.plain)
+        .fundoDaRede()
     }
 
     private var grade: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 if !pastas.isEmpty {
-                    VStack(spacing: 0) {
+                    VStack(spacing: 8) {
                         ForEach(pastas) { pasta in
                             NavigationLink { destino(pasta) } label: {
-                                HStack(spacing: 12) {
-                                    Image(systemName: "folder.fill")
-                                        .foregroundStyle(LabTheme.accent)
-                                    Text(pasta.name)
-                                        .foregroundStyle(LabTheme.text)
-                                        .lineLimit(1)
-                                    Spacer()
-                                    Image(systemName: "chevron.right")
-                                        .font(.caption.weight(.semibold))
-                                        .foregroundStyle(LabTheme.faint)
-                                }
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 12)
-                                .contentShape(Rectangle())
+                                LinhaDePastaDeRede(nome: pasta.name)
                             }
                             .buttonStyle(.plain)
-
-                            if pasta.id != pastas.last?.id {
-                                Divider().padding(.leading, 44)
-                            }
                         }
                     }
-                    .labCard()
                 }
 
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 14) {
@@ -446,6 +434,7 @@ struct SMBDirectoryView: View {
             }
             .padding(16)
         }
+        .fundoDaRede()
     }
 
     // MARK: - Peças
@@ -490,5 +479,59 @@ struct SMBDirectoryView: View {
             failure = error.localizedDescription
         }
         loading = false
+    }
+}
+
+/// Uma pasta de rede: o ícone num ladrilho, e não solto.
+///
+/// O ladrilho dá à linha um ponto de apoio à esquerda e deixa a pasta de rede
+/// com a mesma família visual do cartão de servidores da biblioteca.
+struct LinhaDePastaDeRede: View {
+    let nome: String
+    var simbolo = "folder.fill"
+    /// Numa `List` o próprio sistema desenha a seta; ali a nossa sai.
+    var seta = true
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Image(systemName: simbolo)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(LabTheme.accent)
+                .frame(width: 40, height: 40)
+                .background(LabTheme.accent.opacity(0.14),
+                            in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+            Text(nome)
+                .font(LabFont.swiftUI(15, .semibold))
+                .foregroundStyle(LabTheme.text)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            if seta {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(LabTheme.faint)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .labCard()
+        .contentShape(Rectangle())
+    }
+}
+
+extension View {
+    /// Linha de lista sem o fundo nem o separador do sistema: o que desenha
+    /// a linha é a própria peça, e o cinza de formulário por trás tiraria o
+    /// app do fundo de capa.
+    func linhaDeVidro() -> some View {
+        listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+    }
+
+    /// O mesmo fundo da biblioteca: passar para a rede não pode parecer
+    /// trocar de app.
+    func fundoDaRede() -> some View {
+        scrollContentBackground(.hidden)
+            .background(FundoDeCapa(capa: nil))
     }
 }

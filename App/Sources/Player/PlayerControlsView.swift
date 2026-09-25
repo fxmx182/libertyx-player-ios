@@ -65,7 +65,7 @@ final class PlayerControlsView: UIView {
     private let totalLabel = UILabel()
     private let slider = FineScrubSlider()
     /// Diz em que precisão a rolagem fina está, enquanto ela não é a normal.
-    private let rotuloFino = UILabel()
+    private let rotuloFino = PastilhaLabel()
     /// Trilha própria atrás do controle: o fundo escuro e, sobre ele, o quanto
     /// já está carregado. O `UISlider` não sabe desenhar três camadas, então a
     /// dele fica transparente e estas duas ficam por baixo.
@@ -201,7 +201,7 @@ final class PlayerControlsView: UIView {
         bottomBar.layer.insertSublayer(bottomGradient, at: 0)
 
         [elapsedLabel, totalLabel].forEach {
-            $0.font = .monospacedDigitSystemFont(ofSize: 13, weight: .regular)
+            $0.font = LabFont.ui(13, .semibold, mono: true)
             $0.textColor = .white
             $0.text = "--:--"
             $0.translatesAutoresizingMaskIntoConstraints = false
@@ -226,8 +226,14 @@ final class PlayerControlsView: UIView {
         slider.translatesAutoresizingMaskIntoConstraints = false
         // Sem aviso, a rolagem fina parece a barra emperrando: o dedo anda e
         // ela anda menos. Dizendo a velocidade, vira ferramenta.
-        rotuloFino.font = .systemFont(ofSize: 12, weight: .semibold)
+        // Numa pastilha escura, e não solto: deitado ele cai em cima da
+        // imagem, e letra dourada sobre um quadro claro some.
+        rotuloFino.font = LabFont.ui(12, .bold)
         rotuloFino.textColor = LabTheme.accentUI
+        rotuloFino.backgroundColor = UIColor.black.withAlphaComponent(0.62)
+        rotuloFino.layer.cornerRadius = 9
+        rotuloFino.layer.masksToBounds = true
+        rotuloFino.insets = UIEdgeInsets(top: 3, left: 10, bottom: 3, right: 10)
         rotuloFino.alpha = 0
         rotuloFino.translatesAutoresizingMaskIntoConstraints = false
         slider.onVelocidade = { [weak self] velocidade in
@@ -348,7 +354,7 @@ final class PlayerControlsView: UIView {
             slider.centerYAnchor.constraint(equalTo: elapsedLabel.centerYAnchor),
 
             rotuloFino.centerXAnchor.constraint(equalTo: slider.centerXAnchor),
-            rotuloFino.bottomAnchor.constraint(equalTo: slider.topAnchor, constant: -2),
+            rotuloFino.bottomAnchor.constraint(equalTo: slider.topAnchor, constant: -6),
 
             // As trilhas seguem a do controle: a bolinha precisa de folga nas
             // pontas, e desenhar de borda a borda deixaria as três desalinhadas.
@@ -690,5 +696,20 @@ final class PlayerControlsView: UIView {
         isUserScrubbing = false
         guard duration > 0 else { return }
         onScrub?(Double(slider.value) * duration, true)
+    }
+}
+
+/// Rótulo com folga por dentro — para texto em pastilha.
+final class PastilhaLabel: UILabel {
+    var insets: UIEdgeInsets = .zero
+
+    override func drawText(in rect: CGRect) {
+        super.drawText(in: rect.inset(by: insets))
+    }
+
+    override var intrinsicContentSize: CGSize {
+        let base = super.intrinsicContentSize
+        return CGSize(width: base.width + insets.left + insets.right,
+                      height: base.height + insets.top + insets.bottom)
     }
 }

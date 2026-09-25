@@ -1,4 +1,5 @@
 import SwiftUI
+import CoreText
 
 /// A linguagem visual do app.
 ///
@@ -50,6 +51,56 @@ enum LabTheme {
 
     static let radiusCard: CGFloat = 18
     static let radiusSmall: CGFloat = 12
+}
+
+/// A letra do app: Manrope, a mesma do irmão Android.
+///
+/// A San Francisco do sistema é a letra de todo app de iPhone — e de nenhum em
+/// particular. A Manrope tem o mesmo desenho limpo, mas com o "a" e o "g" mais
+/// abertos e números de largura constante quando se pede, o que deixa duração
+/// e tamanho alinhados sem esforço.
+///
+/// Se o arquivo não carregar, cai na do sistema no mesmo peso — nunca num texto
+/// quebrado.
+enum LabFont {
+
+    private static func nome(_ peso: UIFont.Weight) -> String {
+        switch peso {
+        case .heavy, .black:  return "Manrope-ExtraBold"
+        case .bold:           return "Manrope-Bold"
+        case .semibold:       return "Manrope-SemiBold"
+        case .medium:         return "Manrope-Medium"
+        default:              return "Manrope-Regular"
+        }
+    }
+
+    /// Para UIKit. `mono` liga os números de largura fixa — tempo que muda
+    /// de dígito não pode ficar sambando na tela.
+    static func ui(_ tamanho: CGFloat, _ peso: UIFont.Weight = .regular, mono: Bool = false) -> UIFont {
+        guard let base = UIFont(name: nome(peso), size: tamanho) else {
+            return mono ? .monospacedDigitSystemFont(ofSize: tamanho, weight: peso)
+                        : .systemFont(ofSize: tamanho, weight: peso)
+        }
+        guard mono else { return base }
+        let descritor = base.fontDescriptor.addingAttributes([
+            .featureSettings: [[
+                UIFontDescriptor.FeatureKey.type: kNumberSpacingType,
+                UIFontDescriptor.FeatureKey.selector: kMonospacedNumbersSelector,
+            ]]
+        ])
+        return UIFont(descriptor: descritor, size: tamanho)
+    }
+
+    /// Para SwiftUI. Acompanha o tamanho de texto escolhido nos ajustes do
+    /// iPhone, como a letra do sistema faria.
+    static func swiftUI(_ tamanho: CGFloat, _ peso: UIFont.Weight = .regular) -> Font {
+        Font.custom(nome(peso), size: tamanho)
+    }
+}
+
+extension LabTheme {
+    /// O título grande de cada tela — pesado e apertado, como capa de revista.
+    static let headline = LabFont.swiftUI(32, .heavy)
 }
 
 extension View {

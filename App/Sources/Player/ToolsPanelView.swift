@@ -149,7 +149,7 @@ final class ToolsPanelView: UIView {
         if let noAnel = ferramenta.noAnel {
             let texto = UILabel()
             texto.text = noAnel
-            texto.font = .systemFont(ofSize: 15, weight: .bold)
+            texto.font = LabFont.ui(15, .bold)
             texto.textColor = ferramenta.aceso ? dourado : .white
             miolo = texto
         } else {
@@ -182,12 +182,12 @@ final class ToolsPanelView: UIView {
         rotulo.translatesAutoresizingMaskIntoConstraints = false
         let texto = NSMutableAttributedString(
             string: ferramenta.rotulo,
-            attributes: [.font: UIFont.systemFont(ofSize: 12.5, weight: .medium),
+            attributes: [.font: LabFont.ui(12.5, .semibold),
                          .foregroundColor: UIColor.white])
         if let valor = ferramenta.valor {
             texto.append(NSAttributedString(
                 string: "\n" + valor,
-                attributes: [.font: UIFont.systemFont(ofSize: 11.5, weight: .semibold),
+                attributes: [.font: LabFont.ui(11.5, .bold),
                              .foregroundColor: dourado]))
         }
         rotulo.attributedText = texto

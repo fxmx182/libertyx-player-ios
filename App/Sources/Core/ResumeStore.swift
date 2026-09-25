@@ -58,6 +58,31 @@ final class ResumeStore {
         persist()
     }
 
+    /// As chaves com posição que vale retomar, da mais recente para a mais antiga.
+    ///
+    /// É a faixa de "continuar assistindo": o que se estava vendo por último
+    /// vem primeiro, e o que já terminou ou mal começou fica de fora — pelo
+    /// mesmo critério da pergunta de retomar.
+    func recent() -> [String] {
+        marcas.filter { position(for: $0.key) != nil }
+            .sorted { $0.value.updatedAt > $1.value.updatedAt }
+            .map(\.key)
+    }
+
+    /// Quanto já foi visto, de 0 a 1. `nil` quando não há o que retomar.
+    func progress(for key: String) -> Double? {
+        guard let posicao = position(for: key),
+              let marca = marcas[key], marca.duration > 0 else { return nil }
+        return min(1, posicao / marca.duration)
+    }
+
+    /// Quanto falta, em segundos — o que quem parou no meio quer saber.
+    func remaining(for key: String) -> Double? {
+        guard let posicao = position(for: key),
+              let marca = marcas[key], marca.duration > 0 else { return nil }
+        return max(0, marca.duration - posicao)
+    }
+
     /// Chamado ao terminar o vídeo — quem assistiu até o fim não quer voltar
     /// para os créditos na próxima vez.
     func clear(key: String) {
