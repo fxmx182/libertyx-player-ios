@@ -375,26 +375,34 @@ struct BarraDeProgresso: View {
 /// pular quando as miniaturas chegam — nada mais desagradável que a linha que
 /// você ia tocar se mexer no instante do toque. Sem forma própria: quem a usa
 /// decide proporção e cantos.
+///
+/// A imagem vai numa camada por cima do fundo, e não ao lado dele numa pilha:
+/// preenchendo o espaço, uma miniatura de vídeo em pé cresce para baixo muito
+/// além do cartão, e a pilha adotaria esse tamanho — as capas saíam do lugar e
+/// se empilhavam umas sobre as outras. Por cima, quem manda no tamanho é o
+/// fundo, que ocupa exatamente o que lhe dão; a imagem só é recortada nele.
 struct Miniatura: View {
     let item: MediaItem?
     @State private var imagem: UIImage?
 
     var body: some View {
-        ZStack {
-            LinearGradient(colors: [Color(red: 0.137, green: 0.133, blue: 0.157),
-                                    Color(red: 0.086, green: 0.086, blue: 0.102)],
-                           startPoint: .topLeading, endPoint: .bottomTrailing)
+        LinearGradient(colors: [Color(red: 0.137, green: 0.133, blue: 0.157),
+                                Color(red: 0.086, green: 0.086, blue: 0.102)],
+                       startPoint: .topLeading, endPoint: .bottomTrailing)
+        .overlay {
             if let imagem {
                 Image(uiImage: imagem)
                     .resizable()
                     .scaledToFill()
+                    // A sobra recortada ainda receberia toques, roubando-os
+                    // do cartão vizinho.
+                    .allowsHitTesting(false)
             } else {
                 Image(systemName: "film")
                     .font(.system(size: 20))
                     .foregroundStyle(LabTheme.faint)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
         .task(id: item?.origin.resumeKey) {
             guard let item else { imagem = nil; return }
