@@ -110,20 +110,30 @@ struct Secao: View {
     }
 }
 
-/// O símbolo e o nome, com o X na cor da marca — o app se apresenta.
+/// O símbolo e o nome — o app se apresenta.
 struct MarcaDoApp: View {
     var body: some View {
         HStack(spacing: 10) {
+            // O símbolo sem fundo nem moldura: é o mesmo desenho do ícone, e
+            // recortado num quadrado ele pareceria um ícone colado na tela.
             Image("AppIconSymbol")
                 .resizable()
-                .scaledToFill()
-                .frame(width: 34, height: 34)
-                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-            (Text("Liberty").foregroundStyle(LabTheme.text)
-             + Text("X").foregroundStyle(LabTheme.accent))
-                .font(LabFont.swiftUI(19, .heavy))
-                .tracking(-0.3)
+                .scaledToFit()
+                .frame(width: 30, height: 30)
+            NomeDoApp(tamanho: 19)
         }
+    }
+}
+
+/// "LibertyX", com o X na cor da marca.
+struct NomeDoApp: View {
+    let tamanho: CGFloat
+
+    var body: some View {
+        (Text(verbatim: "Liberty").foregroundStyle(LabTheme.text)
+         + Text(verbatim: "X").foregroundStyle(LabTheme.accent))
+            .font(LabFont.swiftUI(tamanho, .heavy))
+            .tracking(-0.3)
     }
 }
 
@@ -185,7 +195,7 @@ struct CapaDePasta: View {
                         .font(LabFont.swiftUI(15, .bold))
                         .foregroundStyle(.white)
                         .lineLimit(2)
-                    Text(grupo.items.count == 1 ? "1 vídeo" : "\(grupo.items.count) vídeos")
+                    Text(Plural.videos(grupo.items.count))
                         .font(LabFont.swiftUI(11, .semibold))
                         .foregroundStyle(.white.opacity(0.7))
                 }
@@ -318,7 +328,7 @@ struct Detalhes: View {
         let chave = item.origin.resumeKey
         if ResumeStore.shared.position(for: chave) != nil {
             let falta = ResumeStore.shared.remaining(for: chave)
-            Text(falta.map { "faltam \(TimeFormat.spoken($0))" } ?? "em andamento")
+            Text(falta.map { String(localized: "faltam \(TimeFormat.spoken($0))") } ?? String(localized: "em andamento"))
                 .font(LabFont.swiftUI(11, .semibold))
                 .foregroundStyle(LabTheme.accent)
         } else {

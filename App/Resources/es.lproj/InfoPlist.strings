@@ -1,0 +1,2 @@
+"NSPhotoLibraryAddUsageDescription" = "Para guardar la captura de pantalla del video en tu álbum.";
+"NSLocalNetworkUsageDescription" = "LibertyX Player necesita la red local para encontrar tu servidor y reproducir los videos de las carpetas compartidas SMB.";

@@ -44,7 +44,7 @@ struct MediaInfoView: View {
 
     private func carregar() async {
         guard case .file = item.origin else {
-            failure = "Só arquivos locais por enquanto."
+            failure = String(localized: "Só arquivos locais por enquanto.")
             return
         }
 
@@ -228,7 +228,7 @@ struct MediaInfoDetails: View {
                                 }
                             }
                             Spacer()
-                            Text(faixa.isBitmap ? "imagem" : "texto")
+                            Text(faixa.isBitmap ? String(localized: "imagem") : String(localized: "texto"))
                                 .font(.caption2)
                                 .foregroundStyle(.tertiary)
                         }
@@ -238,7 +238,7 @@ struct MediaInfoDetails: View {
         }
     }
 
-    private func linha(_ rotulo: String, _ valor: String) -> some View {
+    private func linha(_ rotulo: LocalizedStringKey, _ valor: String) -> some View {
         HStack {
             Text(rotulo).foregroundStyle(.secondary)
             Spacer()

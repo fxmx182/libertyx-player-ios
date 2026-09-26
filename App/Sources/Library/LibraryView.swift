@@ -129,17 +129,17 @@ struct LibraryView: View {
                             // Uma pasta só não vira estante de uma capa: os
                             // vídeos dela já são a biblioteca, e entrar nela
                             // seria um toque a mais para nada.
-                            TituloDeTela(titulo: "Biblioteca", subtitulo: resumoDa(pastaUnica))
+                            TituloDeTela(titulo: String(localized: "Biblioteca"), subtitulo: resumoDa(pastaUnica))
                             faixaDeContinuar(continuando)
                             if !continuando.isEmpty { Secao(titulo: pastaUnica.name) }
                             ListaDeVideos(itens: options.sorted(pastaUnica.items), layout: options.layout,
                                           onTocar: tocar, menu: menuDoItem)
                         } else {
                             let total = library.groups.reduce(0) { $0 + $1.items.count }
-                            TituloDeTela(titulo: "Biblioteca",
-                                         subtitulo: "\(total) vídeos  ·  \(library.groups.count) pastas")
+                            TituloDeTela(titulo: String(localized: "Biblioteca"),
+                                         subtitulo: Plural.videos(total) + "  ·  " + Plural.pastas(library.groups.count))
                             faixaDeContinuar(continuando)
-                            Secao(titulo: "Pastas", extra: "\(library.groups.count)")
+                            Secao(titulo: String(localized: "Pastas"), extra: "\(library.groups.count)")
                             LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 14)], spacing: 18) {
                                 ForEach(library.groups) { grupo in
                                     NavigationLink(value: grupo) { CapaDePasta(grupo: grupo) }
@@ -198,7 +198,7 @@ struct LibraryView: View {
     private func faixaDeContinuar(_ itens: [MediaItem]) -> some View {
         if !itens.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
-                Secao(titulo: "Continuar assistindo")
+                Secao(titulo: String(localized: "Continuar assistindo"))
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: 12) {
                         ForEach(itens) { item in
@@ -216,7 +216,7 @@ struct LibraryView: View {
     private func resumoDa(_ grupo: VideoGroup) -> String {
         let n = grupo.items.count
         let bytes = grupo.items.reduce(Int64(0)) { $0 + ($1.fileSize ?? 0) }
-        return [n == 1 ? "1 vídeo" : "\(n) vídeos", FolderScanner.humanSize(bytes)]
+        return [Plural.videos(n), FolderScanner.humanSize(bytes)]
             .compactMap { $0 }.joined(separator: "  ·  ")
     }
 
@@ -255,7 +255,7 @@ struct LibraryView: View {
         let guarda = ScopedAccess(url: url, bookmark: bookmark)
         defer { withExtendedLifetime(guarda) {} }
         guard guarda.path != nil else {
-            errorMessage = "O iOS não autorizou apagar este arquivo. Reautorize a pasta e tente de novo."
+            errorMessage = String(localized: "O iOS não autorizou apagar este arquivo. Reautorize a pasta e tente de novo.")
             return
         }
 
@@ -266,7 +266,7 @@ struct LibraryView: View {
             ResumeStore.shared.clear(key: item.origin.resumeKey)
             Task { await library.refresh(bookmarks: bookmarks) }
         } catch {
-            errorMessage = "Não deu para apagar: \(error.localizedDescription)"
+            errorMessage = String(localized: "Não deu para apagar: \(error.localizedDescription)")
         }
     }
 
@@ -275,15 +275,21 @@ struct LibraryView: View {
             VStack(spacing: 0) {
                 // A marca no lugar do ícone genérico: é a primeira tela de quem
                 // acabou de instalar, e a única chance de o app se apresentar.
-                Image("Logo")
+                Image("AppIconSymbol")
                     .resizable()
                     .scaledToFit()
-                    .frame(maxWidth: 220)
+                    .frame(width: 96, height: 96)
                     .padding(.top, 80)
+                NomeDoApp(tamanho: 30)
+                    .padding(.top, 14)
+                Text(verbatim: "PLAYER")
+                    .font(LabFont.swiftUI(11, .semibold))
+                    .tracking(6)
+                    .foregroundStyle(LabTheme.muted)
                 Text("Nenhum vídeo ainda")
                     .font(LabFont.swiftUI(18, .bold))
                     .foregroundStyle(LabTheme.text)
-                    .padding(.top, 20)
+                    .padding(.top, 28)
                 // A limitação do iOS explicada onde ela é sentida, em vez de o
                 // usuário concluir que o app não funciona.
                 Text("O iOS não deixa um app varrer o aparelho inteiro. Autorize uma pasta uma vez — pendrive na USB-C, iCloud ou local — e o LibertyX varre ela sozinho daí em diante, incluindo as subpastas.")
@@ -346,7 +352,7 @@ struct PastaView: View {
         let ordenados = options.sorted(grupo.items)
         let n = grupo.items.count
         let bytes = grupo.items.reduce(Int64(0)) { $0 + ($1.fileSize ?? 0) }
-        let resumo = [n == 1 ? "1 vídeo" : "\(n) vídeos", FolderScanner.humanSize(bytes)]
+        let resumo = [Plural.videos(n), FolderScanner.humanSize(bytes)]
             .compactMap { $0 }.joined(separator: "  ·  ")
 
         ZStack {

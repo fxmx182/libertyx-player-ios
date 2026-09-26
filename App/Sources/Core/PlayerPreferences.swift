@@ -26,8 +26,8 @@ enum PlayerPreferences {
 
         var title: String {
             switch self {
-            case .nunca: return "Nunca"
-            default: return "\(Int(rawValue)) segundos"
+            case .nunca: return String(localized: "Nunca")
+            default: return Plural.segundos(Int(rawValue))
             }
         }
 

@@ -26,6 +26,18 @@ final class PlayerControlsView: UIView {
     /// player está aberto.
     /// A engrenagem abre o painel de ferramentas.
     var onShowTools: (() -> Void)?
+    /// O alto-falante riscado foi tocado: devolver o som.
+    var onUnmute: (() -> Void)?
+
+    /// Com o som desligado, um alto-falante riscado fica embaixo da
+    /// engrenagem enquanto durar.
+    ///
+    /// O mudo mexe só no volume do VLC, não no do aparelho: a régua do sistema
+    /// não muda e nada avisava — o filme simplesmente ficava calado, e parecia
+    /// defeito. O aviso e o jeito de desfazer ficam no mesmo botão.
+    var mudo = false {
+        didSet { muteButton.isHidden = !mudo }
+    }
 
     enum TrackKind { case audio, subtitle }
 
@@ -58,6 +70,7 @@ final class PlayerControlsView: UIView {
     private let bottomGradient = CAGradientLayer()
 
     private let toolsButton = UIButton(type: .system)
+    private let muteButton = UIButton(type: .system)
     private let subtitleButton = UIButton(type: .system)
     private let audioButton = UIButton(type: .system)
 
@@ -149,6 +162,7 @@ final class PlayerControlsView: UIView {
         return bottomBar.frame.contains(point)
             || closeButton.frame.insetBy(dx: -8, dy: -8).contains(point)
             || toolsButton.frame.insetBy(dx: -8, dy: -8).contains(point)
+            || (!muteButton.isHidden && muteButton.frame.insetBy(dx: -8, dy: -8).contains(point))
             || ilhaFundo.frame.insetBy(dx: -6, dy: -6).contains(point)
     }
 
@@ -404,6 +418,26 @@ final class PlayerControlsView: UIView {
             toolsButton.widthAnchor.constraint(equalToConstant: 38),
             toolsButton.heightAnchor.constraint(equalToConstant: 38),
         ])
+
+        // Embaixo da engrenagem, e não ao lado: em pé, ao lado ele encostaria
+        // na ilha.
+        muteButton.setImage(UIImage(systemName: "speaker.slash.fill"), for: .normal)
+        muteButton.tintColor = LabTheme.accentUI
+        muteButton.setPreferredSymbolConfiguration(
+            UIImage.SymbolConfiguration(pointSize: 16, weight: .semibold), forImageIn: .normal)
+        muteButton.translatesAutoresizingMaskIntoConstraints = false
+        muteButton.backgroundColor = UIColor.black.withAlphaComponent(0.35)
+        muteButton.layer.cornerRadius = 19
+        muteButton.accessibilityLabel = String(localized: "Ligar o som")
+        muteButton.isHidden = true
+        muteButton.addTarget(self, action: #selector(muteTapped), for: .touchUpInside)
+        addSubview(muteButton)
+        NSLayoutConstraint.activate([
+            muteButton.centerXAnchor.constraint(equalTo: toolsButton.centerXAnchor),
+            muteButton.topAnchor.constraint(equalTo: toolsButton.bottomAnchor, constant: 10),
+            muteButton.widthAnchor.constraint(equalToConstant: 38),
+            muteButton.heightAnchor.constraint(equalToConstant: 38),
+        ])
     }
 
     /// A pastilha flutuante do topo.
@@ -617,6 +651,7 @@ final class PlayerControlsView: UIView {
             self.bottomBar.alpha = barras
             self.closeButton.alpha = barras
             self.toolsButton.alpha = barras
+            self.muteButton.alpha = barras
             self.ilha.alpha = barras
             self.ilhaFundo.alpha = barras
             self.unlockButton.alpha = bloqueio
@@ -637,6 +672,7 @@ final class PlayerControlsView: UIView {
     @objc private func previousTapped()  { onPrevious?() }
     @objc private func nextTapped()      { onNext?() }
     @objc private func toolsTapped()     { onShowTools?() }
+    @objc private func muteTapped()      { onUnmute?() }
     @objc private func subtitlesTapped() { onShowTracks?(.subtitle) }
     @objc private func audioTapped()     { onShowTracks?(.audio) }
     @objc private func aspectTapped()    { onCycleAspect?() }
@@ -673,9 +709,9 @@ final class PlayerControlsView: UIView {
     private func mostrarVelocidade(_ velocidade: Float) {
         let texto: String?
         switch velocidade {
-        case 0.5:  texto = "Rolagem fina · metade"
-        case 0.25: texto = "Rolagem fina · um quarto"
-        case 0.1:  texto = "Rolagem fina · um décimo"
+        case 0.5:  texto = String(localized: "Rolagem fina · metade")
+        case 0.25: texto = String(localized: "Rolagem fina · um quarto")
+        case 0.1:  texto = String(localized: "Rolagem fina · um décimo")
         default:   texto = nil
         }
         if let texto { rotuloFino.text = texto }

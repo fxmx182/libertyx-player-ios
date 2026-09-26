@@ -3,7 +3,7 @@ import SwiftUI
 enum LibraryLayout: String, CaseIterable {
     case list, grid
 
-    var label: String { self == .list ? "Lista" : "Grade" }
+    var label: String { self == .list ? String(localized: "Lista") : String(localized: "Grade") }
     var symbol: String { self == .list ? "list.bullet" : "square.grid.2x2" }
 }
 
@@ -12,10 +12,10 @@ enum LibrarySort: String, CaseIterable {
 
     var label: String {
         switch self {
-        case .title:    return "Título"
-        case .date:     return "Data"
-        case .size:     return "Tamanho"
-        case .duration: return "Duração"
+        case .title:    return String(localized: "Título")
+        case .date:     return String(localized: "Data")
+        case .size:     return String(localized: "Tamanho")
+        case .duration: return String(localized: "Duração")
         }
     }
 
@@ -121,6 +121,30 @@ struct LibraryOptionsSheet: View {
                         }
                         .padding(.top, 4)
                     }
+
+                    secao("Ajuda") {
+                        Button {
+                            dismiss()
+                            Guia.mostrarDeNovo()
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "hand.tap")
+                                    .font(.system(size: 17, weight: .semibold))
+                                    .foregroundStyle(LabTheme.accent)
+                                Text("Ver o guia dos gestos e ferramentas")
+                                    .font(LabFont.swiftUI(14, .semibold))
+                                    .foregroundStyle(LabTheme.text)
+                                    .multilineTextAlignment(.leading)
+                                Spacer(minLength: 0)
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(LabTheme.faint)
+                            }
+                            .padding(14)
+                            .labCard(radius: 14)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
                 .padding(20)
             }
@@ -136,7 +160,7 @@ struct LibraryOptionsSheet: View {
     }
 
     @ViewBuilder
-    private func secao<Conteudo: View>(_ titulo: String,
+    private func secao<Conteudo: View>(_ titulo: LocalizedStringKey,
                                        @ViewBuilder content: () -> Conteudo) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(titulo).font(.headline)
@@ -160,7 +184,7 @@ struct LibraryOptionsSheet: View {
         .buttonStyle(.plain)
     }
 
-    private func direcao(_ titulo: String, symbol: String,
+    private func direcao(_ titulo: LocalizedStringKey, symbol: String,
                          ativo: Bool, acao: @escaping () -> Void) -> some View {
         Button(action: acao) {
             Label(titulo, systemImage: symbol)

@@ -241,7 +241,7 @@ final class VLCEngine: NSObject, PlaybackEngine {
 
         case .smb(let referencia, let caminho):
             guard let servidor = SMBServerStore.shared.servers.first(where: { $0.id == referencia.serverID }) else {
-                throw PlaybackError.loadFailed("servidor não encontrado")
+                throw PlaybackError.loadFailed(String(localized: "servidor não encontrado"))
             }
             // Só endereço e caminho: as credenciais vão por opção do media.
             let partes = caminho.split(separator: "/").map { escape(String($0)) }.joined(separator: "/")
@@ -498,7 +498,7 @@ extension VLCEngine: VLCMediaPlayerDelegate {
         case .paused:    state = .paused
         case .stopped:   state = .idle
         case .ended:     state = .ended
-        case .error:     state = .failed("o VLC não conseguiu abrir este arquivo")
+        case .error:     state = .failed(String(localized: "o VLC não conseguiu abrir este arquivo"))
         default:         break
         }
     }

@@ -33,7 +33,7 @@ struct SMBServersView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(server.name).fontWeight(.medium)
                         Text(server.isGuest
-                             ? "\(server.displayHost) · convidado"
+                             ? String(localized: "\(server.displayHost) · convidado")
                              : "\(server.displayHost) · \(server.username)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -142,8 +142,8 @@ struct SMBServersView: View {
                     // houve — inclusive quando ela achou, mas só o que já
                     // estava salvo.
                     Text(discovery.results.isEmpty
-                         ? "Nada encontrado na rede. É comum quando o servidor não se anuncia — adicione pelo endereço, no botão +."
-                         : "Na rede só apareceram servidores que já estão salvos.")
+                         ? String(localized: "Nada encontrado na rede. É comum quando o servidor não se anuncia — adicione pelo endereço, no botão +.")
+                         : String(localized: "Na rede só apareceram servidores que já estão salvos."))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -208,7 +208,7 @@ struct SMBServerEditView: View {
                     Text("A senha fica no Keychain do aparelho, não junto das outras configurações.")
                 }
             }
-            .navigationTitle((server == nil || isNew) ? "Novo servidor" : "Editar servidor")
+            .navigationTitle((server == nil || isNew) ? String(localized: "Novo servidor") : String(localized: "Editar servidor"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

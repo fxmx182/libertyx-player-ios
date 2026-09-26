@@ -106,7 +106,7 @@ struct MediaTrack: Identifiable, Hashable {
             return idioma
         }
         if let title, !title.isEmpty { return title }
-        return "Faixa \(id) (\(codec.uppercased()))"
+        return String(localized: "Faixa \(id) (\(codec.uppercased()))")
     }
 }
 
@@ -128,11 +128,11 @@ enum PlaybackError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .unsupportedOrigin:
-            return "Esta origem ainda não é suportada por este motor."
+            return String(localized: "Esta origem ainda não é suportada por este motor.")
         case .securityScopeDenied:
-            return "Sem permissão para ler o arquivo. Selecione a pasta novamente."
+            return String(localized: "Sem permissão para ler o arquivo. Selecione a pasta novamente.")
         case .loadFailed(let reason):
-            return "Falha ao carregar: \(reason)"
+            return String(localized: "Falha ao carregar: \(reason)")
         }
     }
 }

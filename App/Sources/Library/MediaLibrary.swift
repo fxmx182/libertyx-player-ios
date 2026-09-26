@@ -38,7 +38,7 @@ final class MediaLibrary: ObservableObject {
 
         let documentos = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
         if let documentos {
-            raizes.append((documentos, nil, "No LabPlayer"))
+            raizes.append((documentos, nil, String(localized: "No LabPlayer")))
         }
 
         var escopos: [URL] = []

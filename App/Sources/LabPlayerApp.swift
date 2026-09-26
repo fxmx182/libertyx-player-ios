@@ -4,6 +4,9 @@ import SwiftUI
 struct LabPlayerApp: App {
     @StateObject private var bookmarks = BookmarkStore()
     @StateObject private var smbServers = SMBServerStore.shared
+    /// O guia aparece enquanto isto for falso: na primeira abertura, e de novo
+    /// quando a Visualização pede para rever.
+    @AppStorage(Guia.chave) private var guiaVisto = false
 
     init() {
         // Antes da primeira tela: sem isto o app não aparece no Arquivos, e o
@@ -43,6 +46,12 @@ struct LabPlayerApp: App {
                 // A letra do app para todo texto que não pedir outra.
                 .font(LabFont.swiftUI(16, .medium))
                 .background(LabTheme.background.ignoresSafeArea())
+                .fullScreenCover(isPresented: Binding(get: { !guiaVisto },
+                                                      set: { if !$0 { guiaVisto = true } })) {
+                    GuiaDeBoasVindas { guiaVisto = true }
+                        .tint(LabTheme.accent)
+                        .font(LabFont.swiftUI(16, .medium))
+                }
         }
     }
 }

@@ -10,6 +10,8 @@ final class GestureHUDView: UIView {
         case seek(delta: Double, target: Double, duration: Double)
         case rate(Float)
         case text(String)
+        /// O som desligado ou devolvido.
+        case mudo(Bool)
         /// Só o tempo de destino, sem caixa em volta. Usado durante o arrasto,
         /// quando o usuário está justamente tentando enxergar a imagem.
         case time(Double)
@@ -108,7 +110,7 @@ final class GestureHUDView: UIView {
         case .brightness(let value):
             icon.image = UIImage(systemName: "sun.max.fill")
             icon.isHidden = false
-            primary.text = "\(Int(value * 100))%"
+            primary.text = Formato.porcento(value)
             secondary.isHidden = true
             bar.isHidden = false
             bar.progress = value
@@ -116,7 +118,7 @@ final class GestureHUDView: UIView {
         case .volume(let value):
             icon.image = UIImage(systemName: value == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill")
             icon.isHidden = false
-            primary.text = "\(Int(value * 100))%"
+            primary.text = Formato.porcento(value)
             secondary.isHidden = true
             bar.isHidden = false
             bar.progress = value
@@ -135,7 +137,14 @@ final class GestureHUDView: UIView {
         case .rate(let value):
             icon.image = UIImage(systemName: "forward.fill")
             icon.isHidden = false
-            primary.text = String(format: "%.1f×", value)
+            primary.text = Formato.velocidade(value)
+            secondary.isHidden = true
+            bar.isHidden = true
+
+        case .mudo(let mudo):
+            icon.image = UIImage(systemName: mudo ? "speaker.slash.fill" : "speaker.wave.2.fill")
+            icon.isHidden = false
+            primary.text = mudo ? String(localized: "Sem som") : String(localized: "Som ligado")
             secondary.isHidden = true
             bar.isHidden = true
 

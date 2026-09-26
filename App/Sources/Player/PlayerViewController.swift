@@ -217,6 +217,7 @@ final class PlayerViewController: UIViewController {
         controls.onRotate = { [weak self] in self?.toggleOrientation() }
         controls.onShowSpeed = { [weak self] in self?.showSpeedSheet() }
         controls.onCycleAspect = { [weak self] in self?.cycleAspect() }
+        controls.onUnmute = { [weak self] in self?.alternarMudo(false) }
         controls.onShowTools = { [weak self] in self?.showToolsPanel() }
 
 
@@ -371,10 +372,10 @@ final class PlayerViewController: UIViewController {
 
         let alerta = UIAlertController(
             title: item.title,
-            message: "Você parou em \(TimeFormat.clock(instante)).",
+            message: String(localized: "Você parou em \(TimeFormat.clock(instante))."),
             preferredStyle: .alert)
 
-        alerta.addAction(UIAlertAction(title: "Continuar de \(TimeFormat.clock(instante))",
+        alerta.addAction(UIAlertAction(title: String(localized: "Continuar de \(TimeFormat.clock(instante))"),
                                        style: .default) { [weak self] _ in
             guard let self else { return }
             // Buscar antes de a reprodução começar é ignorado pelo VLC — ele
@@ -385,7 +386,7 @@ final class PlayerViewController: UIViewController {
             self.scheduleControlsHide()
         })
 
-        alerta.addAction(UIAlertAction(title: "Começar do início", style: .default) { [weak self] _ in
+        alerta.addAction(UIAlertAction(title: String(localized: "Começar do início"), style: .default) { [weak self] _ in
             guard let self else { return }
             ResumeStore.shared.clear(key: self.item.origin.resumeKey)
             self.engine.play()
@@ -440,33 +441,23 @@ final class PlayerViewController: UIViewController {
 
         switch resultado {
         case .success(let info):
-            let video = info.video.first.map { "\($0.codec.uppercased()) \($0.resolution)" } ?? "sem vídeo"
-            let audio = info.audio.first.map { $0.codec.uppercased() } ?? "sem áudio"
-            return """
-
-            O FFmpeg lê este arquivo normalmente:
-            \(info.formatName.uppercased()) · \(video) · \(audio)
-
-            Ou seja, o arquivo está íntegro e legível — quem recusa é o \
-            motor da Apple. É exatamente o caso que o motor FFmpeg resolve.
-            """
+            let video = info.video.first.map { "\($0.codec.uppercased()) \($0.resolution)" }
+                ?? String(localized: "sem vídeo")
+            let audio = info.audio.first.map { $0.codec.uppercased() } ?? String(localized: "sem áudio")
+            let resumo = "\(info.formatName.uppercased()) · \(video) · \(audio)"
+            return "\n\n" + String(localized: "O FFmpeg lê este arquivo normalmente: \(resumo).")
+                + "\n\n" + String(localized: "Ou seja, o arquivo está íntegro e legível — quem recusa é o motor de reprodução.")
         case .failure(let erro):
-            return """
-
-            O FFmpeg também não conseguiu abrir:
-            \(erro.localizedDescription)
-
-            Isso aponta para permissão de leitura, não para codec. Tente \
-            adicionar a pasta de novo em Pastas.
-            """
+            return "\n\n" + String(localized: "O FFmpeg também não conseguiu abrir: \(erro.localizedDescription)")
+                + "\n\n" + String(localized: "Isso aponta para permissão de leitura, não para codec. Tente adicionar a pasta de novo em Pastas.")
         }
     }
 
     private func showAlert(message: String, diagnosis: String?) {
-        let alert = UIAlertController(title: "Não deu para tocar",
+        let alert = UIAlertController(title: String(localized: "Não deu para tocar"),
                                       message: message + (diagnosis ?? ""),
                                       preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "Voltar", style: .default) { [weak self] _ in
+        alert.addAction(UIAlertAction(title: String(localized: "Voltar"), style: .default) { [weak self] _ in
             self?.close()
         })
         present(alert, animated: true)
@@ -675,6 +666,7 @@ final class PlayerViewController: UIViewController {
             guard let novo = mudanca.newValue else { return }
             Task { @MainActor in
                 guard let self else { return }
+                self.desfazerMudo()
                 self.hud.show(.volume(novo))
                 self.hud.hideAfterDelay(1.0)
             }
@@ -779,10 +771,8 @@ final class PlayerViewController: UIViewController {
 
     private func textoDaAceleracao() -> NSAttributedString {
         let velocidade = PlayerPreferences.holdSpeed
-        let rotulo = velocidade == rintf(velocidade) ? "\(Int(velocidade))×"
-                                                     : String(format: "%.1f×", velocidade)
         return NSAttributedString(
-            string: rotulo,
+            string: Formato.velocidade(velocidade),
             attributes: [.foregroundColor: LabTheme.accentUI,
                          .font: LabFont.ui(19, .bold)])
     }
@@ -834,7 +824,7 @@ final class PlayerViewController: UIViewController {
             videoZoom = min(max(videoZoom * gesture.scale, zoomRange.lowerBound), zoomRange.upperBound)
             gesture.scale = 1
             applyZoom()
-            hud.show(.text("\(Int(videoZoom * 100))%"))
+            hud.show(.text(Formato.porcento(videoZoom)))
             controlsHideWorkItem?.cancel()
 
         case .ended, .cancelled, .failed:
@@ -931,9 +921,9 @@ final class PlayerViewController: UIViewController {
 
     private func label(for gravity: AVLayerVideoGravity) -> String {
         switch gravity {
-        case .resizeAspectFill: return "Preencher"
-        case .resize:           return "Esticar"
-        default:                return "Ajustar"
+        case .resizeAspectFill: return String(localized: "Preencher")
+        case .resize:           return String(localized: "Esticar")
+        default:                return String(localized: "Ajustar")
         }
     }
 
@@ -956,8 +946,8 @@ final class PlayerViewController: UIViewController {
         let atual = niveis.firstIndex { abs($0 - dimView.alpha) < 0.01 } ?? 0
         let proximo = niveis[(atual + 1) % niveis.count]
         UIView.animate(withDuration: 0.2) { self.dimView.alpha = proximo }
-        hud.show(.text(proximo == 0 ? "Modo noturno desligado"
-                                    : "Modo noturno \(Int(proximo * 100))%"))
+        hud.show(.text(proximo == 0 ? String(localized: "Modo noturno desligado")
+                                    : String(localized: "Modo noturno \(Formato.porcento(proximo))")))
         hud.hideAfterDelay(1.2)
     }
 
@@ -968,10 +958,10 @@ final class PlayerViewController: UIViewController {
     }
 
     private func showSpeedSheet() {
-        let sheet = UIAlertController(title: "Velocidade", message: nil, preferredStyle: .actionSheet)
+        let sheet = UIAlertController(title: String(localized: "Velocidade"), message: nil, preferredStyle: .actionSheet)
         for valor: Float in [0.5, 0.75, 1.0, 1.25, 1.5, 2.0] {
             let marca = abs(valor - playbackSpeed) < 0.01 ? "✓ " : ""
-            let titulo = valor == rintf(valor) ? "\(Int(valor))×" : String(format: "%.2g×", valor)
+            let titulo = Formato.velocidade(valor)
             sheet.addAction(UIAlertAction(title: marca + titulo, style: .default) { [weak self] _ in
                 guard let self else { return }
                 self.playbackSpeed = valor
@@ -980,21 +970,21 @@ final class PlayerViewController: UIViewController {
                 self.hud.hideAfterDelay()
             })
         }
-        sheet.addAction(UIAlertAction(title: "Fechar", style: .cancel))
+        sheet.addAction(UIAlertAction(title: String(localized: "Fechar"), style: .cancel))
         presentSheet(sheet)
     }
 
     /// Quanto acelera enquanto o dedo fica na tela.
     private func showHoldSpeedSheet() {
         let atual = PlayerPreferences.holdSpeed
-        let sheet = UIAlertController(title: "Acelerar ao segurar", message: nil, preferredStyle: .actionSheet)
+        let sheet = UIAlertController(title: String(localized: "Acelerar ao segurar"), message: nil, preferredStyle: .actionSheet)
         for valor in PlayerPreferences.holdSpeedOptions {
             let marca = valor == atual ? "✓ " : ""
-            sheet.addAction(UIAlertAction(title: marca + String(format: "%g×", valor), style: .default) { _ in
+            sheet.addAction(UIAlertAction(title: marca + Formato.velocidade(valor), style: .default) { _ in
                 PlayerPreferences.holdSpeed = valor
             })
         }
-        sheet.addAction(UIAlertAction(title: "Fechar", style: .cancel))
+        sheet.addAction(UIAlertAction(title: String(localized: "Fechar"), style: .cancel))
         presentSheet(sheet)
     }
 
@@ -1007,48 +997,48 @@ final class PlayerViewController: UIViewController {
     private func showToolsPanel() {
         controlsHideWorkItem?.cancel()
 
-        func velocidade(_ valor: Float) -> String {
-            valor == rintf(valor) ? "\(Int(valor))×"
-                                  : String(format: "%.1f×", valor).replacingOccurrences(of: ".", with: ",")
-        }
+        func velocidade(_ valor: Float) -> String { Formato.velocidade(valor) }
         let deitado = view.window?.windowScene?.interfaceOrientation.isLandscape ?? false
 
         var itens: [ToolsPanelView.Ferramenta] = [
-            .init(rotulo: "Faixa de áudio", simbolo: "music.note") { [weak self] in self?.showTracks(.audio) },
-            .init(rotulo: "Legenda", simbolo: "captions.bubble") { [weak self] in self?.showTracks(.subtitle) },
-            .init(rotulo: "Proporção", simbolo: "aspectratio") { [weak self] in self?.cycleAspect() },
-            .init(rotulo: "Velocidade", simbolo: "speedometer", aceso: playbackSpeed != 1,
+            .init(rotulo: String(localized: "Faixa de áudio"), simbolo: "music.note") { [weak self] in self?.showTracks(.audio) },
+            .init(rotulo: String(localized: "Legenda"), simbolo: "captions.bubble") { [weak self] in self?.showTracks(.subtitle) },
+            .init(rotulo: String(localized: "Proporção"), simbolo: "aspectratio") { [weak self] in self?.cycleAspect() },
+            .init(rotulo: String(localized: "Velocidade"), simbolo: "speedometer", aceso: playbackSpeed != 1,
                   noAnel: velocidade(playbackSpeed)) { [weak self] in self?.showSpeedSheet() },
-            .init(rotulo: "Acelerar ao segurar", simbolo: "hand.tap",
+            .init(rotulo: String(localized: "Acelerar ao segurar"), simbolo: "hand.tap",
                   noAnel: velocidade(PlayerPreferences.holdSpeed)) { [weak self] in self?.showHoldSpeedSheet() },
-            .init(rotulo: "Repetir", simbolo: "repeat.1", aceso: repeatMode == .one) { [weak self] in
+            .init(rotulo: String(localized: "Repetir"), simbolo: "repeat.1", aceso: repeatMode == .one) { [weak self] in
                 guard let self else { return }
                 self.repeatMode = self.repeatMode == .one ? .off : .one
                 self.controls.setRepeating(self.repeatMode == .one)
             },
         ]
         if playlist.count > 1 {
-            itens.append(.init(rotulo: "Aleatório", simbolo: "shuffle", aceso: isShuffling) { [weak self] in
+            itens.append(.init(rotulo: String(localized: "Aleatório"), simbolo: "shuffle", aceso: isShuffling) { [weak self] in
                 self?.isShuffling.toggle()
             })
         }
         itens += [
-            .init(rotulo: "Mudo", simbolo: engine.isMuted ? "speaker.slash.fill" : "speaker.wave.2",
-                  aceso: engine.isMuted) { [weak self] in self?.engine.isMuted.toggle() },
-            .init(rotulo: "Modo noturno", simbolo: "moon.stars", aceso: dimView.alpha > 0.01) { [weak self] in
+            .init(rotulo: String(localized: "Mudo"), simbolo: "speaker.slash.fill",
+                  aceso: engine.isMuted) { [weak self] in
+                guard let self else { return }
+                self.alternarMudo(!self.engine.isMuted)
+            },
+            .init(rotulo: String(localized: "Modo noturno"), simbolo: "moon.stars", aceso: dimView.alpha > 0.01) { [weak self] in
                 self?.cycleNightMode()
             },
-            .init(rotulo: "Captura de tela", simbolo: "camera") { [weak self] in self?.takeSnapshot() },
-            .init(rotulo: "Girar", simbolo: "rotate.right", valor: deitado ? "deitado" : "em pé") { [weak self] in
+            .init(rotulo: String(localized: "Captura de tela"), simbolo: "camera") { [weak self] in self?.takeSnapshot() },
+            .init(rotulo: String(localized: "Girar"), simbolo: "rotate.right", valor: deitado ? String(localized: "deitado") : String(localized: "em pé")) { [weak self] in
                 self?.toggleOrientation()
             },
-            .init(rotulo: "Ampliação normal", simbolo: "arrow.up.left.and.arrow.down.right") { [weak self] in
+            .init(rotulo: String(localized: "Ampliação normal"), simbolo: "arrow.up.left.and.arrow.down.right") { [weak self] in
                 self?.resetZoom()
             },
-            .init(rotulo: "Tempo para dormir", simbolo: "timer", aceso: sleepTimer != nil) { [weak self] in
+            .init(rotulo: String(localized: "Tempo para dormir"), simbolo: "timer", aceso: sleepTimer != nil) { [weak self] in
                 self?.showSleepSheet()
             },
-            .init(rotulo: "Ocultar barra", simbolo: "clock.arrow.circlepath",
+            .init(rotulo: String(localized: "Ocultar barra"), simbolo: "clock.arrow.circlepath",
                   valor: PlayerPreferences.autoHide.title) { [weak self] in self?.showAutoHideSheet() },
         ]
 
@@ -1075,28 +1065,28 @@ final class PlayerViewController: UIViewController {
 
     private func showSleepSheet() {
         let sheet = UIAlertController(title: sleepTimerTitle(), message: nil, preferredStyle: .actionSheet)
-        sheet.addAction(UIAlertAction(title: sleepTimer == nil ? "✓ Desligado" : "Desligado",
+        sheet.addAction(UIAlertAction(title: (sleepTimer == nil ? "✓ " : "") + String(localized: "Desligado"),
                                       style: .default) { [weak self] _ in
             self?.cancelSleepTimer()
         })
         for minutos in [15, 30, 45, 60] {
-            sheet.addAction(UIAlertAction(title: "\(minutos) minutos", style: .default) { [weak self] _ in
+            sheet.addAction(UIAlertAction(title: Plural.minutos(minutos), style: .default) { [weak self] _ in
                 self?.startSleepTimer(minutes: minutos)
             })
         }
-        sheet.addAction(UIAlertAction(title: "No fim do vídeo", style: .default) { [weak self] _ in
+        sheet.addAction(UIAlertAction(title: String(localized: "No fim do vídeo"), style: .default) { [weak self] _ in
             guard let self else { return }
             self.startSleepTimer(minutes: nil,
                                  seconds: max(1, self.engine.duration - self.engine.currentTime))
         })
-        sheet.addAction(UIAlertAction(title: "Fechar", style: .cancel))
+        sheet.addAction(UIAlertAction(title: String(localized: "Fechar"), style: .cancel))
         presentSheet(sheet)
     }
 
     /// Quanto tempo a barra fica na tela — o "Interface auto hide" do MX Player.
     private func showAutoHideSheet() {
         let atual = PlayerPreferences.autoHide
-        let sheet = UIAlertController(title: "Ocultar barra depois de",
+        let sheet = UIAlertController(title: String(localized: "Ocultar barra depois de"),
                                       message: nil, preferredStyle: .actionSheet)
         for opcao in PlayerPreferences.AutoHide.allCases {
             let marca = opcao == atual ? "✓ " : ""
@@ -1107,14 +1097,14 @@ final class PlayerViewController: UIViewController {
                 self?.scheduleControlsHide()
             })
         }
-        sheet.addAction(UIAlertAction(title: "Fechar", style: .cancel))
+        sheet.addAction(UIAlertAction(title: String(localized: "Fechar"), style: .cancel))
         presentSheet(sheet)
     }
 
     private func sleepTimerTitle() -> String {
-        guard let sleepDeadline else { return "Tempo para dormir" }
+        guard let sleepDeadline else { return String(localized: "Tempo para dormir") }
         let restante = max(0, sleepDeadline.timeIntervalSinceNow)
-        return "Dormir em \(Int(restante / 60) + 1) min"
+        return String(localized: "Dormir em \(Int(restante / 60) + 1) min")
     }
 
     private func startSleepTimer(minutes: Int?, seconds: Double? = nil) {
@@ -1125,11 +1115,11 @@ final class PlayerViewController: UIViewController {
             Task { @MainActor in
                 self?.engine.pause()
                 self?.cancelSleepTimer()
-                self?.hud.show(.text("Pausado pelo temporizador"))
+                self?.hud.show(.text(String(localized: "Pausado pelo temporizador")))
                 self?.hud.hideAfterDelay(2.5)
             }
         }
-        hud.show(.text("Dormir em \(Int(intervalo / 60)) min"))
+        hud.show(.text(String(localized: "Dormir em \(Int(intervalo / 60)) min")))
         hud.hideAfterDelay(1.8)
     }
 
@@ -1141,12 +1131,12 @@ final class PlayerViewController: UIViewController {
 
     private func takeSnapshot() {
         guard let imagem = engine.snapshot() else {
-            hud.show(.text("Nada para capturar"))
+            hud.show(.text(String(localized: "Nada para capturar")))
             hud.hideAfterDelay(1.5)
             return
         }
         UIImageWriteToSavedPhotosAlbum(imagem, nil, nil, nil)
-        hud.show(.text("Salvo em Fotos"))
+        hud.show(.text(String(localized: "Salvo em Fotos")))
         hud.hideAfterDelay(1.8)
     }
 
@@ -1156,7 +1146,7 @@ final class PlayerViewController: UIViewController {
     private func showTracks(_ kind: PlayerControlsView.TrackKind) {
         controlsHideWorkItem?.cancel()
 
-        let titulo = kind == .audio ? "Faixas de áudio" : "Legendas"
+        let titulo = kind == .audio ? String(localized: "Faixas de áudio") : String(localized: "Legendas")
         let sheet = UIAlertController(title: titulo, message: nil, preferredStyle: .actionSheet)
 
         // As faixas vêm do motor, que já tem o arquivo aberto — e não de uma
@@ -1166,7 +1156,7 @@ final class PlayerViewController: UIViewController {
         let atual = kind == .audio ? engine.currentAudioTrack : engine.currentSubtitleTrack
 
         if kind == .subtitle {
-            let acao = UIAlertAction(title: atual == nil ? "✓ Desligada" : "Desligada",
+            let acao = UIAlertAction(title: (atual == nil ? "✓ " : "") + String(localized: "Desligada"),
                                      style: .default) { [weak self] _ in
                 self?.scheduleControlsHide()
                 Task { await self?.engine.selectSubtitleTrack(nil) }
@@ -1176,7 +1166,7 @@ final class PlayerViewController: UIViewController {
 
         for faixa in faixas {
             let marca = faixa.id == atual ? "✓ " : ""
-            let extra = faixa.isBitmap ? " (imagem)" : ""
+            let extra = faixa.isBitmap ? " (" + String(localized: "imagem") + ")" : ""
             let acao = UIAlertAction(title: "\(marca)\(faixa.label)\(extra)", style: .default) { [weak self] _ in
                 guard let self else { return }
                 // Sem isto a barra ficava presa na tela depois de trocar de
@@ -1195,10 +1185,10 @@ final class PlayerViewController: UIViewController {
 
         if faixas.isEmpty {
             sheet.message = kind == .audio
-                ? "Este arquivo tem só uma faixa de áudio."
-                : "Este arquivo não tem legendas embutidas."
+                ? String(localized: "Este arquivo tem só uma faixa de áudio.")
+                : String(localized: "Este arquivo não tem legendas embutidas.")
         }
-        sheet.addAction(UIAlertAction(title: "Fechar", style: .cancel) { [weak self] _ in
+        sheet.addAction(UIAlertAction(title: String(localized: "Fechar"), style: .cancel) { [weak self] _ in
             self?.scheduleControlsHide()
         })
         presentSheet(sheet)
@@ -1330,6 +1320,7 @@ final class PlayerViewController: UIViewController {
             UIScreen.main.brightness = value
             hud.show(.brightness(Float(value)))
         } else {
+            desfazerMudo()
             let value = max(0, min(1, panStartVolume + Float(fraction)))
 
             // Só escreve quando o valor muda de verdade.
@@ -1352,6 +1343,29 @@ final class PlayerViewController: UIViewController {
             // limitar o valor, o número na tela seguiria mentindo.
             hud.show(.volume(systemVolume.value))
         }
+    }
+
+    // MARK: - Mudo
+
+    /// Liga ou desliga o som, e diz isso na tela.
+    ///
+    /// O mudo mexe só no volume do VLC, não no do aparelho: nada na tela
+    /// mudava e o filme simplesmente ficava calado. Agora o balão confirma na
+    /// hora e um alto-falante riscado fica no alto enquanto durar, servindo
+    /// também de botão para devolver o som.
+    private func alternarMudo(_ mudo: Bool) {
+        engine.isMuted = mudo
+        controls.mudo = mudo
+        hud.show(.mudo(mudo))
+        hud.hideAfterDelay(1.4)
+    }
+
+    /// Mexer no volume é querer ouvir: o gesto e os botões laterais desfazem
+    /// o mudo.
+    private func desfazerMudo() {
+        guard engine.isMuted else { return }
+        engine.isMuted = false
+        controls.mudo = false
     }
 
     // MARK: - Controles

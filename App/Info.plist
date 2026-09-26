@@ -2,8 +2,17 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- Inglês é a língua de quem não tem a sua entre as do app; português e
+	     espanhol vêm das pastas .lproj. Os textos do código seguem em
+	     português — são a chave de busca nas tabelas. -->
 	<key>CFBundleDevelopmentRegion</key>
-	<string>pt-BR</string>
+	<string>en</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>pt</string>
+		<string>es</string>
+	</array>
 	<key>CFBundleDisplayName</key>
 	<string>LibertyX Player</string>
 	<key>CFBundleExecutable</key>
