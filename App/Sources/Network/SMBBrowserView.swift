@@ -424,7 +424,7 @@ struct SMBDirectoryView: View {
                     }
                 }
 
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 14) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12, alignment: .top)], spacing: 14) {
                     ForEach(videos) { item in
                         Button { playing = item } label: { VideoCard(item: item) }
                             .buttonStyle(.plain)
