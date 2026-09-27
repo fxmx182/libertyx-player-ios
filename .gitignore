@@ -20,6 +20,7 @@ Android/app/build/
 Android/build/
 Android/.kotlin/
 *.apk
+*.aab
 
 # macOS / editores
 .DS_Store
@@ -28,4 +29,4 @@ Android/.kotlin/
 .ffmpeg-build/
 
 # Material de marca em alta resolução: pesado e não entra no build.
-imagens/
+/imagens/
