@@ -89,9 +89,32 @@ jobs:
       # allowed with SDK 'iOS 18.5'"), mas a proibição é dele, não do codesign.
       # Assinando aqui, o binário ganha a estrutura e o AltServer só troca o
       # conteúdo pelo certificado do Apple ID. O CI segue sem certificado.
+      #
+      # Os frameworks embutidos primeiro, e o app por último (assinar o app
+      # sela o conteúdo dele, frameworks incluídos). O MobileVLCKit chega sem
+      # LC_CODE_SIGNATURE em nenhuma fatia e ainda traz armv7/armv7s, de 32
+      # bits, que nenhum iPhone do iOS 17 executa. O Sideloadly tentava
+      # inserir a assinatura nesse binário gordo e desistia com "macho
+      # sign/edit failed (-18)". Só com arm64, e já assinado, ele só troca o
+      # conteúdo.
       - name: Assinar ad-hoc
         run: |
           APP="build/Build/Products/Release-iphoneos/LabPlayer.app"
+          for fw in "$APP"/Frameworks/*.framework "$APP"/Frameworks/*.dylib; do
+            [ -e "$fw" ] || continue
+            if [ -d "$fw" ]; then
+              BIN="$fw/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$fw/Info.plist")"
+            else
+              BIN="$fw"
+            fi
+            echo "== $BIN: $(lipo -archs "$BIN")"
+            if [ "$(lipo -archs "$BIN")" != "arm64" ]; then
+              lipo "$BIN" -thin arm64 -output "$BIN.arm64"
+              mv "$BIN.arm64" "$BIN"
+              echo "   agora: $(lipo -archs "$BIN")"
+            fi
+            codesign --force --sign - --timestamp=none "$fw"
+          done
           codesign --force --sign - --timestamp=none "$APP"
 
       - name: Conferir a assinatura
@@ -103,6 +126,15 @@ jobs:
             exit 1
           }
           echo "LC_CODE_SIGNATURE presente"
+          for fw in "$APP"/Frameworks/*.framework; do
+            [ -d "$fw" ] || continue
+            BIN="$fw/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$fw/Info.plist")"
+            otool -l "$BIN" | grep -q LC_CODE_SIGNATURE || {
+              echo "::error title=Framework sem assinatura::$BIN — o Sideloadly recusa"
+              exit 1
+            }
+            echo "$(basename "$fw"): $(lipo -archs "$BIN"), assinado"
+          done
 
       # O log completo do job só é baixável por quem tem admin no repositório,
       # mas as *anotações* de um repo público são lidas por qualquer um. Então
