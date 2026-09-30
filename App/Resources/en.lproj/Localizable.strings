@@ -238,3 +238,6 @@
 "É assim que se procura uma cena." = "That is how you find a scene.";
 "É por aqui que se chega ao computador de casa." = "This is how you reach your home computer.";
 "“%@” será apagado do aparelho. Não dá para desfazer." = "“%@” will be deleted from the device. This cannot be undone.";
+"Sobre" = "About";
+"Licenças de código aberto" = "Open-source licenses";
+"O LibertyX é feito sobre estes projetos de código aberto. Toque num deles para ler a licença." = "LibertyX is built on these open-source projects. Tap one to read its license.";

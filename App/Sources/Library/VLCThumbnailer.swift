@@ -27,7 +27,9 @@ enum VLCThumbnailer {
     /// servidor, um arquivo grande pode simplesmente nunca responder.
     private static let prazo: TimeInterval = 25
 
-    static func preview(for item: MediaItem, maxWidth: CGFloat = 320) async -> (UIImage, Double)? {
+    /// - Parameter em: fração da duração; por padrão, a `posicao`.
+    static func preview(for item: MediaItem, maxWidth: CGFloat = 320,
+                        em fracao: Float? = nil) async -> (UIImage, Double)? {
         guard let url = try? VLCEngine.resolveURL(for: item.origin) else { return nil }
 
         // O escopo de segurança precisa durar toda a extração: o VLC lê o
@@ -47,7 +49,7 @@ enum VLCThumbnailer {
         // reprodução — senão ela bate na porta como anônima e volta vazia.
         VLCEngine.credenciais(para: item.origin).forEach(media.addOption)
 
-        let tarefa = Tarefa(media: media, maxWidth: maxWidth)
+        let tarefa = Tarefa(media: media, maxWidth: maxWidth, posicao: fracao ?? posicao)
 
         let imagem = await tarefa.executar(prazo: prazo)
         withExtendedLifetime(guarda) {}
@@ -72,15 +74,17 @@ enum VLCThumbnailer {
 
         private let media: VLCMedia
         private let maxWidth: CGFloat
+        private let posicao: Float
         private var thumbnailer: VLCMediaThumbnailer?
         private var continuacao: CheckedContinuation<UIImage?, Never>?
         /// Três caminhos disputam a resposta: quadro pronto, tempo esgotado pelo
         /// VLC e o nosso próprio prazo. Retomar duas vezes derruba o app.
         private var respondido = false
 
-        init(media: VLCMedia, maxWidth: CGFloat) {
+        init(media: VLCMedia, maxWidth: CGFloat, posicao: Float) {
             self.media = media
             self.maxWidth = maxWidth
+            self.posicao = posicao
         }
 
         func executar(prazo: TimeInterval) async -> UIImage? {
@@ -90,7 +94,7 @@ enum VLCThumbnailer {
                 let novo = VLCMediaThumbnailer(media: media, andDelegate: self)
                 novo.thumbnailWidth = maxWidth
                 novo.thumbnailHeight = maxWidth * 9 / 16
-                novo.snapshotPosition = VLCThumbnailer.posicao
+                novo.snapshotPosition = posicao
                 thumbnailer = novo
                 novo.fetchThumbnail()
 

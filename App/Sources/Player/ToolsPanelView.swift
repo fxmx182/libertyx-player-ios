@@ -67,6 +67,9 @@ final class ToolsPanelView: UIView {
 
         let altura = rolagem.heightAnchor.constraint(equalTo: grade.heightAnchor)
         altura.priority = .defaultHigh
+        // Ocupa toda a largura que o teto deixar.
+        let largura = rolagem.widthAnchor.constraint(equalTo: safeAreaLayoutGuide.widthAnchor, constant: -20)
+        largura.priority = .defaultHigh
 
         NSLayoutConstraint.activate([
             veu.topAnchor.constraint(equalTo: topAnchor),
@@ -74,8 +77,14 @@ final class ToolsPanelView: UIView {
             veu.leadingAnchor.constraint(equalTo: leadingAnchor),
             veu.trailingAnchor.constraint(equalTo: trailingAnchor),
 
-            rolagem.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 10),
-            rolagem.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -10),
+            // Largura com teto, centrada: num iPad (ou iPhone deitado) os
+            // quatro anéis por fileira ficavam a um palmo um do outro, e o
+            // olho tinha de varrer a tela inteira para achar uma ferramenta.
+            rolagem.centerXAnchor.constraint(equalTo: safeAreaLayoutGuide.centerXAnchor),
+            rolagem.leadingAnchor.constraint(greaterThanOrEqualTo: safeAreaLayoutGuide.leadingAnchor, constant: 10),
+            rolagem.trailingAnchor.constraint(lessThanOrEqualTo: safeAreaLayoutGuide.trailingAnchor, constant: -10),
+            rolagem.widthAnchor.constraint(lessThanOrEqualToConstant: Escala.larguraMaxima),
+            largura,
             rolagem.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -16),
             altura,
             // O painel não passa de 60% da tela. Fileira cortada pela borda

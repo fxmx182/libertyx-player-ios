@@ -151,6 +151,43 @@ final class VLCEngine: NSObject, PlaybackEngine {
         player.delegate = self
         player.drawable = container
         container.attach(player)
+
+        let centro = NotificationCenter.default
+        centro.addObserver(self, selector: #selector(foiParaSegundoPlano),
+                           name: UIApplication.didEnterBackgroundNotification, object: nil)
+        centro.addObserver(self, selector: #selector(voltouDoSegundoPlano),
+                           name: UIApplication.willEnterForegroundNotification, object: nil)
+    }
+
+    // MARK: - Tela apagada
+
+    /// A imagem foi desligada ao sair da tela, e volta ao entrar.
+    private var imagemDesligada = false
+
+    /// Tela apagada (ou outro app na frente) com o filme tocando: o som segue
+    /// — a sessão de áudio e os controles da tela bloqueada já cuidam disso —,
+    /// mas a imagem para de ser decodificada. Decodificar vídeo para uma tela
+    /// que ninguém vê só gastaria bateria. É o que o próprio VLC do iPhone faz.
+    @objc private func foiParaSegundoPlano() {
+        guard player.isPlaying, player.currentVideoTrackIndex >= 0 else { return }
+        player.currentVideoTrackIndex = -1
+        imagemDesligada = true
+    }
+
+    @objc private func voltouDoSegundoPlano() {
+        guard imagemDesligada else { return }
+        imagemDesligada = false
+        // Se na tela bloqueada o filme trocou pelo "próximo", o novo já abriu
+        // com imagem: religar por cima reiniciaria o decodificador à toa.
+        guard player.currentVideoTrackIndex < 0 else { return }
+        let faixas = (player.videoTrackIndexes as? [NSNumber])?.map(\.int32Value) ?? []
+        guard let faixa = faixas.first(where: { $0 >= 0 }) else { return }
+        player.currentVideoTrackIndex = faixa
+        // Pausado na tela bloqueada, nenhum quadro novo viria até o play, e a
+        // tela ficaria preta: buscar o ponto onde está faz o VLC desenhar um.
+        if !player.isPlaying {
+            player.time = player.time
+        }
     }
 
     // MARK: - Carga

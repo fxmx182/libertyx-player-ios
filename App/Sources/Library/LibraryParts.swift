@@ -247,7 +247,7 @@ struct CartaoDeContinuar: View {
                     .foregroundStyle(LabTheme.muted)
             }
         }
-        .frame(width: 236)
+        .frame(width: 236 * Escala.fator)
         .contentShape(Rectangle())
     }
 }
@@ -299,7 +299,7 @@ struct VideoRow: View {
                 // Largura e altura fixas, e não proporção: numa pilha
                 // preguiçosa a altura proposta pode vir indefinida, e a
                 // miniatura sairia sem tamanho.
-                .frame(width: 124, height: 70)
+                .frame(width: 124 * Escala.fator, height: 70 * Escala.fator)
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .strokeBorder(LabTheme.glassBorder, lineWidth: 0.5))

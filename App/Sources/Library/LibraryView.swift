@@ -140,7 +140,7 @@ struct LibraryView: View {
                                          subtitulo: Plural.videos(total) + "  ·  " + Plural.pastas(library.groups.count))
                             faixaDeContinuar(continuando)
                             Secao(titulo: String(localized: "Pastas"), extra: "\(library.groups.count)")
-                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 14, alignment: .top)], spacing: 18) {
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: Escala.capa), spacing: 14, alignment: .top)], spacing: 18) {
                                 ForEach(library.groups) { grupo in
                                     NavigationLink(value: grupo) { CapaDePasta(grupo: grupo) }
                                         .buttonStyle(.plain)
@@ -399,7 +399,7 @@ struct ListaDeVideos: View {
 
     var body: some View {
         if layout == .grid {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 14, alignment: .top)], spacing: 18) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: Escala.capa), spacing: 14, alignment: .top)], spacing: 18) {
                 ForEach(itens) { item in
                     Button { onTocar(item, itens) } label: { VideoCard(item: item) }
                         .buttonStyle(.plain)

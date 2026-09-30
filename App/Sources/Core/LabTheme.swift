@@ -128,3 +128,23 @@ extension View {
             .foregroundStyle(LabTheme.faint)
     }
 }
+
+/// O tamanho das coisas em tela grande — o mesmo `Escala` do Android.
+///
+/// Tablet é o iPad: com o tamanho do iPhone, uma tela de 11 polegadas virava
+/// sete colunas de selo, com metade vazia. O iPhone deitado continua sendo
+/// iPhone: fica largo, mas baixo, e capas grandes lá caberiam uma fileira por
+/// tela.
+enum Escala {
+    static var tablet: Bool { UIDevice.current.userInterfaceIdiom == .pad }
+
+    /// A largura mínima de cada capa na grade.
+    static var capa: CGFloat { tablet ? 200 : 150 }
+
+    /// Multiplica o que foi medido para o iPhone.
+    static var fator: CGFloat { tablet ? 1.35 : 1 }
+
+    /// Teto de largura de listas e painéis: de ponta a ponta num iPad
+    /// deitado, o nome ficava de um lado da tela e a ação do outro.
+    static let larguraMaxima: CGFloat = 760
+}

@@ -82,6 +82,11 @@ struct SMBServersView: View {
         } message: { server in
             Text("Remove “\(server.name)” da lista e apaga a senha guardada no Keychain do aparelho.")
         }
+        // Largura com teto e centrada: num iPad deitado, linhas de ponta a
+        // ponta deixavam o nome do servidor de um lado da tela e a ação do
+        // outro.
+        .frame(maxWidth: Escala.larguraMaxima)
+        .frame(maxWidth: .infinity)
         .fundoDaRede()
         .navigationTitle("Servidores")
         .task { discovery.start(conhecidos: store.servers.map(\.host)) }
@@ -424,7 +429,7 @@ struct SMBDirectoryView: View {
                     }
                 }
 
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12, alignment: .top)], spacing: 14) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: Escala.capa), spacing: 12, alignment: .top)], spacing: 14) {
                     ForEach(videos) { item in
                         Button { playing = item } label: { VideoCard(item: item) }
                             .buttonStyle(.plain)

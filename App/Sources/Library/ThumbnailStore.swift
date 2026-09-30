@@ -102,13 +102,31 @@ final class ThumbnailStore: ObservableObject {
 
     // MARK: - Geração
 
+    /// A miniatura, com uma segunda chance quando o quadro sai preto.
+    ///
+    /// Logo depois da busca, o decodificador às vezes entrega um quadro preto
+    /// de transição — e a capa saía preta. Tenta de novo mais adiante no
+    /// filme; se lá também estiver escuro, o filme é escuro mesmo e fica o
+    /// primeiro.
     private func gerar(_ item: MediaItem) async -> (UIImage, Double)? {
+        guard let primeira = await gerar(item, adiante: false) else { return nil }
+        guard Self.quaseTodaPreta(primeira.0) else { return primeira }
+        if let segunda = await gerar(item, adiante: true), !Self.quaseTodaPreta(segunda.0) {
+            return (segunda.0, primeira.1 > 0 ? primeira.1 : segunda.1)
+        }
+        return primeira
+    }
+
+    private func gerar(_ item: MediaItem, adiante: Bool) async -> (UIImage, Double)? {
+        // A segunda tentativa vai a um terço do filme: longe da abertura e
+        // de qualquer transição perto dela.
+        let fracaoDoVLC: Float? = adiante ? 0.35 : nil
         switch item.origin {
         case .file(let url, let bookmark):
             // AVFoundation primeiro: é o gerador de miniatura da própria Apple,
             // muito mais confiável nos MP4 e MOV gravados pelo celular — que
             // são a maioria. O caminho FFmpeg fica para o que ela recusa.
-            if let porApple = await gerarComAVFoundation(url: url, bookmark: bookmark) {
+            if let porApple = await gerarComAVFoundation(url: url, bookmark: bookmark, adiante: adiante) {
                 return porApple
             }
 
@@ -116,12 +134,12 @@ final class ThumbnailStore: ObservableObject {
             // arquivo remuxado é assim, e é o mesmo motivo de esses vídeos
             // caírem no VLC na hora de tocar. Aí o VLC também tira a miniatura:
             // quem consegue tocar o arquivo consegue extrair um quadro dele.
-            return await VLCThumbnailer.preview(for: item)
+            return await VLCThumbnailer.preview(for: item, em: fracaoDoVLC)
 
         case .smb:
             // Mesmo caminho do arquivo local: o VLC fala `smb://` nativamente,
             // então não há ponte de leitura por blocos para manter aqui.
-            return await VLCThumbnailer.preview(for: item)
+            return await VLCThumbnailer.preview(for: item, em: fracaoDoVLC)
 
         case .remote:
             return nil
@@ -132,7 +150,7 @@ final class ThumbnailStore: ObservableObject {
     ///
     /// O escopo de segurança fica aberto durante toda a geração — ela é
     /// assíncrona, e fechar antes faria a leitura falhar no meio.
-    private func gerarComAVFoundation(url: URL, bookmark: Data?) async -> (UIImage, Double)? {
+    private func gerarComAVFoundation(url: URL, bookmark: Data?, adiante: Bool) async -> (UIImage, Double)? {
         let guarda = ScopedAccess(url: url, bookmark: bookmark)
         guard guarda.path != nil else { return nil }
 
@@ -148,7 +166,8 @@ final class ThumbnailStore: ObservableObject {
 
         // 10% da duração, com teto de 12 s: passa da abertura escura sem cair
         // depois do fim num vídeo curto.
-        let instante = duracao > 0 ? min(Self.momento, duracao * 0.1) : 0
+        // Na segunda tentativa, a um terço do filme.
+        let instante = duracao > 0 ? (adiante ? duracao / 3 : min(Self.momento, duracao * 0.1)) : 0
         let alvo = CMTime(seconds: max(0, instante), preferredTimescale: 600)
 
         guard let cg = try? await gerador.image(at: alvo).image else { return nil }
@@ -165,6 +184,32 @@ final class ThumbnailStore: ObservableObject {
         let nova = SMBConnection(server: servidor, password: SMBServerStore.shared.password(for: servidor))
         conexoes[referencia.serverID] = nova
         return nova
+    }
+
+    // MARK: - Quadro preto
+
+    /// Reduz a imagem a 9×9 pontos: se quase nenhum passa de um cinza bem
+    /// escuro, é preto.
+    private static func quaseTodaPreta(_ imagem: UIImage) -> Bool {
+        guard let cg = imagem.cgImage else { return false }
+        let lado = 9
+        var pixels = [UInt8](repeating: 0, count: lado * lado * 4)
+        let desenhou = pixels.withUnsafeMutableBytes { memoria -> Bool in
+            guard let contexto = CGContext(data: memoria.baseAddress, width: lado, height: lado,
+                                           bitsPerComponent: 8, bytesPerRow: lado * 4,
+                                           space: CGColorSpaceCreateDeviceRGB(),
+                                           bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)
+            else { return false }
+            contexto.draw(cg, in: CGRect(x: 0, y: 0, width: lado, height: lado))
+            return true
+        }
+        guard desenhou else { return false }
+        var claros = 0
+        for i in stride(from: 0, to: pixels.count, by: 4) {
+            let luz = (Int(pixels[i]) + Int(pixels[i + 1]) + Int(pixels[i + 2])) / 3
+            if luz > 24 { claros += 1 }
+        }
+        return claros < 4
     }
 
     // MARK: - Chaves

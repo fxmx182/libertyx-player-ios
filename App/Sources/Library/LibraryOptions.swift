@@ -145,6 +145,29 @@ struct LibraryOptionsSheet: View {
                         }
                         .buttonStyle(.plain)
                     }
+
+                    secao("Sobre") {
+                        NavigationLink {
+                            LicencasView()
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "doc.text")
+                                    .font(.system(size: 17, weight: .semibold))
+                                    .foregroundStyle(LabTheme.accent)
+                                Text("Licenças de código aberto")
+                                    .font(LabFont.swiftUI(14, .semibold))
+                                    .foregroundStyle(LabTheme.text)
+                                    .multilineTextAlignment(.leading)
+                                Spacer(minLength: 0)
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(LabTheme.faint)
+                            }
+                            .padding(14)
+                            .labCard(radius: 14)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
                 .padding(20)
             }
@@ -156,7 +179,8 @@ struct LibraryOptionsSheet: View {
                 }
             }
         }
-        .presentationDetents([.medium])
+        // Média para as opções; puxando, a grande — as licenças são texto longo.
+        .presentationDetents([.medium, .large])
     }
 
     @ViewBuilder
