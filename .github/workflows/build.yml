@@ -11,12 +11,16 @@ on:
     paths-ignore:
       - "Android/**"
       - ".github/workflows/android.yml"
+      - "Folder/**"
+      - ".github/workflows/folder-ios.yml"
       - "README.md"
       - "imagens/**"
   pull_request:
     paths-ignore:
       - "Android/**"
       - ".github/workflows/android.yml"
+      - "Folder/**"
+      - ".github/workflows/folder-ios.yml"
   workflow_dispatch:
 
 concurrency:
