@@ -13,6 +13,8 @@ on:
       - ".github/workflows/android.yml"
       - "Folder/**"
       - ".github/workflows/folder-ios.yml"
+      - "Partition/**"
+      - ".github/workflows/partition-windows.yml"
       - "README.md"
       - "imagens/**"
   pull_request:
@@ -21,6 +23,8 @@ on:
       - ".github/workflows/android.yml"
       - "Folder/**"
       - ".github/workflows/folder-ios.yml"
+      - "Partition/**"
+      - ".github/workflows/partition-windows.yml"
   workflow_dispatch:
 
 concurrency:
