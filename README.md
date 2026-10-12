@@ -1,4 +1,4 @@
-# LabPlayer
+# LibertyX Player — iPhone
 
 Player de vídeo para iOS no espírito do MX Player, feito porque o iOS não tem
 nada equivalente: o VLC abre tudo mas rola o vídeo aos pulos, e o player nativo
@@ -10,7 +10,11 @@ As duas coisas que motivam o projeto:
    keyframe mais próximo.
 2. **SMB direto.** Abrir o vídeo no servidor de casa sem baixar nada antes.
 
-Nome provisório. Bundle: `com.mauricio.labplayer`.
+Bundle: `com.mauricio.labplayer` — herdado do nome antigo do projeto (LabPlayer)
+e mantido, porque trocar o bundle faz o iPhone tratar como outro app.
+
+**Baixar:** [LibertyXPlayer.ipa](https://github.com/fxmx182/libertyx-player-ios/releases/download/latest/LibertyXPlayer.ipa)
+— sempre o build mais recente da `main`.
 
 ---
 
@@ -87,7 +91,7 @@ um em voo) — sem isso a fila cresce e o vídeo fica segundos atrás do dedo.
 ## Compilar
 
 Não precisa de Mac. Um push na `main` (ou *Run workflow* na aba Actions)
-compila e publica `LabPlayer.ipa` como artefato.
+compila e publica `LibertyXPlayer.ipa` no release `latest`.
 
 O `.ipa` sai **sem assinatura**, de propósito: quem assina é o SideStore ou o
 AltStore no aparelho, com o seu Apple ID. Assim o CI não precisa de
@@ -111,7 +115,7 @@ A decisão ainda está em aberto — o projeto não depende dela: não há
 
 ## Android
 
-O mesmo player existe para Android, em [`Android/`](Android/README.md) — Kotlin,
+O mesmo player existe para Android, no repositório [libertyx-player-android](https://github.com/fxmx182/libertyx-player-android) — Kotlin,
 mesmo motor (libVLC), mesmos gestos, mesmo ícone. Não é um porte do código, que
 é Swift e não roda lá: é a mesma arquitetura reescrita, com a interface falando
 com um `VlcEngine` como aqui ela fala com o protocolo `PlaybackEngine`.
@@ -131,7 +135,8 @@ controle remoto — com o servidor de casa na primeira faixa, porque numa
 caixinha de TV quase não há vídeo local.
 
 ```bash
-cd Android && ./gradlew assembleRelease
+# no libertyx-player-android
+./gradlew assembleRelease
 adb install -r dist/LibertyXPlayer-Celular.apk
 ```
 
@@ -143,8 +148,7 @@ App/Sources/
   Player/    PlayerViewController · GestureHUDView · PlayerControlsView
   Library/   LibraryView · BookmarkStore · FolderScanner · DocumentPicker
 Scripts/     make_icon.py
-Android/     o app de Android (Kotlin + libVLC) — README próprio lá dentro
-.github/     workflows/build.yml (iOS) · workflows/android.yml (APK)
+.github/     workflows/build.yml (.ipa) · workflows/ffmpeg.yml (FFmpeg)
 project.yml  definição do projeto (XcodeGen)
 ```
 
@@ -160,3 +164,13 @@ project.yml  definição do projeto (XcodeGen)
 | Toque simples | Mostrar/ocultar controles |
 | Segurar | 2× enquanto segura |
 | Pinça | Ajustar / Preencher / Esticar |
+
+## Família LibertyX
+
+| App | Repositório |
+|---|---|
+| LibertyX Player — iPhone | [libertyx-player-ios](https://github.com/fxmx182/libertyx-player-ios) |
+| LibertyX Player — Android e TV | [libertyx-player-android](https://github.com/fxmx182/libertyx-player-android) |
+| LibertyX Folder — iPhone | [libertyx-folder-ios](https://github.com/fxmx182/libertyx-folder-ios) |
+| LibertyX Folder — Android e TV | [libertyx-folder-android](https://github.com/fxmx182/libertyx-folder-android) |
+| LibertyX Partition — Windows | [libertyx-partition](https://github.com/fxmx182/libertyx-partition) |

@@ -3,28 +3,10 @@ name: Build IPA
 on:
   push:
     branches: [main]
-    # Mexer só no app de Android não deve acordar um runner de macOS.
-    #
-    # Ele conta 10× contra a cota e leva dez minutos para reconstruir o mesmo
-    # .ipa de antes. Hoje três commits de Android dispararam três builds de iOS
-    # idênticos ao anterior — daí a lista.
     paths-ignore:
-      - "Android/**"
-      - ".github/workflows/android.yml"
-      - "Folder/**"
-      - ".github/workflows/folder-ios.yml"
-      - "Partition/**"
-      - ".github/workflows/partition-windows.yml"
-      - "README.md"
+      - "**.md"
       - "imagens/**"
   pull_request:
-    paths-ignore:
-      - "Android/**"
-      - ".github/workflows/android.yml"
-      - "Folder/**"
-      - ".github/workflows/folder-ios.yml"
-      - "Partition/**"
-      - ".github/workflows/partition-windows.yml"
   workflow_dispatch:
 
 concurrency:
@@ -182,14 +164,14 @@ jobs:
           test -d "$APP" || { echo "::error::App não encontrado em $APP"; exit 1; }
           mkdir -p payload/Payload
           cp -R "$APP" payload/Payload/
-          (cd payload && zip -qry ../LabPlayer.ipa Payload)
-          ls -lh LabPlayer.ipa
+          (cd payload && zip -qry ../LibertyXPlayer.ipa Payload)
+          ls -lh LibertyXPlayer.ipa
 
       - name: Publicar artefato
         uses: actions/upload-artifact@v4
         with:
-          name: LabPlayer-ipa
-          path: LabPlayer.ipa
+          name: LibertyXPlayer-ipa
+          path: LibertyXPlayer.ipa
           retention-days: 30
           if-no-files-found: error
 
@@ -203,13 +185,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete latest --yes --cleanup-tag 2>/dev/null || true
-          gh release create latest LabPlayer.ipa \
-            --title "LabPlayer — build mais recente" \
+          gh release create latest LibertyXPlayer.ipa \
+            --title "LibertyX Player (iPhone) — build mais recente" \
             --notes "Compilado de ${GITHUB_SHA:0:7}. Assinado ad-hoc; o AltServer/SideStore reassina no aparelho.
 
           Instalar:
           \`\`\`
-          curl -L -o LabPlayer.ipa https://github.com/${GITHUB_REPOSITORY}/releases/download/latest/LabPlayer.ipa
-          Scripts/instalar-no-iphone.sh LabPlayer.ipa
+          curl -L -o LibertyXPlayer.ipa https://github.com/${GITHUB_REPOSITORY}/releases/download/latest/LibertyXPlayer.ipa
+          Scripts/instalar-no-iphone.sh LibertyXPlayer.ipa
           \`\`\`" \
             --prerelease

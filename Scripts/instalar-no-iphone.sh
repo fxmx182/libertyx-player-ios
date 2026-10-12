@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Instala o LabPlayer.ipa no iPhone ligado por USB neste servidor.
+# Instala o LibertyXPlayer.ipa no iPhone ligado por USB neste servidor.
 #
 # Pré-requisitos (uma vez só):
 #   sudo apt install -y usbmuxd libimobiledevice-utils ideviceinstaller
@@ -8,7 +8,7 @@
 #   binário AltServer em ~/.local/bin/AltServer
 #
 # Uso:
-#   Scripts/instalar-no-iphone.sh caminho/para/LabPlayer.ipa
+#   Scripts/instalar-no-iphone.sh caminho/para/LibertyXPlayer.ipa
 #
 set -euo pipefail
 
@@ -19,13 +19,13 @@ falhar() { echo "erro: $*" >&2; exit 1; }
 
 IPA="${1:-}"
 [ -n "$IPA" ] || falhar "informe o caminho do .ipa
-  exemplo: $0 ~/Downloads/LabPlayer.ipa"
+  exemplo: $0 ~/Downloads/LibertyXPlayer.ipa"
 [ -f "$IPA" ] || falhar "arquivo não encontrado: $IPA"
 
 # O artefato do GitHub vem como .zip com o .ipa dentro; erro comum.
 case "$IPA" in
   *.zip) falhar "isso é o .zip do artefato. Descompacte primeiro:
-  unzip '$IPA' && $0 LabPlayer.ipa" ;;
+  unzip '$IPA' && $0 LibertyXPlayer.ipa" ;;
 esac
 
 [ -x "$ALTSERVER" ] || falhar "AltServer não encontrado em $ALTSERVER"

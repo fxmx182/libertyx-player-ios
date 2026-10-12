@@ -9,24 +9,15 @@ payload/
 *.ipa
 *.dSYM.zip
 
-# Dependências pesadas do FFmpeg (fase 2) — vêm do cache do CI.
+# Dependências pesadas do FFmpeg — vêm do cache do CI.
 Vendor/
 *.xcframework/
-
-# Android: caminho do SDK da máquina, cache do Gradle e os APKs.
-Android/local.properties
-Android/.gradle/
-Android/app/build/
-Android/build/
-Android/.kotlin/
-*.apk
-*.aab
+.ffmpeg-build/
 
 # macOS / editores
 .DS_Store
 *.swp
 .vscode/
-.ffmpeg-build/
 
 # Material de marca em alta resolução: pesado e não entra no build.
 /imagens/

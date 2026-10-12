@@ -2,7 +2,8 @@
 """
 O ícone do iPhone, com o mesmo desenho do Android.
 
-A geometria mora num lugar só — Android/Scripts/icone.py, as duas fitas de ouro
+A geometria mora num lugar só — Scripts/icone.py do libertyx-player-android
+(clonado ao lado deste repositório, ou apontado por LIBERTYX_ANDROID), as duas fitas de ouro
 em X trançadas com o play recortado no meio. Daqui se carrega só a parte dela
 que desenha (tudo antes do primeiro arquivo que aquele script escreve), e se
 gera o que o iOS pede:
@@ -17,7 +18,8 @@ Dependências: pip install shapely resvg-py pillow
 import os
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
-ANDROID = os.path.join(AQUI, "../Android/Scripts/icone.py")
+ANDROID = os.environ.get("LIBERTYX_ANDROID",
+                         os.path.join(AQUI, "../../player-android/Scripts/icone.py"))
 ASSETS = os.path.join(AQUI, "../App/Resources/Assets.xcassets")
 
 fonte = open(ANDROID).read()
