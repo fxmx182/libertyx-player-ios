@@ -35,7 +35,7 @@ struct ProView: View {
                 Image("AppIconSymbol").resizable().scaledToFit().frame(width: 84, height: 84)
                     .padding(.top, 10)
                 HStack(spacing: 8) {
-                    Text("LibertyX").font(LabFont.headline).foregroundStyle(LabTheme.text)
+                    Text("LibertyX").font(LabTheme.headline).foregroundStyle(LabTheme.text)
                     Text("PRO")
                         .font(.system(size: 15, weight: .heavy)).kerning(1.5)
                         .foregroundStyle(.black)
