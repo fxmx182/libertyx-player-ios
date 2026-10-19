@@ -173,7 +173,7 @@ struct LibraryView: View {
         HStack(spacing: 10) {
             MarcaDoApp()
             Spacer()
-            NavigationLink { SMBServersView() } label: { BotaoRedondo(simbolo: "server.rack") }
+            NavigationLink { ProPortao(recurso: .rede) { SMBServersView() } } label: { BotaoRedondo(simbolo: "server.rack") }
             Button { showingOptions = true } label: { BotaoRedondo(simbolo: "slider.horizontal.3") }
             Menu {
                 // Uma entrada só para pasta: "Pastas…" leva à tela que conecta
@@ -315,7 +315,7 @@ struct LibraryView: View {
                 // O cartão da rede fica só aqui: com vídeos, a barra de cima já
                 // tem o botão de servidores, e repetir ao pé da tela disputaria
                 // atenção com as capas.
-                NavigationLink { SMBServersView() } label: { CartaoDaRede() }
+                NavigationLink { ProPortao(recurso: .rede) { SMBServersView() } } label: { CartaoDaRede() }
                     .buttonStyle(.plain)
                     .padding(.top, 24)
             }
