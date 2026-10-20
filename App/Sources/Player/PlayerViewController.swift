@@ -132,9 +132,6 @@ final class PlayerViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        // Áudio em segundo plano é Pro: sem ele, sair do app (ou apagar a tela) pausa o filme.
-        NotificationCenter.default.addObserver(self, selector: #selector(foiParaSegundoPlano),
-                                               name: UIApplication.didEnterBackgroundNotification, object: nil)
         view.backgroundColor = .black
 
         renderView = engine.makeRenderView()
@@ -558,11 +555,6 @@ final class PlayerViewController: UIViewController {
     private func updateNavigation() {
         controls.setNavigation(hasPrevious: currentIndex > 0,
                                hasNext: currentIndex + 1 < playlist.count)
-    }
-
-    @objc private func foiParaSegundoPlano() {
-        Pro.shared.recalcular()
-        if !Pro.shared.ativo { engine.pause() }
     }
 
     private func togglePlayPause() {
@@ -1036,10 +1028,7 @@ final class PlayerViewController: UIViewController {
             .init(rotulo: String(localized: "Modo noturno"), simbolo: "moon.stars", aceso: dimView.alpha > 0.01) { [weak self] in
                 self?.cycleNightMode()
             },
-            .init(rotulo: String(localized: "Captura de tela"), simbolo: "camera") { [weak self] in
-                guard let self, Pro.shared.exigir(.captura, de: self) else { return }
-                self.takeSnapshot()
-            },
+            .init(rotulo: String(localized: "Captura de tela"), simbolo: "camera") { [weak self] in self?.takeSnapshot() },
             .init(rotulo: String(localized: "Girar"), simbolo: "rotate.right", valor: deitado ? String(localized: "deitado") : String(localized: "em pé")) { [weak self] in
                 self?.toggleOrientation()
             },
@@ -1047,8 +1036,7 @@ final class PlayerViewController: UIViewController {
                 self?.resetZoom()
             },
             .init(rotulo: String(localized: "Tempo para dormir"), simbolo: "timer", aceso: sleepTimer != nil) { [weak self] in
-                guard let self, Pro.shared.exigir(.dormir, de: self) else { return }
-                self.showSleepSheet()
+                self?.showSleepSheet()
             },
             .init(rotulo: String(localized: "Ocultar barra"), simbolo: "clock.arrow.circlepath",
                   valor: PlayerPreferences.autoHide.title) { [weak self] in self?.showAutoHideSheet() },

@@ -106,24 +106,6 @@ brew install xcodegen && xcodegen generate && open LabPlayer.xcodeproj
 O `.xcodeproj` é gerado a partir de `project.yml` e **não** é versionado —
 projeto do Xcode em git dá conflito a cada build.
 
-## LibertyX Pro
-
-O app é grátis e completo como player. O **Pro** libera pastas da rede (SMB),
-áudio em segundo plano, tempo para dormir e captura de quadro; os sete primeiros
-dias vêm com tudo liberado. É o mesmo Pro do Android, com a mesma chave.
-
-Sem App Store não há StoreKit: a compra é a **chave LibertyX**, vendida com
-Bitcoin ou USDT/USDC pelo bot da loja no Telegram
-([@libertx_partition_bot](https://t.me/libertx_partition_bot?start=player)).
-`Core/Pro.swift` confere a chave sozinho, sem internet (`LXP1-…`, assinatura
-ECDSA P-256 conferida com CryptoKit, produto 2 = Player ou 9 = pacote). O início
-do teste e a chave ficam no Keychain, que sobrevive a reinstalar pelo Sideloadly.
-
-- `Library/ProView.swift`: a tela do Pro, a de colar a chave, `ProPortao` (põe a
-  tela do Pro no lugar de uma tela Pro) e `Pro.exigir` (a porta no player).
-- Portas: servidores (`ProPortao(.rede)`), captura e tempo para dormir no painel
-  de ferramentas, e o segundo plano (sair do app sem Pro pausa o filme).
-
 ## Instalar no iPhone
 
 Com Apple ID gratuito o app expira a cada 7 dias e o SideStore renova sozinho

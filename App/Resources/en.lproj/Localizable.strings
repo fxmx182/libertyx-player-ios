@@ -241,31 +241,3 @@
 "Sobre" = "About";
 "Licenças de código aberto" = "Open-source licenses";
 "O LibertyX é feito sobre estes projetos de código aberto. Toque num deles para ler a licença." = "LibertyX is built on these open-source projects. Tap one to read its license.";
-
-/* LibertyX Pro e a chave do Telegram */
-"Todo o resto é grátis para sempre: biblioteca, player, gestos, busca quadro a quadro, legendas e faixas de áudio." = "Everything else is free forever: library, player, gestures, frame-accurate seeking, subtitles and audio tracks.";
-"Pagar com Bitcoin ou USDT" = "Pay with Bitcoin or USDT";
-"Pelo Telegram — a chave chega na hora" = "On Telegram — the key arrives instantly";
-"Pagamento único, sem assinatura. A mesma chave vale no iPhone, no Android e na TV." = "One-time payment, no subscription. The same key works on iPhone, Android and TV.";
-"Tenho uma chave" = "I have a key";
-"Licença %@" = "License %@";
-"Pro ativo — obrigado!" = "Pro is active — thank you!";
-"Teste grátis: %lld dias restantes" = "Free trial: %lld days left";
-"Seu teste grátis terminou" = "Your free trial has ended";
-"Pastas da rede" = "Network folders";
-"Assista direto do PC, NAS ou HD de rede — nada para copiar." = "Watch straight from your PC, NAS or network drive — nothing to copy.";
-"Áudio em segundo plano" = "Background audio";
-"Continue ouvindo com a tela apagada ou em outro app." = "Keep listening with the screen off or in another app.";
-"Pausa sozinho na hora que você escolher." = "Pauses by itself at the time you choose.";
-"Captura de quadro" = "Frame capture";
-"Salva a cena na galeria, na resolução do vídeo." = "Saves the scene to your gallery at the video's resolution.";
-"Pro ativado com a sua chave — obrigado!" = "Pro activated with your key — thank you!";
-"Cole a chave que o bot da LibertyX mandou no Telegram. Ela começa com LXP1." = "Paste the key the LibertyX bot sent you on Telegram. It starts with LXP1.";
-"Colar" = "Paste";
-"Ativar" = "Activate";
-"Ainda não tem chave? Compre pelo Telegram" = "Don't have a key yet? Buy one on Telegram";
-"Ativar com uma chave" = "Activate with a key";
-"Isso não parece uma chave completa. Copie de novo no Telegram e cole inteira." = "That doesn't look like a complete key. Copy it again from Telegram and paste the whole thing.";
-"Esta chave não é válida. Confira se copiou ela toda." = "This key isn't valid. Check that you copied all of it.";
-"Esta chave é de outro app LibertyX, não do Player." = "This key is for another LibertyX app, not the Player.";
-"Esta chave é de uma versão mais nova. Atualize o app e tente de novo." = "This key is from a newer version. Update the app and try again.";

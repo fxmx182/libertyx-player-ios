@@ -146,28 +146,6 @@ struct LibraryOptionsSheet: View {
                         .buttonStyle(.plain)
                     }
 
-                    secao("LibertyX Pro") {
-                        NavigationLink {
-                            ProView()
-                        } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: "star.circle.fill")
-                                    .font(.system(size: 17, weight: .semibold))
-                                    .foregroundStyle(LabTheme.accent)
-                                Text("LibertyX Pro")
-                                    .font(LabFont.swiftUI(14, .semibold))
-                                    .foregroundStyle(LabTheme.text)
-                                Spacer(minLength: 0)
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(LabTheme.faint)
-                            }
-                            .padding(14)
-                            .labCard(radius: 14)
-                        }
-                        .buttonStyle(.plain)
-                    }
-
                     secao("Sobre") {
                         NavigationLink {
                             LicencasView()

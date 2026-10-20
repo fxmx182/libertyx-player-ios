@@ -241,31 +241,3 @@
 "Sobre" = "Acerca de";
 "Licenças de código aberto" = "Licencias de código abierto";
 "O LibertyX é feito sobre estes projetos de código aberto. Toque num deles para ler a licença." = "LibertyX está hecho sobre estos proyectos de código abierto. Toca uno para leer su licencia.";
-
-/* LibertyX Pro e a chave do Telegram */
-"Todo o resto é grátis para sempre: biblioteca, player, gestos, busca quadro a quadro, legendas e faixas de áudio." = "Todo lo demás es gratis para siempre: biblioteca, reproductor, gestos, búsqueda fotograma a fotograma, subtítulos y pistas de audio.";
-"Pagar com Bitcoin ou USDT" = "Pagar con Bitcoin o USDT";
-"Pelo Telegram — a chave chega na hora" = "Por Telegram — la clave llega al instante";
-"Pagamento único, sem assinatura. A mesma chave vale no iPhone, no Android e na TV." = "Pago único, sin suscripción. La misma clave sirve en iPhone, Android y TV.";
-"Tenho uma chave" = "Tengo una clave";
-"Licença %@" = "Licencia %@";
-"Pro ativo — obrigado!" = "Pro activo — ¡gracias!";
-"Teste grátis: %lld dias restantes" = "Prueba gratis: quedan %lld días";
-"Seu teste grátis terminou" = "Tu prueba gratis terminó";
-"Pastas da rede" = "Carpetas de red";
-"Assista direto do PC, NAS ou HD de rede — nada para copiar." = "Mira directo desde tu PC, NAS o disco de red — nada que copiar.";
-"Áudio em segundo plano" = "Audio en segundo plano";
-"Continue ouvindo com a tela apagada ou em outro app." = "Sigue escuchando con la pantalla apagada o en otra app.";
-"Pausa sozinho na hora que você escolher." = "Se pausa solo a la hora que elijas.";
-"Captura de quadro" = "Captura de fotograma";
-"Salva a cena na galeria, na resolução do vídeo." = "Guarda la escena en la galería, con la resolución del video.";
-"Pro ativado com a sua chave — obrigado!" = "Pro activado con tu clave — ¡gracias!";
-"Cole a chave que o bot da LibertyX mandou no Telegram. Ela começa com LXP1." = "Pega la clave que el bot de LibertyX te envió por Telegram. Empieza con LXP1.";
-"Colar" = "Pegar";
-"Ativar" = "Activar";
-"Ainda não tem chave? Compre pelo Telegram" = "¿Aún no tienes clave? Cómprala por Telegram";
-"Ativar com uma chave" = "Activar con una clave";
-"Isso não parece uma chave completa. Copie de novo no Telegram e cole inteira." = "Eso no parece una clave completa. Cópiala de nuevo en Telegram y pégala entera.";
-"Esta chave não é válida. Confira se copiou ela toda." = "Esta clave no es válida. Revisa que la copiaste completa.";
-"Esta chave é de outro app LibertyX, não do Player." = "Esta clave es de otra app LibertyX, no del Player.";
-"Esta chave é de uma versão mais nova. Atualize o app e tente de novo." = "Esta clave es de una versión más nueva. Actualiza la app e inténtalo de nuevo.";
