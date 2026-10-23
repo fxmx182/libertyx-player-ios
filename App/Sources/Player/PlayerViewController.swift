@@ -587,6 +587,9 @@ final class PlayerViewController: UIViewController {
 
         let doubleTap = UITapGestureRecognizer(target: self, action: #selector(handleDoubleTap))
         doubleTap.numberOfTapsRequired = 2
+        // Sem segurar o fim do toque: é no soltar que os controles aparecem, e
+        // esperar o toque duplo desistir atrasaria a barra em 0,3 s.
+        doubleTap.delaysTouchesEnded = false
         view.addGestureRecognizer(doubleTap)
 
         let longPress = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress))
@@ -673,28 +676,42 @@ final class PlayerViewController: UIViewController {
         }
     }
 
-    /// Mostrar os controles acontece no instante em que o dedo encosta, e não
-    /// num gesto reconhecido.
+    /// Onde e quando o dedo encostou — para saber, ao soltar, se foi um toque.
+    private var toqueInicio: (instante: TimeInterval, ponto: CGPoint)?
+
+    /// Mostrar e esconder os controles é coisa do toque curto, e de nada mais.
     ///
-    /// O toque único precisa esperar o sistema descartar a hipótese de toque
-    /// duplo — uns 0,3 s. Nesse intervalo parece que nada aconteceu, então o
-    /// usuário toca de novo, vira toque duplo e o vídeo pausa. Respondendo já
-    /// no toque, a barra aparece na hora e o gesto duplo continua valendo para
-    /// o que ele serve.
+    /// Já foi no instante em que o dedo encostava: a barra aparecia na hora,
+    /// sem esperar o sistema descartar o toque duplo. Mas encostar também é o
+    /// começo de segurar e de arrastar, e segurar para acelerar enchia a tela
+    /// de botões em cima do filme que se queria ver correr. Agora é no soltar,
+    /// e só se o dedo ficou pouco tempo e quase parado: segurar mostra só a
+    /// velocidade, arrastar só o balão do gesto.
+    ///
+    /// Continua sem esperar o toque duplo: o reconhecedor dele não segura o
+    /// fim do toque (`delaysTouchesEnded = false`), e o soltar chega na hora.
+    /// Quando um gesto é reconhecido — segurar, arrastar, pinça — o sistema
+    /// cancela o toque, e o cancelado não alterna nada.
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         super.touchesBegan(touches, with: event)
-        guard gesturesEnabled else { return }
+        // Um segundo dedo é pinça, não toque.
+        guard gesturesEnabled, let toque = touches.first, (event?.allTouches?.count ?? 1) == 1 else {
+            toqueInicio = nil
+            return
+        }
+        toqueInicio = (toque.timestamp, toque.location(in: view))
+    }
 
-        // Mostrar e esconder acontecem os dois aqui, no encostar do dedo.
-        //
-        // Esconder morava num reconhecedor de toque simples, e por duas vezes
-        // eu tratei o sintoma achando que ele estava sendo chamado. Ele espera
-        // o toque duplo desistir, disputa com os outros gestos da tela e não
-        // dispara quando alguma camada intermediária fica com o toque — três
-        // formas de não acontecer, nenhuma visível de fora.
-        //
-        // Aqui não há espera nem disputa: o dedo encostou, alternou. A margem
-        // de tempo existe só para o segundo dedo de um gesto de pinça não
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        super.touchesEnded(touches, with: event)
+        defer { toqueInicio = nil }
+        guard gesturesEnabled, let inicio = toqueInicio, let toque = touches.first else { return }
+        let ponto = toque.location(in: view)
+        // Abaixo do tempo do segurar, e sem andar o bastante para virar arrasto.
+        guard toque.timestamp - inicio.instante < 0.35,
+              hypot(ponto.x - inicio.ponto.x, ponto.y - inicio.ponto.y) < Tuning.axisLockThreshold else { return }
+
+        // A margem de tempo é para o segundo toque de um toque duplo não
         // desfazer o que o primeiro fez.
         if controls.isVisible {
             guard let desde = controls.visibleSince,
@@ -704,6 +721,11 @@ final class PlayerViewController: UIViewController {
             controls.setVisible(true, animated: true)
             scheduleControlsHide()
         }
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        super.touchesCancelled(touches, with: event)
+        toqueInicio = nil
     }
 
     @objc private func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
@@ -792,6 +814,8 @@ final class PlayerViewController: UIViewController {
             // só queria acelerar. Para voltar, o toque duplo e o arrasto servem.
             rateBeforeHold = engine.rate
             engine.rate = PlayerPreferences.holdSpeed
+            // Na tela, só a velocidade: o filme correndo é o que se quer ver.
+            if controls.isVisible { controls.setVisible(false, animated: true) }
             mostrarAceleracao()
         case .ended, .cancelled, .failed:
             desfazerAceleracao()
