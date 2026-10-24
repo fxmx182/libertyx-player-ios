@@ -215,6 +215,8 @@ struct CapaDePasta: View {
 
 /// Continuar: a miniatura larga, a barra do quanto já foi, e quanto falta.
 struct CartaoDeContinuar: View {
+    // Não privado: um campo privado tornaria privado o init gerado da view.
+    var escala = Escala()
     let item: MediaItem
 
     var body: some View {
@@ -247,7 +249,7 @@ struct CartaoDeContinuar: View {
                     .foregroundStyle(LabTheme.muted)
             }
         }
-        .frame(width: 236 * Escala.fator)
+        .frame(width: 236 * escala.fator)
         .contentShape(Rectangle())
     }
 }
@@ -288,6 +290,8 @@ struct VideoCard: View {
 
 /// Lista: mais itens por tela, bom para pastas com muitos vídeos.
 struct VideoRow: View {
+    // Não privado: um campo privado tornaria privado o init gerado da view.
+    var escala = Escala()
     let item: MediaItem
 
     var body: some View {
@@ -299,7 +303,7 @@ struct VideoRow: View {
                 // Largura e altura fixas, e não proporção: numa pilha
                 // preguiçosa a altura proposta pode vir indefinida, e a
                 // miniatura sairia sem tamanho.
-                .frame(width: 124 * Escala.fator, height: 70 * Escala.fator)
+                .frame(width: 124 * escala.fator, height: 70 * escala.fator)
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .strokeBorder(LabTheme.glassBorder, lineWidth: 0.5))

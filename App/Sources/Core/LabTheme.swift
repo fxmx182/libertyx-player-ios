@@ -131,18 +131,28 @@ extension View {
 
 /// O tamanho das coisas em tela grande — o mesmo `Escala` do Android.
 ///
-/// Tablet é o iPad: com o tamanho do iPhone, uma tela de 11 polegadas virava
-/// sete colunas de selo, com metade vazia. O iPhone deitado continua sendo
-/// iPhone: fica largo, mas baixo, e capas grandes lá caberiam uma fileira por
-/// tela.
-enum Escala {
-    static var tablet: Bool { UIDevice.current.userInterfaceIdiom == .pad }
+/// Tela grande é a que tem espaço folgado nas duas direções: o iPad, e a tela
+/// de dentro do iPhone Duo aberto. Com o tamanho do iPhone, ali viravam sete
+/// colunas de selo, com metade vazia.
+///
+/// Pelas classes de tamanho, e não pelo modelo do aparelho: o iPhone Duo é um
+/// iPhone com tela de iPad quando aberto e tela de iPhone quando fechado, e
+/// a Apple pede exatamente isto — decidir o layout pelo espaço, nunca pelo
+/// `userInterfaceIdiom`. O iPhone deitado continua sendo iPhone (altura
+/// compacta): fica largo, mas baixo, e capas grandes lá caberiam uma fileira
+/// por tela. E o iPad em tela dividida estreita volta ao tamanho de iPhone,
+/// como deve.
+struct Escala: DynamicProperty {
+    @Environment(\.horizontalSizeClass) private var horizontal
+    @Environment(\.verticalSizeClass) private var vertical
+
+    var grande: Bool { horizontal == .regular && vertical == .regular }
 
     /// A largura mínima de cada capa na grade.
-    static var capa: CGFloat { tablet ? 200 : 150 }
+    var capa: CGFloat { grande ? 200 : 150 }
 
     /// Multiplica o que foi medido para o iPhone.
-    static var fator: CGFloat { tablet ? 1.35 : 1 }
+    var fator: CGFloat { grande ? 1.35 : 1 }
 
     /// Teto de largura de listas e painéis: de ponta a ponta num iPad
     /// deitado, o nome ficava de um lado da tela e a ação do outro.

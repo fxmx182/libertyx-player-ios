@@ -7,6 +7,8 @@ import SwiftUI
 /// iCloud, o que for — e a partir daí não precisa navegar pasta por pasta a
 /// cada vez que abre o app.
 struct LibraryView: View {
+    // Não privado: um campo privado tornaria privado o init gerado da view.
+    var escala = Escala()
 
     @EnvironmentObject private var bookmarks: BookmarkStore
     @StateObject private var library = MediaLibrary()
@@ -140,7 +142,7 @@ struct LibraryView: View {
                                          subtitulo: Plural.videos(total) + "  ·  " + Plural.pastas(library.groups.count))
                             faixaDeContinuar(continuando)
                             Secao(titulo: String(localized: "Pastas"), extra: "\(library.groups.count)")
-                            LazyVGrid(columns: [GridItem(.adaptive(minimum: Escala.capa), spacing: 14, alignment: .top)], spacing: 18) {
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: escala.capa), spacing: 14, alignment: .top)], spacing: 18) {
                                 ForEach(library.groups) { grupo in
                                     NavigationLink(value: grupo) { CapaDePasta(grupo: grupo) }
                                         .buttonStyle(.plain)
@@ -383,6 +385,8 @@ struct PastaView: View {
 
 /// Os vídeos de uma pasta, em grade ou em lista, na ordem escolhida.
 struct ListaDeVideos: View {
+    // Não privado: um campo privado tornaria privado o init gerado da view.
+    var escala = Escala()
     let itens: [MediaItem]
     let layout: LibraryLayout
     let onTocar: (MediaItem, [MediaItem]) -> Void
@@ -399,7 +403,7 @@ struct ListaDeVideos: View {
 
     var body: some View {
         if layout == .grid {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: Escala.capa), spacing: 14, alignment: .top)], spacing: 18) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: escala.capa), spacing: 14, alignment: .top)], spacing: 18) {
                 ForEach(itens) { item in
                     Button { onTocar(item, itens) } label: { VideoCard(item: item) }
                         .buttonStyle(.plain)

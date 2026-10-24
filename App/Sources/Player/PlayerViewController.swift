@@ -951,6 +951,21 @@ final class PlayerViewController: UIViewController {
         }
     }
 
+    /// A tela onde o player está.
+    ///
+    /// O iPhone Duo tem duas, e `UIScreen.main` não diz qual: o brilho do
+    /// gesto iria para a tela errada. A da cena é a que a pessoa está vendo.
+    private var telaAtual: UIScreen {
+        view.window?.windowScene?.screen ?? UIScreen.main
+    }
+
+    /// Tela folgada nas duas direções — o iPad e a tela de dentro do iPhone
+    /// Duo. Ali o sistema não obedece a pedido de orientação (o app se ajusta
+    /// ao formato da tela), e o botão de girar não faria nada.
+    private var telaSemOrientacao: Bool {
+        traitCollection.horizontalSizeClass == .regular && traitCollection.verticalSizeClass == .regular
+    }
+
     /// Alterna retrato/paisagem à força, como o botão de girar do MX Player.
     private func toggleOrientation() {
         guard let scene = view.window?.windowScene else { return }
@@ -1053,9 +1068,16 @@ final class PlayerViewController: UIViewController {
                 self?.cycleNightMode()
             },
             .init(rotulo: String(localized: "Captura de tela"), simbolo: "camera") { [weak self] in self?.takeSnapshot() },
-            .init(rotulo: String(localized: "Girar"), simbolo: "rotate.right", valor: deitado ? String(localized: "deitado") : String(localized: "em pé")) { [weak self] in
+        ]
+        // Girar só onde o sistema obedece: na tela de dentro do iPhone Duo e
+        // no iPad ele ignora o pedido, e o botão não faria nada.
+        if !telaSemOrientacao {
+            itens.append(.init(rotulo: String(localized: "Girar"), simbolo: "rotate.right",
+                               valor: deitado ? String(localized: "deitado") : String(localized: "em pé")) { [weak self] in
                 self?.toggleOrientation()
-            },
+            })
+        }
+        itens += [
             .init(rotulo: String(localized: "Ampliação normal"), simbolo: "arrow.up.left.and.arrow.down.right") { [weak self] in
                 self?.resetZoom()
             },
@@ -1238,7 +1260,7 @@ final class PlayerViewController: UIViewController {
             panStartTime = engine.currentTime
             panSeekTarget = panStartTime
             panUltimoX = 0
-            panStartBrightness = UIScreen.main.brightness
+            panStartBrightness = telaAtual.brightness
             // Parte do volume que o aparelho está de fato tocando, e não de um
             // número interno — senão o gesto dá um salto ao começar.
             panStartVolume = systemVolume.value
@@ -1341,7 +1363,7 @@ final class PlayerViewController: UIViewController {
 
         if panIsOnLeftHalf {
             let value = max(0, min(1, panStartBrightness + fraction))
-            UIScreen.main.brightness = value
+            telaAtual.brightness = value
             hud.show(.brightness(Float(value)))
         } else {
             desfazerMudo()

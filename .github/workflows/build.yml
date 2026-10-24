@@ -16,7 +16,10 @@ concurrency:
 jobs:
   build:
     name: Compilar e empacotar
-    runs-on: macos-15
+    # Xcode 27.1 (SDK do iOS 27.1): só com ele o app ocupa a tela de dentro
+    # do iPhone Duo até a borda. Compilado com SDK antigo, o app aparece lá no
+    # tamanho de um iPhone, centralizado, com faixas pretas dos lados.
+    runs-on: xcode-27
     timeout-minutes: 30
     permissions:
       contents: write   # para publicar o release "latest"
@@ -24,8 +27,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Mostrar Xcode em uso
-        run: xcodebuild -version
+      - name: Escolher o Xcode 27.1
+        run: |
+          sudo xcode-select -s /Applications/Xcode_27.1.app
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i iphoneos
 
       - name: Instalar XcodeGen
         run: brew install xcodegen

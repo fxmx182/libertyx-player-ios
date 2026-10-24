@@ -302,6 +302,8 @@ struct SMBShareListView: View {
 
 /// Navegação dentro de um share.
 struct SMBDirectoryView: View {
+    // Não privado: um campo privado tornaria privado o init gerado da view.
+    var escala = Escala()
 
     let connection: SMBConnection
     let share: String
@@ -429,7 +431,7 @@ struct SMBDirectoryView: View {
                     }
                 }
 
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: Escala.capa), spacing: 12, alignment: .top)], spacing: 14) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: escala.capa), spacing: 12, alignment: .top)], spacing: 14) {
                     ForEach(videos) { item in
                         Button { playing = item } label: { VideoCard(item: item) }
                             .buttonStyle(.plain)
