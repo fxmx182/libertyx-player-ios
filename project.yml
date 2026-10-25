@@ -42,14 +42,26 @@ targets:
       - path: App/Resources
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.mauricio.labplayer
+        # O identificador definitivo, o mesmo do Android: é o que fica gravado
+        # na App Store Connect para sempre.
+        PRODUCT_BUNDLE_IDENTIFIER: com.mauricio.libertyx
         PRODUCT_NAME: LabPlayer
         INFOPLIST_FILE: App/Info.plist
         # Nenhum CODE_SIGN_ENTITLEMENTS de propósito: sem entitlements o alvo
         # continua assinável por um Apple ID gratuito.
         TARGETED_DEVICE_FAMILY: "1,2"
-        MARKETING_VERSION: "0.1.0"
+        MARKETING_VERSION: "1.0"
+        # O CI troca pelo número da execução: a Apple recusa dois envios com
+        # o mesmo número de build.
         CURRENT_PROJECT_VERSION: "1"
+        # Assinatura do TestFlight, só no alvo do app — passada pela linha de
+        # comando, valeria também para os pacotes SPM, que recusam perfil.
+        # O build do .ipa avulso desliga a assinatura (CODE_SIGNING_ALLOWED=NO)
+        # e não usa nada disto.
+        DEVELOPMENT_TEAM: TL99M32UV4
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "Apple Distribution"
+        PROVISIONING_PROFILE_SPECIFIER: "LibertyX Player App Store"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         ENABLE_BITCODE: NO
@@ -59,6 +71,26 @@ targets:
         HEADER_SEARCH_PATHS:
           - $(inherited)
           - $(SRCROOT)/Vendor/FFmpeg.xcframework/**
+
+    # O MobileVLCKit chega com armv7/armv7s, de 32 bits, que nenhum iPhone do
+    # iOS 17 executa e que a App Store recusa. Fica só o arm64, e o framework
+    # é reassinado com a mesma identidade antes de o app ser assinado.
+    postBuildScripts:
+      - name: MobileVLCKit só com arm64
+        basedOnDependencyAnalysis: false
+        script: |
+          FW="$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/MobileVLCKit.framework"
+          BIN="$FW/MobileVLCKit"
+          [ "$PLATFORM_NAME" = iphoneos ] && [ -f "$BIN" ] || exit 0
+          if [ "$(lipo -archs "$BIN")" != "arm64" ]; then
+            lipo "$BIN" -thin arm64 -output "$BIN.arm64"
+            mv "$BIN.arm64" "$BIN"
+            echo "MobileVLCKit: $(lipo -archs "$BIN")"
+          fi
+          if [ "$CODE_SIGNING_ALLOWED" = YES ] && [ -n "$EXPANDED_CODE_SIGN_IDENTITY" ]; then
+            codesign --force --sign "$EXPANDED_CODE_SIGN_IDENTITY" $OTHER_CODE_SIGN_FLAGS \
+              --preserve-metadata=identifier,entitlements "$FW"
+          fi
 
     dependencies:
       - package: SMBClient

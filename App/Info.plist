@@ -31,6 +31,10 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<!-- Só a criptografia padrão do sistema (HTTPS, SMB): isenta. Sem a chave,
+	     a App Store Connect pergunta a cada build enviado ao TestFlight. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 
 	<!-- Carimbado pelo CI com o commit de origem. Existe para responder na
 	     tela "qual build é este?" — sem isso não dá para distinguir um app que
