@@ -2,6 +2,8 @@ import SwiftUI
 
 @main
 struct LabPlayerApp: App {
+    /// Responde ao sistema o que pode girar (`Orientacao`).
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var bookmarks = BookmarkStore()
     @StateObject private var smbServers = SMBServerStore.shared
     /// O guia aparece enquanto isto for falso: na primeira abertura, e de novo

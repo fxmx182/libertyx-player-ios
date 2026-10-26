@@ -130,6 +130,11 @@ final class PlayerViewController: UIViewController {
     override var prefersStatusBarHidden: Bool { true }
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .allButUpsideDown }
 
+    /// Antes de a view entrar na janela, `view.window` ainda é nulo.
+    private var scenePrincipal: UIWindowScene? {
+        UIApplication.shared.connectedScenes.first { $0.activationState == .foregroundActive } as? UIWindowScene
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .black
@@ -235,8 +240,18 @@ final class PlayerViewController: UIViewController {
         loadAndPlay()
     }
 
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        // O vídeo pode ser visto deitado; a biblioteca, não.
+        Orientacao.player(true, cena: view.window?.windowScene ?? scenePrincipal)
+    }
+
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
+
+        // Saindo do vídeo, o app volta em pé — mesmo que a pessoa ainda
+        // esteja com o aparelho deitado.
+        Orientacao.player(false, cena: view.window?.windowScene ?? scenePrincipal)
 
         // Fora da reprodução a biblioteca volta a poder gerar miniatura.
         //
