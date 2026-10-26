@@ -226,10 +226,18 @@ private struct PaginaDoGuia: View {
     var body: some View {
         GeometryReader { geo in
             if geo.size.width > geo.size.height {
+                // A demonstração tem proporção fixa (16:10) e, solta, crescia
+                // até encostar em cima e embaixo: numa tela alta como a do
+                // iPad deitado isso comia quase toda a largura, e o texto
+                // sobrava numa tira de duas sílabas por linha. Agora ela tem
+                // teto — 60% da largura, ou o que a altura permitir — e o
+                // texto fica com o resto, nunca menos de 40%.
+                let util = geo.size.width - 48 - 28
+                let largura = min(util * 0.6, (geo.size.height - 24) * 16 / 10)
                 HStack(spacing: 28) {
                     pagina.demo(onFeito)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .layoutPriority(1.1)
+                        .frame(width: largura)
+                        .frame(maxHeight: .infinity)
                     ScrollView {
                         TextoDaPagina(pagina: pagina, indice: indice, total: total, feita: feita)
                             .frame(maxWidth: .infinity, alignment: .leading)
