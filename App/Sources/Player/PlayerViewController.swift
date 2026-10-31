@@ -414,7 +414,10 @@ final class PlayerViewController: UIViewController {
     /// Guarda a posição de tempos em tempos, não a cada quadro: são ~30
     /// gravações por segundo contra uma a cada cinco segundos.
     private func saveResumePoint(_ time: Double) {
-        guard engine.duration > 0, abs(time - lastSavedPosition) >= 5 else { return }
+        // Depois do fim o ponto já foi apagado; um tempo atrasado do VLC não
+        // pode gravá-lo de volta.
+        guard engine.state != .ended, engine.duration > 0,
+              abs(time - lastSavedPosition) >= 5 else { return }
         lastSavedPosition = time
         ResumeStore.shared.save(position: time, duration: engine.duration,
                                 for: item.origin.resumeKey)
@@ -480,8 +483,9 @@ final class PlayerViewController: UIViewController {
 
     private func close() {
         // Grava sem o intervalo de cinco segundos: sair é justamente quando a
-        // posição mais precisa estar certa.
-        if engine.duration > 0, engine.currentTime > 30 {
+        // posição mais precisa estar certa. Menos quando o vídeo acabou: aí o
+        // ponto já foi apagado de propósito, para a próxima vez começar do início.
+        if engine.state != .ended, engine.duration > 0, engine.currentTime > 30 {
             ResumeStore.shared.save(position: engine.currentTime,
                                     duration: engine.duration,
                                     for: item.origin.resumeKey)
@@ -533,6 +537,11 @@ final class PlayerViewController: UIViewController {
             goToNext()
         } else if currentIndex + 1 < playlist.count {
             goToNext()
+        } else {
+            // Último da pasta: volta para a biblioteca, como no Android. Ficar
+            // parado no último quadro parecia o app travado. Fora do aviso de
+            // estado, para não desmontar o motor no meio da própria notificação.
+            DispatchQueue.main.async { [weak self] in self?.close() }
         }
     }
 

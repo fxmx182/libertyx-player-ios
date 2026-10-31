@@ -75,6 +75,9 @@ final class VLCEngine: NSObject, PlaybackEngine {
     private var alvoDaRolagem: Double?
     /// Enquanto o dedo arrasta, o tempo que o VLC informa não vai para a tela.
     private var emRolagem = false
+    /// O VLC chegou ao fim com o dedo ainda arrastando. Quem decide o que isso
+    /// significa é o ponto onde o dedo for solto.
+    private var terminouNaRolagem = false
 
     /// Destino de uma busca que o VLC ainda não alcançou.
     ///
@@ -338,6 +341,7 @@ final class VLCEngine: NSObject, PlaybackEngine {
     func seek(to time: Double, precise: Bool) async {
         guard duration > 0 else { return }
         let alvo = max(0, min(time, duration))
+        if chegaAoFim(alvo) { encerrarPelaBusca(); return }
         // Sem acender a roda: o VLC busca rápido, e o pisca-pisca do indicador
         // incomodava mais do que a espera que ele anunciava.
         irPara(alvo)
@@ -349,7 +353,34 @@ final class VLCEngine: NSObject, PlaybackEngine {
 
     func beginScrub() {
         emRolagem = true
+        terminouNaRolagem = false
         alvoDaRolagem = nil
+    }
+
+    // MARK: - Fim pela barra
+
+    /// Folga antes do fim que já conta como "fim".
+    ///
+    /// Mandar o VLC ao último instante exato não é confiável: às vezes ele
+    /// encerra, às vezes fica parado no último quadro sem nunca anunciar o fim,
+    /// e a barra e os controles ficavam presos ali. Puxar a barra até o fim é
+    /// pedir o mesmo que o vídeo acabar, então o player trata como fim de
+    /// verdade, sem depender de o VLC chegar lá.
+    private var folgaDoFim: Double { min(1.0, duration / 10) }
+
+    private func chegaAoFim(_ alvo: Double) -> Bool {
+        duration > 0 && alvo >= duration - folgaDoFim
+    }
+
+    /// Durante o arrasto o VLC não é levado à folga final: com o dedo parado ali
+    /// ele terminaria o filme antes de o dedo ser solto, e o player passaria
+    /// para o próximo vídeo no meio do gesto.
+    private var limiteDaRolagem: Double { max(duration * 0.8, duration - folgaDoFim - 2) }
+
+    private func encerrarPelaBusca() {
+        alvoPendente = nil
+        onTimeUpdate?(duration)
+        state = .ended
     }
 
     /// Rolagem com ritmo controlado.
@@ -376,7 +407,8 @@ final class VLCEngine: NSObject, PlaybackEngine {
     private func aplicarScrub(_ alvo: Double, em instante: CFTimeInterval) {
         lastScrubApplied = instante
         pendingScrub = nil
-        irPara(alvo)
+        guard !terminouNaRolagem else { return }
+        irPara(min(alvo, limiteDaRolagem))
     }
 
     /// Garante que o último ponto arrastado seja aplicado mesmo que o dedo
@@ -418,9 +450,19 @@ final class VLCEngine: NSObject, PlaybackEngine {
         scrubWork = nil
         pendingScrub = nil
         emRolagem = false
-        guard let alvo = alvoDaRolagem else { return }
+        let terminou = terminouNaRolagem
+        terminouNaRolagem = false
+        guard let alvo = alvoDaRolagem else {
+            if terminou { encerrarPelaBusca() }
+            return
+        }
         alvoDaRolagem = nil
         lastScrubApplied = CACurrentMediaTime()
+        if chegaAoFim(alvo) { encerrarPelaBusca(); return }
+        // O VLC terminou durante o arrasto, mas o dedo voltou antes de soltar:
+        // depois do fim ele não busca mais, então precisa voltar a tocar
+        // primeiro. Se a busca se perder na abertura, `alvoPendente` repete.
+        if terminou { player.play() }
         irPara(alvo)
         marcarBusca(em: alvo)
         onTimeUpdate?(alvo)
@@ -534,7 +576,8 @@ extension VLCEngine: VLCMediaPlayerDelegate {
             state = .playing
         case .paused:    state = .paused
         case .stopped:   state = .idle
-        case .ended:     state = .ended
+        case .ended:
+            if emRolagem { terminouNaRolagem = true } else { state = .ended }
         case .error:     state = .failed(String(localized: "o VLC não conseguiu abrir este arquivo"))
         default:         break
         }
