@@ -92,6 +92,10 @@ final class FFmpegEngine: NSObject, PlaybackEngine {
             nova = try await openSMB(referencia, path: caminho)
         case .remote(let url):
             nova = try await FFmpegRunner.run { try FFmpegPlaybackSession(path: url.absoluteString) }
+        case .webdav, .midia:
+            // Motor fora de uso desde a troca pelo VLC; as fontes novas não
+            // passam por aqui.
+            throw PlaybackError.unsupportedOrigin
         }
 
         session = nova

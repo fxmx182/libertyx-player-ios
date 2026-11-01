@@ -4,11 +4,15 @@ import SwiftUI
 struct SMBServersView: View {
 
     @EnvironmentObject private var store: SMBServerStore
+    @ObservedObject private var contas = ContasDeRede.shared
     @StateObject private var discovery = SMBDiscovery()
     @State private var editing: SMBServer?
     @State private var pendingDeletion: SMBServer?
     @State private var addingNew = false
     @State private var prefilled: SMBServer?
+    @State private var novaConta: ContaDeRede.Tipo?
+    @State private var editandoConta: ContaDeRede?
+    @State private var removendoConta: ContaDeRede?
 
     var body: some View {
         List {
@@ -16,13 +20,13 @@ struct SMBServersView: View {
             // maioria das vezes. A procura automática interessa uma vez, no dia
             // em que se cadastra um servidor novo — e ficava justamente no
             // caminho de quem só quer abrir um vídeo.
-            if store.servers.isEmpty {
+            if store.servers.isEmpty && contas.contas.isEmpty {
                 ContentUnavailableView {
                     Label("Nenhum servidor", systemImage: "server.rack")
                 } description: {
                     Text("Adicione o servidor de casa para abrir os vídeos direto dele.")
                 } actions: {
-                    Button("Adicionar servidor") { addingNew = true }
+                    Menu("Adicionar servidor") { opcoesDeServidor }
                 }
             }
 
@@ -69,7 +73,62 @@ struct SMBServersView: View {
                 }
             }
 
+            ForEach(contas.contas) { conta in
+                NavigationLink {
+                    PastaRemotaView(titulo: conta.nome, destino: .inicio(conta))
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: conta.tipo.simbolo)
+                            .foregroundStyle(LabTheme.accent)
+                            .frame(width: 26)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(conta.nome).fontWeight(.medium)
+                            Text(conta.usuario.isEmpty
+                                 ? "\(conta.tipo.nome) · \(conta.enderecoCurto)"
+                                 : "\(conta.tipo.nome) · \(conta.enderecoCurto) · \(conta.usuario)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                }
+                .swipeActions {
+                    Button(role: .destructive) {
+                        removendoConta = conta
+                    } label: {
+                        Label("Excluir", systemImage: "trash")
+                    }
+                    Button {
+                        editandoConta = conta
+                    } label: {
+                        Label("Editar", systemImage: "pencil")
+                    }
+                    .tint(.orange)
+                }
+                .contextMenu {
+                    Button {
+                        editandoConta = conta
+                    } label: {
+                        Label("Editar informações do servidor", systemImage: "pencil")
+                    }
+                    Button(role: .destructive) {
+                        removendoConta = conta
+                    } label: {
+                        Label("Excluir servidor", systemImage: "trash")
+                    }
+                }
+            }
+
             procuraAutomatica
+        }
+        .alert("Excluir servidor?", isPresented: Binding(
+            get: { removendoConta != nil },
+            set: { if !$0 { removendoConta = nil } }
+        ), presenting: removendoConta) { conta in
+            Button("Excluir", role: .destructive) { contas.remover(conta) }
+            Button("Cancelar", role: .cancel) {}
+        } message: { conta in
+            Text("Remove “\(conta.nome)” da lista e apaga a senha guardada no Keychain do aparelho.")
         }
         // Confirmação porque excluir também apaga a senha do Keychain — e não
         // há como desfazer isso.
@@ -93,17 +152,40 @@ struct SMBServersView: View {
         .onDisappear { discovery.stop() }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { addingNew = true } label: { Image(systemName: "plus") }
+                Menu { opcoesDeServidor } label: { Image(systemName: "plus") }
             }
         }
         .sheet(isPresented: $addingNew) {
             SMBServerEditView(server: nil)
+        }
+        .sheet(item: $novaConta) { tipo in
+            ContaDeRedeEditView(tipo: tipo, conta: nil)
+        }
+        .sheet(item: $editandoConta) { conta in
+            ContaDeRedeEditView(tipo: conta.tipo, conta: conta)
         }
         .sheet(item: $editing) { server in
             SMBServerEditView(server: server)
         }
         .sheet(item: $prefilled) { server in
             SMBServerEditView(server: server, isNew: true)
+        }
+    }
+
+    /// Os tipos de servidor que dá para cadastrar.
+    @ViewBuilder
+    private var opcoesDeServidor: some View {
+        Button { addingNew = true } label: {
+            Label("SMB (Windows, NAS, Samba)", systemImage: "server.rack")
+        }
+        Button { novaConta = .webdav } label: {
+            Label("WebDAV (Nextcloud)", systemImage: ContaDeRede.Tipo.webdav.simbolo)
+        }
+        Button { novaConta = .jellyfin } label: {
+            Label("Jellyfin", systemImage: ContaDeRede.Tipo.jellyfin.simbolo)
+        }
+        Button { novaConta = .emby } label: {
+            Label("Emby", systemImage: ContaDeRede.Tipo.emby.simbolo)
         }
     }
 

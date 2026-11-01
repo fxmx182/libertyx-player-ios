@@ -22,6 +22,13 @@ enum MediaOrigin: Equatable, Hashable {
 
     /// HTTP(S) direto.
     case remote(url: URL)
+
+    /// Arquivo num servidor WebDAV (Nextcloud e afins). O caminho é o do
+    /// servidor, decodificado; endereço e senha vêm da conta na hora de tocar.
+    case webdav(conta: UUID, caminho: String)
+
+    /// Vídeo de um Jellyfin ou Emby, pelo id do item no servidor.
+    case midia(conta: UUID, item: String)
 }
 
 struct SMBShareRef: Equatable, Hashable, Codable {
@@ -39,13 +46,17 @@ struct MediaItem: Identifiable, Hashable {
     var origin: MediaOrigin
     var fileSize: Int64?
     var modifiedAt: Date?
+    /// Duração já sabida antes de abrir o arquivo — o Jellyfin informa no
+    /// catálogo, e assim a lista mostra sem precisar ler o vídeo.
+    var duration: Double?
     init(id: UUID = UUID(), title: String, origin: MediaOrigin,
-         fileSize: Int64? = nil, modifiedAt: Date? = nil) {
+         fileSize: Int64? = nil, modifiedAt: Date? = nil, duration: Double? = nil) {
         self.id = id
         self.title = title
         self.origin = origin
         self.fileSize = fileSize
         self.modifiedAt = modifiedAt
+        self.duration = duration
     }
 
     /// Extensões que consideramos vídeo ao varrer uma pasta.
@@ -98,6 +109,8 @@ extension MediaOrigin {
         case .file(let url, _):  return url.lastPathComponent
         case .smb(_, let path):  return (path as NSString).lastPathComponent
         case .remote(let url):   return url.lastPathComponent
+        case .webdav(_, let caminho): return (caminho as NSString).lastPathComponent
+        case .midia(_, let item):     return item
         }
     }
 
@@ -112,6 +125,10 @@ extension MediaOrigin {
             return "smb:\(share.host)/\(share.share)\(path)"
         case .remote(let url):
             return "url:\(url.absoluteString)"
+        case .webdav(let conta, let caminho):
+            return "webdav:\(conta.uuidString)\(caminho)"
+        case .midia(let conta, let item):
+            return "midia:\(conta.uuidString)/\(item)"
         }
     }
 }

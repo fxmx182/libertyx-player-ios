@@ -67,6 +67,8 @@ final class ThumbnailStore: ObservableObject {
 
     /// Duração conhecida, se a miniatura já foi gerada alguma vez.
     func duration(_ item: MediaItem) -> Double? {
+        // O que o servidor já informou vale mais que o que a miniatura mediu.
+        if let sabida = item.duration, sabida > 0 { return sabida }
         let valor = duracoes[Self.chave(for: item)]
         return (valor ?? 0) > 0 ? valor : nil
     }
@@ -140,6 +142,18 @@ final class ThumbnailStore: ObservableObject {
             // Mesmo caminho do arquivo local: o VLC fala `smb://` nativamente,
             // então não há ponte de leitura por blocos para manter aqui.
             return await VLCThumbnailer.preview(for: item, em: fracaoDoVLC)
+
+        case .webdav:
+            // HTTP comum com busca por faixa: o VLC tira o quadro como faz no SMB.
+            return await VLCThumbnailer.preview(for: item, em: fracaoDoVLC)
+
+        case .midia(let id, let itemID):
+            // O servidor já tem a imagem pronta; ler o vídeo só para isso
+            // seria tráfego à toa. A segunda tentativa não muda nada aqui.
+            guard !adiante, let conta = ContasDeRede.shared.conta(id),
+                  let imagem = await ServidorDeMidia(conta: conta, token: ContasDeRede.shared.segredo(conta))
+                    .imagem(itemID) else { return nil }
+            return (imagem, item.duration ?? 0)
 
         case .remote:
             return nil

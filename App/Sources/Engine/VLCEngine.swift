@@ -242,7 +242,7 @@ final class VLCEngine: NSObject, PlaybackEngine {
     /// segundos.
     private static func configurarBuffer(_ media: VLCMedia, origem: MediaOrigin) {
         switch origem {
-        case .smb, .remote:
+        case .smb, .remote, .webdav, .midia:
             // Um segundo e meio, e não cinco.
             //
             // Este número é quanto o VLC espera acumular antes de mostrar
@@ -287,6 +287,18 @@ final class VLCEngine: NSObject, PlaybackEngine {
             let partes = caminho.split(separator: "/").map { escape(String($0)) }.joined(separator: "/")
             let texto = "smb://\(servidor.host)/\(escape(referencia.share))/\(partes)"
             return URL(string: texto)
+
+        case .webdav(let id, let caminho):
+            guard let conta = ContasDeRede.shared.conta(id) else {
+                throw PlaybackError.loadFailed(String(localized: "servidor não encontrado"))
+            }
+            return WebDAV(conta: conta, senha: ContasDeRede.shared.segredo(conta)).urlDeReproducao(caminho)
+
+        case .midia(let id, let item):
+            guard let conta = ContasDeRede.shared.conta(id) else {
+                throw PlaybackError.loadFailed(String(localized: "servidor não encontrado"))
+            }
+            return ServidorDeMidia(conta: conta, token: ContasDeRede.shared.segredo(conta)).urlDoVideo(item)
         }
     }
 
@@ -435,7 +447,7 @@ final class VLCEngine: NSObject, PlaybackEngine {
     /// o dedo parar. A 300 ms cada uma tem chance de mostrar algo.
     private var cadenciaDeRolagem: CFTimeInterval {
         switch origemAtual {
-        case .smb, .remote: return 0.3
+        case .smb, .remote, .webdav, .midia: return 0.3
         default:            return 0.08
         }
     }
@@ -507,7 +519,7 @@ final class VLCEngine: NSObject, PlaybackEngine {
     /// imediata, e a busca só acrescentaria um solavanco sem motivo.
     private func recomecarDoPonto() async {
         switch origemAtual {
-        case .smb, .remote:
+        case .smb, .remote, .webdav, .midia:
             await seek(to: max(0, currentTime - 0.12), precise: false)
         default:
             break
@@ -599,7 +611,7 @@ extension VLCEngine: VLCMediaPlayerDelegate {
                 // onde o VLC está, para a tela não mentir para sempre.
                 let prazo: CFTimeInterval
                 switch origemAtual {
-                case .smb, .remote: prazo = 2.5
+                case .smb, .remote, .webdav, .midia: prazo = 2.5
                 default:            prazo = 1.2
                 }
                 if CACurrentMediaTime() - pendente.desde > prazo {

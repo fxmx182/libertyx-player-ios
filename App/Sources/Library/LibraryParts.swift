@@ -449,10 +449,10 @@ struct CartaoDaRede: View {
                 .frame(width: 44, height: 44)
                 .background(LabTheme.accent.opacity(0.14), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
-                Text("Servidores SMB")
+                Text("Servidores")
                     .font(LabFont.swiftUI(15, .bold))
                     .foregroundStyle(LabTheme.text)
-                Text("Os vídeos do computador ou do NAS de casa")
+                Text("SMB, WebDAV, Jellyfin e Emby")
                     .font(LabFont.swiftUI(12, .medium))
                     .foregroundStyle(LabTheme.muted)
             }
