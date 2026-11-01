@@ -1,7 +1,17 @@
 import SwiftUI
 
-/// Lista de servidores SMB salvos.
+/// Um cadastro de servidor pedido de fora da tela de servidores — o "+" da
+/// biblioteca.
+enum NovoServidor: Hashable {
+    case smb
+    case conta(ContaDeRede.Tipo)
+}
+
+/// Lista de servidores salvos: SMB, WebDAV, Jellyfin e Emby.
 struct SMBServersView: View {
+    /// Abre o formulário daquele tipo assim que a tela aparece.
+    var cadastroInicial: NovoServidor? = nil
+    @State private var cadastroAberto = false
 
     @EnvironmentObject private var store: SMBServerStore
     @ObservedObject private var contas = ContasDeRede.shared
@@ -149,6 +159,16 @@ struct SMBServersView: View {
         .fundoDaRede()
         .navigationTitle("Servidores")
         .task { discovery.start(conhecidos: store.servers.map(\.host)) }
+        .onAppear {
+            // Uma vez só: voltar de dentro de um servidor não pode reabrir
+            // o formulário.
+            guard let cadastroInicial, !cadastroAberto else { return }
+            cadastroAberto = true
+            switch cadastroInicial {
+            case .smb:              addingNew = true
+            case .conta(let tipo):  novaConta = tipo
+            }
+        }
         .onDisappear { discovery.stop() }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

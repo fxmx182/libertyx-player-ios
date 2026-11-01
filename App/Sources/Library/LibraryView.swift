@@ -26,6 +26,8 @@ struct LibraryView: View {
     /// Conta as voltas do player. A marca de onde parou muda enquanto o filme
     /// toca; sem reler ao voltar, "continuar" mostraria o ponto de antes.
     @State private var volta = 0
+    /// Escolhido no "+": abre Servidores já com o cadastro daquele tipo.
+    @State private var novoServidor: NovoServidor?
 
     var body: some View {
         NavigationStack {
@@ -33,6 +35,9 @@ struct LibraryView: View {
                 .navigationDestination(for: VideoGroup.self) { grupo in
                     PastaView(grupo: grupo, volta: volta,
                               onTocar: tocar, menu: menuDoItem)
+                }
+                .navigationDestination(item: $novoServidor) { tipo in
+                    SMBServersView(cadastroInicial: tipo)
                 }
                 .toolbar(.hidden, for: .navigationBar)
             // Apagar arquivo não tem desfazer no iOS — a confirmação é a
@@ -186,6 +191,24 @@ struct LibraryView: View {
                 }
                 Button { showingFilePicker = true } label: {
                     Label("Abrir arquivo…", systemImage: "doc.badge.plus")
+                }
+                // O lugar onde se procura "adicionar" é o "+": o ícone de
+                // servidores no alto passava despercebido.
+                Menu {
+                    Button { novoServidor = .smb } label: {
+                        Label("SMB (Windows, NAS, Samba)", systemImage: "server.rack")
+                    }
+                    Button { novoServidor = .conta(.webdav) } label: {
+                        Label("WebDAV (Nextcloud)", systemImage: ContaDeRede.Tipo.webdav.simbolo)
+                    }
+                    Button { novoServidor = .conta(.jellyfin) } label: {
+                        Label("Jellyfin", systemImage: ContaDeRede.Tipo.jellyfin.simbolo)
+                    }
+                    Button { novoServidor = .conta(.emby) } label: {
+                        Label("Emby", systemImage: ContaDeRede.Tipo.emby.simbolo)
+                    }
+                } label: {
+                    Label("Adicionar servidor", systemImage: "server.rack")
                 }
                 Divider()
                 Button { Task { await library.refresh(bookmarks: bookmarks) } } label: {
