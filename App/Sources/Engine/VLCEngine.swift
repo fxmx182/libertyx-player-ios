@@ -207,7 +207,7 @@ final class VLCEngine: NSObject, PlaybackEngine {
             access = nil
         }
 
-        guard let url = try Self.resolveURL(for: item.origin) else {
+        guard let url = try await Self.resolveURL(for: item.origin) else {
             throw PlaybackError.unsupportedOrigin
         }
 
@@ -271,7 +271,7 @@ final class VLCEngine: NSObject, PlaybackEngine {
     ///
     /// No caso do SMB, as credenciais vão embutidas — é como o VLC as recebe.
     /// Elas continuam vindo do Keychain e nunca são gravadas em disco assim.
-    static func resolveURL(for origin: MediaOrigin) throws -> URL? {
+    static func resolveURL(for origin: MediaOrigin) async throws -> URL? {
         switch origin {
         case .file(let url, _):
             return url
@@ -292,13 +292,17 @@ final class VLCEngine: NSObject, PlaybackEngine {
             guard let conta = ContasDeRede.shared.conta(id) else {
                 throw PlaybackError.loadFailed(String(localized: "servidor não encontrado"))
             }
-            return WebDAV(conta: conta, senha: ContasDeRede.shared.segredo(conta)).urlDeReproducao(caminho)
+            return try await WebDAV(conta: conta, senha: ContasDeRede.shared.segredo(conta)).urlDeReproducao(caminho)
 
         case .midia(let id, let item):
             guard let conta = ContasDeRede.shared.conta(id) else {
                 throw PlaybackError.loadFailed(String(localized: "servidor não encontrado"))
             }
-            return ServidorDeMidia(conta: conta, token: ContasDeRede.shared.segredo(conta)).urlDoVideo(item)
+            // Pela ponte também: o VLC do iPhone não fala TLS 1.3 (ver PonteHTTP).
+            guard let url = ServidorDeMidia(conta: conta, token: ContasDeRede.shared.segredo(conta)).urlDoVideo(item) else {
+                return nil
+            }
+            return try await PonteHTTP.shared.endereco(para: url, nome: "video")
         }
     }
 

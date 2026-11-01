@@ -73,19 +73,14 @@ struct WebDAV {
 
     // MARK: - Endereços
 
-    /// Endereço de reprodução, com usuário e senha embutidos.
-    ///
-    /// No HTTP o VLC lê as credenciais da própria URL (só avisa no log que o
-    /// jeito é antigo) — diferente do SMB, onde elas precisam ir por opção.
-    /// A URL só existe em memória, na hora de tocar.
-    func urlDeReproducao(_ caminho: String) -> URL? {
-        guard var partes = Self.url(base: conta.url, caminho: caminho, pasta: false)
-                .flatMap({ URLComponents(url: $0, resolvingAgainstBaseURL: false) }) else { return nil }
-        if !conta.usuario.isEmpty {
-            partes.percentEncodedUser = Self.escapar(conta.usuario)
-            if let senha, !senha.isEmpty { partes.percentEncodedPassword = Self.escapar(senha) }
-        }
-        return partes.url
+    /// Endereço de reprodução: a ponte local, que fala com o servidor pelo
+    /// TLS do iOS e leva a senha num cabeçalho — ver `PonteHTTP`.
+    func urlDeReproducao(_ caminho: String) async throws -> URL? {
+        guard let url = Self.url(base: conta.url, caminho: caminho, pasta: false) else { return nil }
+        var cabecalhos: [String: String] = [:]
+        if let autorizacao { cabecalhos["Authorization"] = autorizacao }
+        return try await PonteHTTP.shared.endereco(para: url, cabecalhos: cabecalhos,
+                                                   nome: (caminho as NSString).lastPathComponent)
     }
 
     private var autorizacao: String? {

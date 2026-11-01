@@ -81,12 +81,13 @@
 	     alcançado por Tailscale responde em 100.64.x, que fica de fora.
 	     Este app é pessoal e instalado à mão; não passa por revisão da
 	     Apple, então a permissão ampla é escolha consciente e não um
-	     atalho para contornar análise. -->
+	     atalho para contornar análise.
+	     NSAllowsLocalNetworking NÃO pode vir junto: com ele presente o iOS
+	     ignora NSAllowsArbitraryLoads, e um Jellyfin em HTTP fora da rede de
+	     casa era recusado ("App Transport Security policy requires…"). -->
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
-		<true/>
-		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
 	<key>NSBonjourServices</key>

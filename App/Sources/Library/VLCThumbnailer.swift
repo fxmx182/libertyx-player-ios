@@ -30,7 +30,7 @@ enum VLCThumbnailer {
     /// - Parameter em: fração da duração; por padrão, a `posicao`.
     static func preview(for item: MediaItem, maxWidth: CGFloat = 320,
                         em fracao: Float? = nil) async -> (UIImage, Double)? {
-        guard let url = try? VLCEngine.resolveURL(for: item.origin) else { return nil }
+        guard let url = try? await VLCEngine.resolveURL(for: item.origin) else { return nil }
 
         // O escopo de segurança precisa durar toda a extração: o VLC lê o
         // arquivo em outra thread, depois de esta função ter retornado ao

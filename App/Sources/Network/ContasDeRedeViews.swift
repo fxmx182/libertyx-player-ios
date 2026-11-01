@@ -104,14 +104,17 @@ struct ContaDeRedeEditView: View {
         if conta.tipo == .webdav { senha = contas.segredo(conta) ?? "" }
     }
 
-    /// Sem esquema, o servidor de mídia de casa é quase sempre HTTP puro na
-    /// porta 8096; já um WebDAV costuma estar atrás de HTTPS.
-    private var enderecoCompleto: String {
-        var texto = endereco.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !texto.lowercased().hasPrefix("http://") && !texto.lowercased().hasPrefix("https://") {
-            texto = (tipo == .webdav ? "https://" : "http://") + texto
-        }
-        return texto
+    /// Os endereços a tentar, na ordem.
+    ///
+    /// Sem esquema não dá para saber: `maujellyfin.uk` atrás do Cloudflare só
+    /// fala HTTPS, e `192.168.0.10:8096` em casa só fala HTTP. Tenta HTTPS
+    /// primeiro e cai para HTTP só se nem conectar — erro de senha num deles
+    /// já é resposta e encerra a tentativa.
+    private var enderecosPossiveis: [String] {
+        let texto = endereco.trimmingCharacters(in: .whitespacesAndNewlines)
+        let minusculo = texto.lowercased()
+        if minusculo.hasPrefix("http://") || minusculo.hasPrefix("https://") { return [texto] }
+        return ["https://" + texto, "http://" + texto]
     }
 
     private func salvar() async {
@@ -119,31 +122,42 @@ struct ContaDeRedeEditView: View {
         falha = nil
         defer { testando = false }
 
+        let candidatos = enderecosPossiveis
+        for (indice, candidato) in candidatos.enumerated() {
+            do {
+                try await salvar(em: candidato)
+                dismiss()
+                return
+            } catch let erro as URLError where indice < candidatos.count - 1 {
+                LabLog.problem("conta: \(candidato) não conectou (\(erro.code.rawValue)), tentando o próximo")
+            } catch {
+                falha = error.localizedDescription
+                return
+            }
+        }
+    }
+
+    private func salvar(em endereco: String) async throws {
         var nova = conta ?? ContaDeRede(tipo: tipo, nome: "", endereco: "", usuario: "")
-        nova.endereco = enderecoCompleto
+        nova.endereco = endereco
         nova.usuario = usuario.trimmingCharacters(in: .whitespaces)
         nova.nome = nome.isEmpty ? nova.enderecoCurto : nome
 
-        do {
-            if tipo == .webdav {
-                nova = try await testarWebDAV(nova)
-                contas.salvar(nova, segredo: senha)
-            } else {
-                // Editar só o apelido não pede a senha de novo; trocar o
-                // servidor ou o usuário pede, porque o token antigo não vale lá.
-                let mesmoAcesso = conta.map { $0.endereco == nova.endereco && $0.usuario == nova.usuario } ?? false
-                if mesmoAcesso && senha.isEmpty {
-                    contas.salvar(nova, segredo: nil)
-                } else {
-                    let acesso = try await ServidorDeMidia.entrar(tipo: tipo, endereco: nova.endereco,
-                                                                  usuario: nova.usuario, senha: senha)
-                    nova.idNoServidor = acesso.usuarioID
-                    contas.salvar(nova, segredo: acesso.token)
-                }
-            }
-            dismiss()
-        } catch {
-            falha = error.localizedDescription
+        if tipo == .webdav {
+            nova = try await testarWebDAV(nova)
+            contas.salvar(nova, segredo: senha)
+            return
+        }
+        // Editar só o apelido não pede a senha de novo; trocar o servidor ou o
+        // usuário pede, porque o token antigo não vale lá.
+        let mesmoAcesso = conta.map { $0.endereco == nova.endereco && $0.usuario == nova.usuario } ?? false
+        if mesmoAcesso && senha.isEmpty {
+            contas.salvar(nova, segredo: nil)
+        } else {
+            let acesso = try await ServidorDeMidia.entrar(tipo: tipo, endereco: nova.endereco,
+                                                          usuario: nova.usuario, senha: senha)
+            nova.idNoServidor = acesso.usuarioID
+            contas.salvar(nova, segredo: acesso.token)
         }
     }
 
