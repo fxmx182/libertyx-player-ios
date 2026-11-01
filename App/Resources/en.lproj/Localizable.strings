@@ -94,6 +94,7 @@
 "Girar" = "Rotate";
 "Grade" = "Grid";
 "Guia rápido" = "Quick guide";
+"Histórico" = "History";
 "Isso aponta para permissão de leitura, não para codec. Tente adicionar a pasta de novo em Pastas." = "That points to read permission, not the codec. Try adding the folder again in Folders.";
 "Isso!" = "Nice!";
 "Layout" = "Layout";
@@ -120,6 +121,7 @@
 "Nenhum servidor" = "No servers";
 "Nenhum vídeo ainda" = "No videos yet";
 "Nenhum vídeo nesta pasta" = "No videos in this folder";
+"Nenhuma pasta autorizada ainda" = "No folder authorized yet";
 "No LabPlayer" = "In the app";
 "No Nextcloud basta o endereço do servidor: o app completa o caminho dos seus arquivos. A senha fica no Keychain do aparelho." = "For Nextcloud the server address is enough: the app fills in the path to your files. The password is kept in the device Keychain.";
 "No fim do vídeo" = "At the end of the video";
@@ -174,6 +176,7 @@
 "Quadro decodificado pelo FFmpeg aos %@." = "Frame decoded by FFmpeg at %@.";
 "Quanto tempo a barra fica na tela depois do último toque — ou se ela fica sempre." = "How long the bar stays on screen after the last touch — or whether it always stays.";
 "Remove “%@” da lista e apaga a senha guardada no Keychain do aparelho." = "Removes “%@” from the list and deletes the password saved in the device Keychain.";
+"Remover do histórico" = "Remove from history";
 "Repete o vídeo atual sem parar. Acende enquanto estiver ligado." = "Repeats the current video nonstop. Lights up while it is on.";
 "Repetir" = "Repeat";
 "Rolagem fina na barra" = "Fine seeking on the bar";

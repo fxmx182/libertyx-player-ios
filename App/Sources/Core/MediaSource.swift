@@ -6,7 +6,7 @@ import Foundation
 /// bytes vieram de um pendrive USB, de um share SMB do homelab ou de uma URL —
 /// ele só pede blocos. Quando o motor FFmpeg entrar, cada caso vira um
 /// `AVIOContext` com callbacks de read/seek, e nada acima disso muda.
-enum MediaOrigin: Equatable, Hashable {
+enum MediaOrigin: Equatable, Hashable, Codable {
     /// Arquivo no sandbox do app, no iCloud, ou num volume externo (USB).
     ///
     /// `bookmark`, quando presente, é da **pasta** que concede acesso — não do
@@ -40,7 +40,7 @@ struct SMBShareRef: Equatable, Hashable, Codable {
 }
 
 /// Um item reproduzível, já resolvido para exibição.
-struct MediaItem: Identifiable, Hashable {
+struct MediaItem: Identifiable, Hashable, Codable {
     let id: UUID
     var title: String
     var origin: MediaOrigin

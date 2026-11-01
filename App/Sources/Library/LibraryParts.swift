@@ -465,3 +465,35 @@ struct CartaoDaRede: View {
         .labCard()
     }
 }
+
+/// Um servidor salvo, como atalho na estante: ícone, nome e tipo.
+struct AtalhoDeServidor: View {
+    let nome: String
+    let tipo: String
+    let simbolo: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: simbolo)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(LabTheme.accent)
+                .frame(width: 34, height: 34)
+                .background(LabTheme.accent.opacity(0.14), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(nome)
+                    .font(LabFont.swiftUI(14, .bold))
+                    .foregroundStyle(LabTheme.text)
+                    .lineLimit(1)
+                Text(tipo)
+                    .font(LabFont.swiftUI(11, .medium))
+                    .foregroundStyle(LabTheme.muted)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.leading, 8)
+        .padding(.trailing, 14)
+        .padding(.vertical, 8)
+        .frame(maxWidth: 220, alignment: .leading)
+        .labCard()
+    }
+}

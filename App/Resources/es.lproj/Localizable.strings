@@ -94,6 +94,7 @@
 "Girar" = "Girar";
 "Grade" = "Cuadrícula";
 "Guia rápido" = "Guía rápida";
+"Histórico" = "Historial";
 "Isso aponta para permissão de leitura, não para codec. Tente adicionar a pasta de novo em Pastas." = "Eso indica un problema de permiso de lectura, no de códec. Intenta añadir la carpeta de nuevo en Carpetas.";
 "Isso!" = "¡Eso es!";
 "Layout" = "Diseño";
@@ -120,6 +121,7 @@
 "Nenhum servidor" = "Ningún servidor";
 "Nenhum vídeo ainda" = "Aún no hay videos";
 "Nenhum vídeo nesta pasta" = "No hay videos en esta carpeta";
+"Nenhuma pasta autorizada ainda" = "Aún no hay carpetas autorizadas";
 "No LabPlayer" = "En la app";
 "No Nextcloud basta o endereço do servidor: o app completa o caminho dos seus arquivos. A senha fica no Keychain do aparelho." = "En Nextcloud basta con la dirección del servidor: la app completa la ruta de tus archivos. La contraseña queda en el Llavero del dispositivo.";
 "No fim do vídeo" = "Al final del video";
@@ -174,6 +176,7 @@
 "Quadro decodificado pelo FFmpeg aos %@." = "Cuadro decodificado por FFmpeg en %@.";
 "Quanto tempo a barra fica na tela depois do último toque — ou se ela fica sempre." = "Cuánto tiempo queda la barra en pantalla tras el último toque, o si queda siempre.";
 "Remove “%@” da lista e apaga a senha guardada no Keychain do aparelho." = "Quita “%@” de la lista y borra la contraseña guardada en el Llavero del dispositivo.";
+"Remover do histórico" = "Quitar del historial";
 "Repete o vídeo atual sem parar. Acende enquanto estiver ligado." = "Repite el video actual sin parar. Se ilumina mientras está activo.";
 "Repetir" = "Repetir";
 "Rolagem fina na barra" = "Desplazamiento fino en la barra";

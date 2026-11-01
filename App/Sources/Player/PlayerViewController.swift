@@ -348,6 +348,7 @@ final class PlayerViewController: UIViewController {
     }
 
     private func loadAndPlay() {
+        Historico.shared.registrar(item)
         Task { @MainActor in
             do {
                 try await engine.load(item)

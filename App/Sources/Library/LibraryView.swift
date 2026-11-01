@@ -11,6 +11,9 @@ struct LibraryView: View {
     var escala = Escala()
 
     @EnvironmentObject private var bookmarks: BookmarkStore
+    @EnvironmentObject private var servidoresSMB: SMBServerStore
+    @ObservedObject private var contas = ContasDeRede.shared
+    @ObservedObject private var historico = Historico.shared
     @StateObject private var library = MediaLibrary()
     @ObservedObject private var options = LibraryOptions.shared
     @State private var showingOptions = false
@@ -102,15 +105,15 @@ struct LibraryView: View {
 
     // MARK: - A estante
 
-    /// O que se estava vendo por último, para o fundo e para a faixa de cima.
-    ///
-    /// Casado pela chave de retomada, e não pelo identificador: cada varredura
-    /// cria itens novos, e a marca de onde parou precisa sobreviver a ela.
+    /// O que se viu por último, para o fundo e para a faixa de cima — de
+    /// qualquer origem, servidor incluído. Ver `Historico`.
     private var continuar: [MediaItem] {
         _ = volta
-        let porChave = Dictionary(library.groups.flatMap(\.items).map { ($0.origin.resumeKey, $0) },
-                                  uniquingKeysWith: { a, _ in a })
-        return ResumeStore.shared.recent().compactMap { porChave[$0] }.prefix(12).map { $0 }
+        return Array(historico.itens.prefix(20))
+    }
+
+    private var temServidores: Bool {
+        !servidoresSMB.servers.isEmpty || !contas.contas.isEmpty
     }
 
     /// Navega como uma estante, e não como uma árvore: a primeira tela mostra o
@@ -126,18 +129,32 @@ struct LibraryView: View {
         ZStack(alignment: .bottom) {
             FundoDeCapa(capa: continuando.first ?? library.groups.first.flatMap(capaDa))
 
-            if library.groups.isEmpty {
+            // Sem pasta nenhuma, mas com servidor ou histórico, a estante
+            // aparece igual: quem só assiste do Jellyfin não pode cair na tela
+            // de boas-vindas toda vez.
+            if library.groups.isEmpty && continuando.isEmpty && !temServidores {
                 if library.isScanning { Color.clear } else { vazio }
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
                         barraDoTopo
-                        if let pastaUnica {
+                        if library.groups.isEmpty {
+                            TituloDeTela(titulo: String(localized: "Biblioteca"),
+                                         subtitulo: String(localized: "Nenhuma pasta autorizada ainda"))
+                            faixaDeContinuar(continuando)
+                            secaoDeServidores
+                            Button { showingFolderPicker = true } label: {
+                                LinhaDePastaDeRede(nome: String(localized: "Adicionar pasta"),
+                                                   simbolo: "folder.badge.plus")
+                            }
+                            .buttonStyle(.plain)
+                        } else if let pastaUnica {
                             // Uma pasta só não vira estante de uma capa: os
                             // vídeos dela já são a biblioteca, e entrar nela
                             // seria um toque a mais para nada.
                             TituloDeTela(titulo: String(localized: "Biblioteca"), subtitulo: resumoDa(pastaUnica))
                             faixaDeContinuar(continuando)
+                            secaoDeServidores
                             if !continuando.isEmpty { Secao(titulo: pastaUnica.name) }
                             ListaDeVideos(itens: options.sorted(pastaUnica.items), layout: options.layout,
                                           onTocar: tocar, menu: menuDoItem)
@@ -146,6 +163,7 @@ struct LibraryView: View {
                             TituloDeTela(titulo: String(localized: "Biblioteca"),
                                          subtitulo: Plural.videos(total) + "  ·  " + Plural.pastas(library.groups.count))
                             faixaDeContinuar(continuando)
+                            secaoDeServidores
                             Secao(titulo: String(localized: "Pastas"), extra: "\(library.groups.count)")
                             LazyVGrid(columns: [GridItem(.adaptive(minimum: escala.capa), spacing: 14, alignment: .top)], spacing: 18) {
                                 ForEach(library.groups) { grupo in
@@ -172,6 +190,35 @@ struct LibraryView: View {
                 .background(Color(white: 0.09).opacity(0.92), in: Capsule())
                 .overlay(Capsule().strokeBorder(LabTheme.glassBorder, lineWidth: 0.5))
                 .padding(.bottom, 18)
+            }
+        }
+    }
+
+    /// Os servidores salvos como atalhos na estante: cada um entra direto no
+    /// servidor. Cadastrar fica no "+"; aqui só aparece o que já existe.
+    @ViewBuilder
+    private var secaoDeServidores: some View {
+        if temServidores {
+            VStack(alignment: .leading, spacing: 12) {
+                Secao(titulo: String(localized: "Servidores"),
+                      extra: "\(servidoresSMB.servers.count + contas.contas.count)")
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(servidoresSMB.servers) { servidor in
+                            NavigationLink { SMBShareListView(server: servidor) } label: {
+                                AtalhoDeServidor(nome: servidor.name, tipo: "SMB", simbolo: "server.rack")
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        ForEach(contas.contas) { conta in
+                            NavigationLink { PastaRemotaView(titulo: conta.nome, destino: .inicio(conta)) } label: {
+                                AtalhoDeServidor(nome: conta.nome, tipo: conta.tipo.nome, simbolo: conta.tipo.simbolo)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .scrollClipDisabled()
             }
         }
     }
@@ -223,13 +270,20 @@ struct LibraryView: View {
     private func faixaDeContinuar(_ itens: [MediaItem]) -> some View {
         if !itens.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
-                Secao(titulo: String(localized: "Continuar assistindo"))
+                Secao(titulo: String(localized: "Histórico"))
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: 12) {
                         ForEach(itens) { item in
                             Button { tocar(item, itens) } label: { CartaoDeContinuar(item: item) }
                                 .buttonStyle(.plain)
-                                .contextMenu { menuDoItem(item) }
+                                .contextMenu {
+                                    Button(role: .destructive) {
+                                        withAnimation { historico.remover(item) }
+                                    } label: {
+                                        Label("Remover do histórico", systemImage: "clock.badge.xmark")
+                                    }
+                                    menuDoItem(item)
+                                }
                         }
                     }
                 }
@@ -289,6 +343,7 @@ struct LibraryView: View {
             // A marca de onde parou não pode sobreviver ao arquivo: ela
             // reapareceria num arquivo futuro de mesmo nome.
             ResumeStore.shared.clear(key: item.origin.resumeKey)
+            Historico.shared.remover(item)
             Task { await library.refresh(bookmarks: bookmarks) }
         } catch {
             errorMessage = String(localized: "Não deu para apagar: \(error.localizedDescription)")
