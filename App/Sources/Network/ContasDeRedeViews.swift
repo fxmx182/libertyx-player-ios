@@ -219,12 +219,10 @@ struct PastaRemotaView: View {
     @State private var playing: MediaItem?
     @State private var mostrandoOpcoes = false
 
-    /// No WebDAV vale a ordem escolhida nas opções, como no SMB. No Jellyfin
-    /// a ordem do servidor é a certa — episódios por temporada e número.
-    private var videos: [MediaItem] {
-        if case .webdav = destino { return options.sorted(lidos) }
-        return lidos
-    }
+    /// Na ordem escolhida nas opções, como no SMB. Episódio se chama
+    /// "3. Nome", e a ordem por título é natural — então a ordem padrão já é
+    /// a da temporada.
+    private var videos: [MediaItem] { options.sorted(lidos) }
 
     var body: some View {
         conteudo
