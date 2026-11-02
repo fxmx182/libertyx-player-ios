@@ -231,7 +231,8 @@ final class VLCEngine: NSObject, PlaybackEngine {
             throw PlaybackError.unsupportedOrigin
         }
 
-        let media = VLCMedia(url: url)
+        // No VLC 4 a mídia pode não nascer (URL que ele não aceita).
+        guard let media = VLCMedia(url: url) else { throw PlaybackError.unsupportedOrigin }
         Self.credenciais(para: item.origin).forEach(media.addOption)
         Self.configurarBuffer(media, origem: item.origin)
         tamanhoDoArquivo = item.fileSize
