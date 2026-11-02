@@ -96,6 +96,10 @@ final class VLCEngine: NSObject, PlaybackEngine {
     /// exato de leitura barrada disfarçada de arquivo inválido.
     private var access: ScopedAccess?
 
+    /// Quem escolheu a legenda no menu manda nela até o vídeo trocar.
+    private var legendaDoUsuario = false
+    private var origemDaLegenda: MediaOrigin?
+
     private(set) var state: PlaybackState = .idle {
         didSet {
             guard state != oldValue else { return }
@@ -197,6 +201,11 @@ final class VLCEngine: NSObject, PlaybackEngine {
 
     func load(_ item: MediaItem) async throws {
         state = .loading
+        // Outro vídeo: a escolha de legenda do anterior não vale para ele.
+        if item.origin != origemDaLegenda {
+            legendaDoUsuario = false
+            origemDaLegenda = item.origin
+        }
 
         // Abre o escopo ANTES de entregar o caminho ao VLC, e o mantém: ele lê
         // o arquivo durante todo o filme, não só na abertura.
@@ -531,9 +540,30 @@ final class VLCEngine: NSObject, PlaybackEngine {
     }
 
     func selectSubtitleTrack(_ id: Int32?) async {
+        legendaDoUsuario = true
         // -1 é como o VLC representa "sem legenda".
         player.currentVideoSubTitleIndex = id ?? -1
     }
+
+    /// Ao abrir, só a legenda **forçada** fica ligada — a que traduz a placa,
+    /// a carta ou o idioma estrangeiro no meio do filme. A completa vem
+    /// desligada: o VLC liga a que o arquivo marca como padrão, e quase sempre
+    /// ela está no mesmo idioma do áudio, repetindo o que já se ouve.
+    ///
+    /// O VLCKit 3 não diz se a faixa é forçada; o nome diz — é como os
+    /// arquivos a marcam ("Forced", "Forçada", "Forzados"). Quem escolhe no
+    /// menu manda até o vídeo trocar.
+    fileprivate func aplicarRegraDaLegenda() {
+        guard !legendaDoUsuario else { return }
+        let forcada = subtitleTracks.first { faixa in
+            (faixa.title ?? "").range(of: Self.forcada, options: [.regularExpression, .caseInsensitive]) != nil
+        }
+        let alvo = forcada?.id ?? -1
+        if player.currentVideoSubTitleIndex != alvo { player.currentVideoSubTitleIndex = alvo }
+    }
+
+    /// "Forced", "Forçada(s)", "Forzado(s)", "Forcée(s)" — palavra inteira.
+    private static let forcada = #"(^|[^\p{L}])(forced|for[çcz]ad[oa]s?|forcée?s?)([^\p{L}]|$)"#
 
     private func tracks(indexes: [Any]?, names: [Any]?) -> [MediaTrack] {
         guard let indexes, let names, indexes.count == names.count else { return [] }
@@ -589,12 +619,16 @@ extension VLCEngine: VLCMediaPlayerDelegate {
             // reaplicar aqui garante que o ganho interno fique em 100% e o
             // volume que vale seja o do aparelho.
             player.audio?.volume = Int32(savedVolume * 100)
+            aplicarRegraDaLegenda()
             state = .playing
         case .paused:    state = .paused
         case .stopped:   state = .idle
         case .ended:
             if emRolagem { terminouNaRolagem = true } else { state = .ended }
         case .error:     state = .failed(String(localized: "o VLC não conseguiu abrir este arquivo"))
+        // As faixas chegam aos poucos (a legenda ao lado do arquivo, por
+        // último), e o VLC liga a padrão por conta própria: a regra vale de novo.
+        case .esAdded:   aplicarRegraDaLegenda()
         default:         break
         }
     }
