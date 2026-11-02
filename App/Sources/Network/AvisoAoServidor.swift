@@ -14,7 +14,7 @@ import Foundation
 final class AvisoAoServidor {
 
     private struct Sessao {
-        let contaID: String
+        let contaID: UUID
         let servidor: ServidorDeMidia
         let item: String
         let id = UUID().uuidString
