@@ -14,9 +14,8 @@ struct LibraryView: View {
     @EnvironmentObject private var servidoresSMB: SMBServerStore
     @ObservedObject private var contas = ContasDeRede.shared
     @ObservedObject private var historico = Historico.shared
-    @StateObject private var library = MediaLibrary()
+    @ObservedObject private var library = MediaLibrary.shared
     @ObservedObject private var options = LibraryOptions.shared
-    @State private var showingOptions = false
 
     @State private var showingFolderPicker = false
     @State private var showingFilePicker = false
@@ -29,8 +28,6 @@ struct LibraryView: View {
     /// Conta as voltas do player. A marca de onde parou muda enquanto o filme
     /// toca; sem reler ao voltar, "continuar" mostraria o ponto de antes.
     @State private var volta = 0
-    /// Escolhido no "+": abre Servidores já com o cadastro daquele tipo.
-    @State private var novoServidor: NovoServidor?
 
     var body: some View {
         NavigationStack {
@@ -38,9 +35,6 @@ struct LibraryView: View {
                 .navigationDestination(for: VideoGroup.self) { grupo in
                     PastaView(grupo: grupo, volta: volta,
                               onTocar: tocar, menu: menuDoItem)
-                }
-                .navigationDestination(item: $novoServidor) { tipo in
-                    SMBServersView(cadastroInicial: tipo)
                 }
                 .toolbar(.hidden, for: .navigationBar)
             // Apagar arquivo não tem desfazer no iOS — a confirmação é a
@@ -54,7 +48,9 @@ struct LibraryView: View {
             } message: { item in
                 Text("“\(item.title)” será apagado do aparelho. Não dá para desfazer.")
             }
-            .task { await library.refresh(bookmarks: bookmarks) }
+            // Uma vez: voltar de outra aba não varre de novo — puxar a tela
+            // para baixo é o jeito de pedir.
+            .task { if library.lastScan == nil { await library.refresh(bookmarks: bookmarks) } }
             .sheet(isPresented: $showingFolderPicker) {
                 DocumentPicker(mode: .folder) { urls in
                     guard let url = urls.first else { return }
@@ -75,9 +71,6 @@ struct LibraryView: View {
                                         origin: .file(url: url, bookmark: nil))
                 }
                 .ignoresSafeArea()
-            }
-            .sheet(isPresented: $showingOptions) {
-                LibraryOptionsSheet(options: options)
             }
             .sheet(isPresented: $managingFolders, onDismiss: {
                 // Tirar a autorização de uma pasta tem que sumir com os vídeos
@@ -195,7 +188,7 @@ struct LibraryView: View {
     }
 
     /// Os servidores salvos como atalhos na estante: cada um entra direto no
-    /// servidor. Cadastrar fica no "+"; aqui só aparece o que já existe.
+    /// servidor. Cadastrar fica nos Ajustes; aqui só aparece o que já existe.
     @ViewBuilder
     private var secaoDeServidores: some View {
         if temServidores {
@@ -223,12 +216,15 @@ struct LibraryView: View {
         }
     }
 
+    /// A marca e o "+" das pastas do aparelho.
+    ///
+    /// Servidores, visualização e "procurar de novo" foram para a dock e para
+    /// os Ajustes. O "+" fica porque autorizar pasta é o passo de que o iPhone
+    /// depende para achar vídeo — no Android, que varre sozinho, ele nem existe.
     private var barraDoTopo: some View {
         HStack(spacing: 10) {
             MarcaDoApp()
             Spacer()
-            NavigationLink { SMBServersView() } label: { BotaoRedondo(simbolo: "server.rack") }
-            Button { showingOptions = true } label: { BotaoRedondo(simbolo: "slider.horizontal.3") }
             Menu {
                 // Uma entrada só para pasta: "Pastas…" leva à tela que conecta
                 // e desconecta. Dois caminhos para o mesmo lugar fazem parar
@@ -238,28 +234,6 @@ struct LibraryView: View {
                 }
                 Button { showingFilePicker = true } label: {
                     Label("Abrir arquivo…", systemImage: "doc.badge.plus")
-                }
-                // O lugar onde se procura "adicionar" é o "+": o ícone de
-                // servidores no alto passava despercebido.
-                Menu {
-                    Button { novoServidor = .smb } label: {
-                        Label("SMB (Windows, NAS, Samba)", systemImage: "server.rack")
-                    }
-                    Button { novoServidor = .conta(.webdav) } label: {
-                        Label("WebDAV (Nextcloud)", systemImage: ContaDeRede.Tipo.webdav.simbolo)
-                    }
-                    Button { novoServidor = .conta(.jellyfin) } label: {
-                        Label("Jellyfin", systemImage: ContaDeRede.Tipo.jellyfin.simbolo)
-                    }
-                    Button { novoServidor = .conta(.emby) } label: {
-                        Label("Emby", systemImage: ContaDeRede.Tipo.emby.simbolo)
-                    }
-                } label: {
-                    Label("Adicionar servidor", systemImage: "server.rack")
-                }
-                Divider()
-                Button { Task { await library.refresh(bookmarks: bookmarks) } } label: {
-                    Label("Procurar de novo", systemImage: "arrow.clockwise")
                 }
             } label: { BotaoRedondo(simbolo: "plus") }
         }

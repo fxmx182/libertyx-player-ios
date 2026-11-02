@@ -18,6 +18,9 @@ struct VideoGroup: Identifiable, Hashable {
 @MainActor
 final class MediaLibrary: ObservableObject {
 
+    /// Uma só para o app: o Início, Arquivos e Procurar mostram a mesma varredura.
+    static let shared = MediaLibrary()
+
     @Published private(set) var groups: [VideoGroup] = []
     @Published private(set) var isScanning = false
     @Published private(set) var lastScan: Date?

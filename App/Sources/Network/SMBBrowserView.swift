@@ -7,10 +7,28 @@ enum NovoServidor: Hashable {
     case conta(ContaDeRede.Tipo)
 }
 
+/// Como os Ajustes separam os cadastros: os servidores de casa (SMB, Jellyfin,
+/// Emby) de um lado, o WebDAV do outro.
+enum GrupoDeServidores: Hashable {
+    case todos, servidores, webdav
+
+    func mostra(_ tipo: ContaDeRede.Tipo) -> Bool {
+        switch self {
+        case .todos:      return true
+        case .servidores: return tipo != .webdav
+        case .webdav:     return tipo == .webdav
+        }
+    }
+
+    var temSMB: Bool { self != .webdav }
+}
+
 /// Lista de servidores salvos: SMB, WebDAV, Jellyfin e Emby.
 struct SMBServersView: View {
     /// Abre o formulário daquele tipo assim que a tela aparece.
     var cadastroInicial: NovoServidor? = nil
+    /// Que parte dos cadastros esta tela mostra — ver `GrupoDeServidores`.
+    var grupo: GrupoDeServidores = .todos
     @State private var cadastroAberto = false
 
     @EnvironmentObject private var store: SMBServerStore
@@ -24,23 +42,30 @@ struct SMBServersView: View {
     @State private var editandoConta: ContaDeRede?
     @State private var removendoConta: ContaDeRede?
 
+    private var servidores: [SMBServer] { grupo.temSMB ? store.servers : [] }
+    private var contasVisiveis: [ContaDeRede] { contas.contas.filter { grupo.mostra($0.tipo) } }
+
     var body: some View {
         List {
             // Os servidores salvos primeiro: é para eles que se entra aqui na
             // maioria das vezes. A procura automática interessa uma vez, no dia
             // em que se cadastra um servidor novo — e ficava justamente no
             // caminho de quem só quer abrir um vídeo.
-            if store.servers.isEmpty && contas.contas.isEmpty {
+            if servidores.isEmpty && contasVisiveis.isEmpty {
                 ContentUnavailableView {
-                    Label("Nenhum servidor", systemImage: "server.rack")
+                    Label("Nenhum servidor", systemImage: grupo == .webdav ? ContaDeRede.Tipo.webdav.simbolo : "server.rack")
                 } description: {
                     Text("Adicione o servidor de casa para abrir os vídeos direto dele.")
                 } actions: {
-                    Menu("Adicionar servidor") { opcoesDeServidor }
+                    if grupo == .webdav {
+                        Button("Adicionar WebDAV") { novaConta = .webdav }
+                    } else {
+                        Menu("Adicionar servidor") { opcoesDeServidor }
+                    }
                 }
             }
 
-            ForEach(store.servers) { server in
+            ForEach(servidores) { server in
                 NavigationLink {
                     SMBShareListView(server: server)
                 } label: {
@@ -83,7 +108,7 @@ struct SMBServersView: View {
                 }
             }
 
-            ForEach(contas.contas) { conta in
+            ForEach(contasVisiveis) { conta in
                 NavigationLink {
                     PastaRemotaView(titulo: conta.nome, destino: .inicio(conta))
                 } label: {
@@ -129,7 +154,8 @@ struct SMBServersView: View {
                 }
             }
 
-            procuraAutomatica
+            // WebDAV não se anuncia na rede: nada a procurar.
+            if grupo.temSMB { procuraAutomatica }
         }
         .alert("Excluir servidor?", isPresented: Binding(
             get: { removendoConta != nil },
@@ -157,8 +183,8 @@ struct SMBServersView: View {
         .frame(maxWidth: Escala.larguraMaxima)
         .frame(maxWidth: .infinity)
         .fundoDaRede()
-        .navigationTitle("Servidores")
-        .task { discovery.start(conhecidos: store.servers.map(\.host)) }
+        .navigationTitle(grupo == .webdav ? String(localized: "WebDAV / Nextcloud") : String(localized: "Servidores"))
+        .task { if grupo.temSMB { discovery.start(conhecidos: store.servers.map(\.host)) } }
         .onAppear {
             // Uma vez só: voltar de dentro de um servidor não pode reabrir
             // o formulário.
@@ -172,7 +198,12 @@ struct SMBServersView: View {
         .onDisappear { discovery.stop() }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Menu { opcoesDeServidor } label: { Image(systemName: "plus") }
+                // WebDAV tem um tipo só: o "+" vai direto ao formulário.
+                if grupo == .webdav {
+                    Button { novaConta = .webdav } label: { Image(systemName: "plus") }
+                } else {
+                    Menu { opcoesDeServidor } label: { Image(systemName: "plus") }
+                }
             }
         }
         .sheet(isPresented: $addingNew) {
@@ -195,17 +226,23 @@ struct SMBServersView: View {
     /// Os tipos de servidor que dá para cadastrar.
     @ViewBuilder
     private var opcoesDeServidor: some View {
-        Button { addingNew = true } label: {
-            Label("SMB (Windows, NAS, Samba)", systemImage: "server.rack")
+        if grupo.temSMB {
+            Button { addingNew = true } label: {
+                Label("SMB (Windows, NAS, Samba)", systemImage: "server.rack")
+            }
         }
-        Button { novaConta = .webdav } label: {
-            Label("WebDAV (Nextcloud)", systemImage: ContaDeRede.Tipo.webdav.simbolo)
+        if grupo.mostra(.webdav) {
+            Button { novaConta = .webdav } label: {
+                Label("WebDAV (Nextcloud)", systemImage: ContaDeRede.Tipo.webdav.simbolo)
+            }
         }
-        Button { novaConta = .jellyfin } label: {
-            Label("Jellyfin", systemImage: ContaDeRede.Tipo.jellyfin.simbolo)
-        }
-        Button { novaConta = .emby } label: {
-            Label("Emby", systemImage: ContaDeRede.Tipo.emby.simbolo)
+        if grupo.mostra(.jellyfin) {
+            Button { novaConta = .jellyfin } label: {
+                Label("Jellyfin", systemImage: ContaDeRede.Tipo.jellyfin.simbolo)
+            }
+            Button { novaConta = .emby } label: {
+                Label("Emby", systemImage: ContaDeRede.Tipo.emby.simbolo)
+            }
         }
     }
 

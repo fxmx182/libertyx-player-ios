@@ -9,7 +9,7 @@ import SwiftUI
 /// página só dá o "isso!" depois que ele foi feito.
 ///
 /// Nunca prende: "Próximo" e "Pular" funcionam sem fazer gesto nenhum. Aparece
-/// uma vez, na primeira abertura, e pode ser revisto em Visualização › Ver o
+/// uma vez, na primeira abertura, e pode ser revisto em Ajustes › Ver o
 /// guia. É o mesmo guia do Android, com o que muda no iPhone: a engrenagem no
 /// lugar dos três pontos e a pasta autorizada no lugar da permissão.
 enum Guia {
@@ -208,7 +208,7 @@ private struct Pagina {
                    demo: { AnyView(DemoBiblioteca(onFeito: $0)) }),
             Pagina(etiqueta: String(localized: "Na rede"),
                    titulo: String(localized: "O computador de casa, no bolso"),
-                   texto: String(localized: "O ícone de servidores, no alto da biblioteca, acha sozinho os computadores e NAS da sua rede com pastas compartilhadas e toca direto de lá, sem baixar nada.\n\nO iOS não deixa um app varrer o aparelho inteiro: autorize uma pasta — do aparelho, do iCloud ou do pendrive — e o LibertyX cuida dela sozinho daí em diante. Para rever este guia: Visualização › Ver o guia."),
+                   texto: String(localized: "Em Ajustes › Servidores, o LibertyX acha sozinho os computadores e NAS da sua rede com pastas compartilhadas e toca direto de lá, sem baixar nada.\n\nO iOS não deixa um app varrer o aparelho inteiro: autorize uma pasta — do aparelho, do iCloud ou do pendrive — e o LibertyX cuida dela sozinho daí em diante. Para rever este guia: Ajustes › Ver o guia."),
                    tente: String(localized: "toque no ícone de servidores"),
                    feito: String(localized: "É por aqui que se chega ao computador de casa."),
                    demo: { AnyView(DemoRede(onFeito: $0)) }),

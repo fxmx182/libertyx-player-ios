@@ -26,12 +26,15 @@ struct ServidorDeMidia {
         let numero: Int?
         let temporada: Int?
         let criado: String?
+        /// Episódio: a série de que ele faz parte — na busca, é o que o situa.
+        let serie: String?
 
         enum CodingKeys: String, CodingKey {
             case id = "Id", nome = "Name", tipo = "Type", ehPasta = "IsFolder"
             case tipoDeColecao = "CollectionType", duracaoTicks = "RunTimeTicks"
             case ano = "ProductionYear", numero = "IndexNumber"
             case temporada = "ParentIndexNumber", criado = "DateCreated"
+            case serie = "SeriesName"
         }
 
         init(from decoder: Decoder) throws {
@@ -46,6 +49,11 @@ struct ServidorDeMidia {
             numero = try? c.decode(Int.self, forKey: .numero)
             temporada = try? c.decode(Int.self, forKey: .temporada)
             criado = try? c.decode(String.self, forKey: .criado)
+            serie = try? c.decode(String.self, forKey: .serie)
+        }
+
+        var ehVideo: Bool {
+            !ehPasta && ["Movie", "Episode", "Video", "MusicVideo"].contains(tipo)
         }
 
         /// Duração em segundos; o servidor conta em décimos de microssegundo.
@@ -110,6 +118,18 @@ struct ServidorDeMidia {
         }
         let lista: Lista = try await pedir("/Users/\(usuarioID)/Items", consulta: consulta)
         return lista.Items
+    }
+
+    /// Filmes e episódios cujo nome tem `termo`, de todas as bibliotecas.
+    func buscar(_ termo: String) async throws -> [Item] {
+        let lista: Lista = try await pedir("/Users/\(usuarioID)/Items", consulta: [
+            URLQueryItem(name: "searchTerm", value: termo),
+            URLQueryItem(name: "Recursive", value: "true"),
+            URLQueryItem(name: "IncludeItemTypes", value: "Movie,Episode,Video,MusicVideo"),
+            URLQueryItem(name: "Fields", value: "DateCreated"),
+            URLQueryItem(name: "Limit", value: "40"),
+        ])
+        return lista.Items.filter(\.ehVideo)
     }
 
     // MARK: - Endereços

@@ -38,7 +38,7 @@ struct LabPlayerApp: App {
 
     var body: some Scene {
         WindowGroup {
-            LibraryView()
+            Abas()
                 .environmentObject(bookmarks)
                 .environmentObject(smbServers)
                 .preferredColorScheme(.dark)

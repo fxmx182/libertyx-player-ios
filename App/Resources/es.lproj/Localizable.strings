@@ -147,7 +147,7 @@
 "O iOS não deixa um app varrer o aparelho inteiro. Cada pasta conectada aqui passa a ser varrida sozinha, incluindo as subpastas." = "iOS no deja que una app explore todo el dispositivo. Cada carpeta conectada aquí se explora sola, incluidas las subcarpetas.";
 "O servidor respondeu com o erro %lld." = "El servidor respondió con el error %lld.";
 "O seu cinema, sem limites" = "Tu cine, sin límites";
-"O ícone de servidores, no alto da biblioteca, acha sozinho os computadores e NAS da sua rede com pastas compartilhadas e toca direto de lá, sem baixar nada.\n\nO iOS não deixa um app varrer o aparelho inteiro: autorize uma pasta — do aparelho, do iCloud ou do pendrive — e o LibertyX cuida dela sozinho daí em diante. Para rever este guia: Visualização › Ver o guia." = "El ícono de servidores, arriba en la biblioteca, encuentra solo las computadoras y NAS de tu red con carpetas compartidas y reproduce directamente desde ahí, sin descargar nada.\n\niOS no deja que una app explore todo el dispositivo: autoriza una carpeta — del dispositivo, de iCloud o de un pendrive — y LibertyX se encarga de ella desde entonces. Para volver a ver esta guía: Visualización › Ver la guía.";
+"Em Ajustes › Servidores, o LibertyX acha sozinho os computadores e NAS da sua rede com pastas compartilhadas e toca direto de lá, sem baixar nada.\n\nO iOS não deixa um app varrer o aparelho inteiro: autorize uma pasta — do aparelho, do iCloud ou do pendrive — e o LibertyX cuida dela sozinho daí em diante. Para rever este guia: Ajustes › Ver o guia." = "En Ajustes › Servidores, LibertyX encuentra solo las computadoras y NAS de tu red con carpetas compartidas y reproduce directamente desde ahí, sin descargar nada.\n\niOS no deja que una app explore todo el dispositivo: autoriza una carpeta — del dispositivo, de iCloud o de un pendrive — y LibertyX se encarga de ella desde entonces. Para volver a ver esta guía: Ajustes › Ver la guía.";
 "OK" = "OK";
 "Ocultar" = "Ocultar";
 "Ocultar barra" = "Ocultar barra";
@@ -257,3 +257,34 @@
 "Sobre" = "Acerca de";
 "Licenças de código aberto" = "Licencias de código abierto";
 "O LibertyX é feito sobre estes projetos de código aberto. Toque num deles para ler a licença." = "LibertyX está hecho sobre estos proyectos de código abierto. Toca uno para leer su licencia.";
+
+/* Dock e Ajustes */
+"Início" = "Inicio";
+"Arquivos" = "Archivos";
+"Procurar" = "Buscar";
+"Ajustes" = "Ajustes";
+"Neste aparelho" = "En este dispositivo";
+"Conectar e desconectar pastas" = "Conectar y desconectar carpetas";
+"Vídeos do aparelho e dos servidores Jellyfin e Emby" = "Videos del dispositivo y de los servidores Jellyfin y Emby";
+"Procurando nos servidores…" = "Buscando en los servidores…";
+"Nada encontrado para “%@”." = "Nada encontrado para “%@”.";
+"Filme, episódio, nome do arquivo…" = "Película, episodio, nombre del archivo…";
+"Limpar" = "Borrar";
+"SMB, Jellyfin e Emby" = "SMB, Jellyfin y Emby";
+"WebDAV / Nextcloud" = "WebDAV / Nextcloud";
+"Nextcloud, ownCloud e outros" = "Nextcloud, ownCloud y otros";
+"Pastas do aparelho" = "Carpetas del dispositivo";
+"Preferências" = "Preferencias";
+"Grade ou lista, e a ordem" = "Cuadrícula o lista, y el orden";
+"Reprodução" = "Reproducción";
+"Controles e velocidade" = "Controles y velocidad";
+"Fale com a gente" = "Habla con nosotros";
+"O LibertyX Player toca qualquer vídeo, do celular ou direto do servidor de casa." = "LibertyX Player reproduce cualquier video, del móvil o directo del servidor de casa.";
+"Compartilhar o LibertyX" = "Compartir LibertyX";
+"Seguir no X" = "Síguenos en X";
+"Em breve" = "Pronto";
+"Enviar um email" = "Envíanos un email";
+"Nosso perfil no X chega em breve." = "Nuestro perfil en X llega pronto.";
+"Ocultar controles depois" = "Ocultar controles después de";
+"Segurar para acelerar" = "Mantener para acelerar";
+"Adicionar WebDAV" = "Añadir WebDAV";

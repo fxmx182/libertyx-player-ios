@@ -349,7 +349,7 @@ struct PastaRemotaView: View {
                 pastas = itens.filter(\.ehPasta).map {
                     PastaRemota(nome: $0.titulo, simbolo: simbolo(doTipo: $0.tipo), destino: .midia(conta, $0))
                 }
-                lidos = itens.filter { !$0.ehPasta && ($0.tipo == "Movie" || $0.tipo == "Episode" || $0.tipo == "Video" || $0.tipo == "MusicVideo") }
+                lidos = itens.filter(\.ehVideo)
                     .map {
                         MediaItem(title: $0.titulo, origin: .midia(conta: conta.id, item: $0.id),
                                   modifiedAt: $0.dataDeCriacao, duration: $0.duracao)

@@ -122,52 +122,7 @@ struct LibraryOptionsSheet: View {
                         .padding(.top, 4)
                     }
 
-                    secao("Ajuda") {
-                        Button {
-                            dismiss()
-                            Guia.mostrarDeNovo()
-                        } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: "hand.tap")
-                                    .font(.system(size: 17, weight: .semibold))
-                                    .foregroundStyle(LabTheme.accent)
-                                Text("Ver o guia dos gestos e ferramentas")
-                                    .font(LabFont.swiftUI(14, .semibold))
-                                    .foregroundStyle(LabTheme.text)
-                                    .multilineTextAlignment(.leading)
-                                Spacer(minLength: 0)
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(LabTheme.faint)
-                            }
-                            .padding(14)
-                            .labCard(radius: 14)
-                        }
-                        .buttonStyle(.plain)
-                    }
-
-                    secao("Sobre") {
-                        NavigationLink {
-                            LicencasView()
-                        } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: "doc.text")
-                                    .font(.system(size: 17, weight: .semibold))
-                                    .foregroundStyle(LabTheme.accent)
-                                Text("Licenças de código aberto")
-                                    .font(LabFont.swiftUI(14, .semibold))
-                                    .foregroundStyle(LabTheme.text)
-                                    .multilineTextAlignment(.leading)
-                                Spacer(minLength: 0)
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(LabTheme.faint)
-                            }
-                            .padding(14)
-                            .labCard(radius: 14)
-                        }
-                        .buttonStyle(.plain)
-                    }
+                    // O guia e as licenças moram nos Ajustes.
                 }
                 .padding(20)
             }
