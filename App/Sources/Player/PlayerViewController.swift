@@ -69,6 +69,7 @@ final class PlayerViewController: UIViewController {
 
     /// A ponte com a ilha, a central de controle e o botão do fone.
     private let nowPlaying = NowPlayingCenter()
+    private let aviso = AvisoAoServidor()
 
     private var rateBeforeHold: Float = 1.0
     /// O "segurar para acelerar" está valendo agora.
@@ -328,6 +329,7 @@ final class PlayerViewController: UIViewController {
             self.refreshIndicadores()
             self.controls.setBuffered(self.engine.bufferedTime)
             self.saveResumePoint(time)
+            self.aviso.andou(time, pausado: false)
             self.refreshNowPlaying()
         }
         engine.onBufferingChange = { [weak self] buffering in
@@ -343,6 +345,8 @@ final class PlayerViewController: UIViewController {
             self.refreshNowPlaying()
             if case .failed(let message) = state { self.presentError(message) }
 
+            if state == .paused { self.aviso.andou(self.engine.currentTime, pausado: true) }
+            if state == .playing { self.aviso.andou(self.engine.currentTime, pausado: false) }
             if state == .ended { self.handlePlaybackEnded() }
         }
     }
@@ -361,7 +365,9 @@ final class PlayerViewController: UIViewController {
                 // começar a tocar, então a condição nunca passava e a pergunta
                 // nunca aparecia. Quem valida a marca é o próprio ResumeStore,
                 // que guardou a duração junto.
-                if let retomada = ResumeStore.shared.position(for: item.origin.resumeKey) {
+                let retomada = ResumeStore.shared.position(for: item.origin.resumeKey)
+                aviso.comecou(item, em: retomada ?? 0)
+                if let retomada {
                     perguntarRetomada(de: retomada)
                 } else {
                     engine.play()
@@ -491,6 +497,7 @@ final class PlayerViewController: UIViewController {
                                     duration: engine.duration,
                                     for: item.origin.resumeKey)
         }
+        aviso.parou(em: engine.currentTime)
         nowPlaying.deactivate()
         engine.teardown()
         dismiss(animated: true)
@@ -533,6 +540,8 @@ final class PlayerViewController: UIViewController {
 
         // Quem assistiu até o fim não quer voltar para os créditos na próxima.
         ResumeStore.shared.clear(key: item.origin.resumeKey)
+        // No fim, e não onde o tempo parou de contar: é o que marca como visto.
+        aviso.parou(em: engine.duration)
 
         if isShuffling, playlist.count > 1 {
             goToNext()
@@ -548,6 +557,7 @@ final class PlayerViewController: UIViewController {
 
     private func switchTo(index: Int) {
         guard playlist.indices.contains(index) else { return }
+        aviso.parou(em: engine.currentTime)
 
         currentIndex = index
         item = playlist[index]

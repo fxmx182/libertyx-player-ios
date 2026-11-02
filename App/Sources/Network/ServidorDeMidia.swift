@@ -28,13 +28,32 @@ struct ServidorDeMidia {
         let criado: String?
         /// Episódio: a série de que ele faz parte — na busca, é o que o situa.
         let serie: String?
+        let serieID: String?
+        let temporadaID: String?
+        /// Onde a pessoa parou, em qualquer aparelho, e se já viu até o fim.
+        let usuario: DoUsuario?
+
+        struct DoUsuario: Decodable, Hashable {
+            let posicaoTicks: Int64?
+            let visto: Bool?
+            /// Série ou temporada: quantos episódios faltam ver.
+            let naoVistos: Int?
+            /// Quando foi tocado pela última vez, em qualquer aparelho.
+            let ultimaVez: String?
+
+            enum CodingKeys: String, CodingKey {
+                case posicaoTicks = "PlaybackPositionTicks", visto = "Played"
+                case naoVistos = "UnplayedItemCount", ultimaVez = "LastPlayedDate"
+            }
+        }
 
         enum CodingKeys: String, CodingKey {
             case id = "Id", nome = "Name", tipo = "Type", ehPasta = "IsFolder"
             case tipoDeColecao = "CollectionType", duracaoTicks = "RunTimeTicks"
             case ano = "ProductionYear", numero = "IndexNumber"
             case temporada = "ParentIndexNumber", criado = "DateCreated"
-            case serie = "SeriesName"
+            case serie = "SeriesName", serieID = "SeriesId", temporadaID = "SeasonId"
+            case usuario = "UserData"
         }
 
         init(from decoder: Decoder) throws {
@@ -50,6 +69,9 @@ struct ServidorDeMidia {
             temporada = try? c.decode(Int.self, forKey: .temporada)
             criado = try? c.decode(String.self, forKey: .criado)
             serie = try? c.decode(String.self, forKey: .serie)
+            serieID = try? c.decode(String.self, forKey: .serieID)
+            temporadaID = try? c.decode(String.self, forKey: .temporadaID)
+            usuario = try? c.decode(DoUsuario.self, forKey: .usuario)
         }
 
         var ehVideo: Bool {
@@ -59,7 +81,23 @@ struct ServidorDeMidia {
         /// Duração em segundos; o servidor conta em décimos de microssegundo.
         var duracao: Double? {
             guard let duracaoTicks, duracaoTicks > 0 else { return nil }
-            return Double(duracaoTicks) / 10_000_000
+            return Double(duracaoTicks) / ServidorDeMidia.ticks
+        }
+
+        /// Onde a pessoa parou, em segundos.
+        var posicao: Double? {
+            guard let ticks = usuario?.posicaoTicks, ticks > 0 else { return nil }
+            return Double(ticks) / ServidorDeMidia.ticks
+        }
+
+        var visto: Bool { usuario?.visto == true }
+
+        var naoVistos: Int? { usuario?.naoVistos.flatMap { $0 > 0 ? $0 : nil } }
+
+        /// De 0 a 1, só quando há o que retomar.
+        var progresso: Double? {
+            guard let posicao, let duracao, duracao > 0 else { return nil }
+            return min(1, max(0, posicao / duracao))
         }
 
         /// Episódio com o número na frente, filme com o ano: é como se acha
@@ -70,17 +108,21 @@ struct ServidorDeMidia {
             return nome
         }
 
-        var dataDeCriacao: Date? {
-            guard let criado else { return nil }
-            let f = ISO8601DateFormatter()
-            f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            if let data = f.date(from: criado) { return data }
-            f.formatOptions = [.withInternetDateTime]
-            // O servidor manda sete casas de fração, que o formatador recusa;
-            // sem a fração a data ainda serve para ordenar.
-            let semFracao = criado.replacingOccurrences(of: #"\.\d+"#, with: "", options: .regularExpression)
-            return f.date(from: semFracao)
-        }
+        var dataDeCriacao: Date? { criado.flatMap(ServidorDeMidia.data) }
+    }
+
+    /// O servidor conta o tempo em décimos de microssegundo.
+    static let ticks = 10_000_000.0
+
+    static func data(_ texto: String) -> Date? {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let data = f.date(from: texto) { return data }
+        f.formatOptions = [.withInternetDateTime]
+        // O servidor manda sete casas de fração, que o formatador recusa;
+        // sem a fração a data ainda serve para ordenar.
+        let semFracao = texto.replacingOccurrences(of: #"\.\d+"#, with: "", options: .regularExpression)
+        return f.date(from: semFracao)
     }
 
     private struct Lista: Decodable {
@@ -117,7 +159,7 @@ struct ServidorDeMidia {
             break
         }
         let lista: Lista = try await pedir("/Users/\(usuarioID)/Items", consulta: consulta)
-        return lista.Items
+        return await lembrandoOndeParou(lista.Items)
     }
 
     /// Filmes e episódios cujo nome tem `termo`, de todas as bibliotecas.
@@ -129,7 +171,90 @@ struct ServidorDeMidia {
             URLQueryItem(name: "Fields", value: "DateCreated"),
             URLQueryItem(name: "Limit", value: "40"),
         ])
-        return lista.Items.filter(\.ehVideo)
+        return await lembrandoOndeParou(lista.Items.filter(\.ehVideo))
+    }
+
+    /// O que a pessoa começou e não terminou, do mais recente ao mais antigo.
+    func continuar() async throws -> [Item] {
+        let lista: Lista = try await pedir("/Users/\(usuarioID)/Items/Resume", consulta: [
+            URLQueryItem(name: "Limit", value: "24"),
+            URLQueryItem(name: "MediaTypes", value: "Video"),
+            URLQueryItem(name: "Fields", value: "DateCreated"),
+            URLQueryItem(name: "EnableUserData", value: "true"),
+        ])
+        return await lembrandoOndeParou(lista.Items.filter(\.ehVideo))
+    }
+
+    /// O próximo episódio de cada série que a pessoa está vendo.
+    func aSeguir() async throws -> [Item] {
+        let lista: Lista = try await pedir("/Shows/NextUp", consulta: [
+            URLQueryItem(name: "UserId", value: usuarioID),
+            URLQueryItem(name: "Limit", value: "24"),
+            URLQueryItem(name: "Fields", value: "DateCreated"),
+            URLQueryItem(name: "EnableUserData", value: "true"),
+        ])
+        return await lembrandoOndeParou(lista.Items.filter(\.ehVideo))
+    }
+
+    /// O que chegou por último numa biblioteca. Numa de séries o servidor
+    /// agrupa os episódios novos na série, como no app dele.
+    func recentes(_ biblioteca: Item) async throws -> [Item] {
+        // O `Latest` responde com a lista solta, sem o `Items` em volta.
+        let itens: [Item] = try await pedir("/Users/\(usuarioID)/Items/Latest", consulta: [
+            URLQueryItem(name: "ParentId", value: biblioteca.id),
+            URLQueryItem(name: "Limit", value: "16"),
+            URLQueryItem(name: "Fields", value: "DateCreated"),
+            URLQueryItem(name: "EnableUserData", value: "true"),
+        ])
+        return await lembrandoOndeParou(itens)
+    }
+
+    /// Os episódios da temporada, na ordem: é a fila do "próximo" no player.
+    func temporada(_ episodio: Item) async throws -> [Item] {
+        guard let serie = episodio.serieID else { return [episodio] }
+        var consulta = [URLQueryItem(name: "UserId", value: usuarioID),
+                        URLQueryItem(name: "Fields", value: "DateCreated")]
+        if let temporada = episodio.temporadaID {
+            consulta.append(URLQueryItem(name: "SeasonId", value: temporada))
+        }
+        let lista: Lista = try await pedir("/Shows/\(serie)/Episodes", consulta: consulta)
+        let episodios = await lembrandoOndeParou(lista.Items.filter(\.ehVideo))
+        return episodios.isEmpty ? [episodio] : episodios
+    }
+
+    /// Conta ao servidor o que está tocando, para o "Continuar assistindo" e
+    /// o "visto" valerem também no app dele, na TV e no navegador.
+    ///
+    /// `evento` é `nil` no começo, `Progress` durante e `Stopped` no fim — e
+    /// é no `Stopped` perto do fim que o servidor marca como visto.
+    func informar(_ evento: String?, item: String, segundos: Double, pausado: Bool, sessao: String) async throws {
+        let corpo = try JSONSerialization.data(withJSONObject: [
+            "ItemId": item,
+            "MediaSourceId": item,
+            "PositionTicks": Int64(max(0, segundos) * Self.ticks),
+            "IsPaused": pausado,
+            "CanSeek": true,
+            "PlayMethod": "DirectPlay",
+            "PlaySessionId": sessao,
+        ] as [String: Any])
+        // O servidor responde sem corpo (204): não há o que ler.
+        _ = try await pedirDados("/Sessions/Playing" + (evento.map { "/\($0)" } ?? ""), corpo: corpo)
+    }
+
+    /// Toda lista que chega do servidor diz onde a pessoa parou em cada
+    /// vídeo. Guardar isso junto das marcas do aparelho é o que faz o "Você
+    /// parou em…" do player valer para o que foi visto na TV ou no navegador.
+    private func lembrandoOndeParou(_ itens: [Item]) async -> [Item] {
+        let doServidor = itens.compactMap { item -> ResumeStore.DoServidor? in
+            guard item.ehVideo, let quando = item.usuario?.ultimaVez.flatMap(Self.data) else { return nil }
+            return ResumeStore.DoServidor(key: MediaOrigin.midia(conta: conta.id, item: item.id).resumeKey,
+                                          position: item.posicao, duration: item.duracao ?? 0,
+                                          at: quando, watched: item.visto)
+        }
+        if !doServidor.isEmpty {
+            await MainActor.run { ResumeStore.shared.mesclar(doServidor) }
+        }
+        return itens
     }
 
     // MARK: - Endereços
@@ -144,16 +269,17 @@ struct ServidorDeMidia {
 
     /// Imagem do item: `Thumb` e `Backdrop` são deitadas, como as capas do
     /// app; `Primary` de filme é o cartaz em pé, e fica por último.
-    func urlDaImagem(_ id: String, tipo: String) -> URL? {
+    func urlDaImagem(_ id: String, tipo: String, largura: Int = 480) -> URL? {
         url("/Items/\(id)/Images/\(tipo)", consulta: [
-            URLQueryItem(name: "maxWidth", value: "480"),
+            URLQueryItem(name: "maxWidth", value: "\(largura)"),
             URLQueryItem(name: "quality", value: "80"),
         ] + chaveNaConsulta)
     }
 
-    func imagem(_ id: String) async -> UIImage? {
-        for tipo in ["Thumb", "Backdrop", "Primary"] {
-            guard let url = urlDaImagem(id, tipo: tipo),
+    func imagem(_ id: String, tipos: [String] = ["Thumb", "Backdrop", "Primary"],
+                largura: Int = 480) async -> UIImage? {
+        for tipo in tipos {
+            guard let url = urlDaImagem(id, tipo: tipo, largura: largura),
                   let resposta = try? await URLSession.shared.data(from: url),
                   (resposta.1 as? HTTPURLResponse)?.statusCode == 200,
                   let imagem = UIImage(data: resposta.0) else { continue }
@@ -217,6 +343,16 @@ struct ServidorDeMidia {
 
     private func pedir<T: Decodable>(_ caminho: String, consulta: [URLQueryItem] = [],
                                      corpo: Data? = nil) async throws -> T {
+        let dados = try await pedirDados(caminho, consulta: consulta, corpo: corpo)
+        do {
+            return try JSONDecoder().decode(T.self, from: dados)
+        } catch {
+            throw ErroDeServidor(mensagem: String(localized: "Não há um servidor \(conta.tipo.nome) nesse endereço."))
+        }
+    }
+
+    private func pedirDados(_ caminho: String, consulta: [URLQueryItem] = [],
+                            corpo: Data? = nil) async throws -> Data {
         guard let url = url(caminho, consulta: consulta) else {
             throw ErroDeServidor(mensagem: String(localized: "Endereço inválido."))
         }
@@ -237,10 +373,6 @@ struct ServidorDeMidia {
                 ? ErroDeServidor(mensagem: String(localized: "Não há um servidor \(conta.tipo.nome) nesse endereço."))
                 : ErroDeServidor.http(codigo)
         }
-        do {
-            return try JSONDecoder().decode(T.self, from: dados)
-        } catch {
-            throw ErroDeServidor(mensagem: String(localized: "Não há um servidor \(conta.tipo.nome) nesse endereço."))
-        }
+        return dados
     }
 }

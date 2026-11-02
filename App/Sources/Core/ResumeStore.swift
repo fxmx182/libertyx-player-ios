@@ -58,6 +58,36 @@ final class ResumeStore {
         persist()
     }
 
+    /// Onde o Jellyfin ou o Emby diz que um vídeo parou, para `mesclar`.
+    struct DoServidor {
+        let key: String
+        let position: Double?
+        let duration: Double
+        let at: Date
+        let watched: Bool
+    }
+
+    /// O que o servidor diz dos vídeos vistos em outro aparelho.
+    ///
+    /// Vale a marca mais recente: a daqui só dá lugar à de lá quando a de lá
+    /// é mais nova. Visto até o fim, ou recomeçado lá, apaga a daqui. A lista
+    /// inteira grava uma vez só: uma biblioteca grande gravaria centenas.
+    func mesclar(_ entradas: [DoServidor]) {
+        var mudou = false
+        for e in entradas {
+            let local = marcas[e.key]
+            if let local, local.updatedAt >= e.at { continue }
+            guard !e.watched, let posicao = e.position, posicao > 0 else {
+                if marcas.removeValue(forKey: e.key) != nil { mudou = true }
+                continue
+            }
+            if local?.position == posicao { continue }
+            marcas[e.key] = Marca(position: posicao, duration: e.duration, updatedAt: e.at)
+            mudou = true
+        }
+        if mudou { persist() }
+    }
+
     /// As chaves com posição que vale retomar, da mais recente para a mais antiga.
     ///
     /// É a faixa de "continuar assistindo": o que se estava vendo por último

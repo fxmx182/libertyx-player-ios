@@ -239,6 +239,18 @@ struct PastaRemotaView: View {
     private var videos: [MediaItem] { options.sorted(lidos) }
 
     var body: some View {
+        if case .bibliotecas(let conta) = destino {
+            // O começo de um Jellyfin ou Emby é a tela de faixas, que se
+            // carrega sozinha; as bibliotecas estão nela.
+            InicioDoServidorView(conta: conta)
+                .navigationTitle(titulo)
+                .navigationBarTitleDisplayMode(.inline)
+        } else {
+            pasta
+        }
+    }
+
+    private var pasta: some View {
         conteudo
             .navigationTitle(titulo)
             .navigationBarTitleDisplayMode(.inline)
