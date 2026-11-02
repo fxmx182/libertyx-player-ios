@@ -21,6 +21,8 @@ final class PlayerControlsView: UIView {
     var onPrevious: (() -> Void)?
     var onNext: (() -> Void)?
     var onCycleAspect: (() -> Void)?
+    /// Abre ou fecha a janela flutuante.
+    var onPiP: (() -> Void)?
 
     /// Montado na hora de abrir: os itens mostram estado que muda enquanto o
     /// player está aberto.
@@ -104,6 +106,7 @@ final class PlayerControlsView: UIView {
     private let transporte = UIStackView()
     private let ajustes = UIStackView()
     private let aspectButton = UIButton(type: .system)
+    private let pipButton = UIButton(type: .system)
 
     /// Sair do vídeo. Sozinho no alto, sem barra em volta.
     private let closeButton = UIButton(type: .system)
@@ -274,6 +277,9 @@ final class PlayerControlsView: UIView {
         playButton.heightAnchor.constraint(equalToConstant: 50).isActive = true
         configure(nextButton, symbol: "forward.end.fill", size: 27, action: #selector(nextTapped))
         configure(aspectButton, symbol: "arrow.left.and.right", size: 20, action: #selector(aspectTapped))
+        configure(pipButton, symbol: "pip.enter", size: 20, action: #selector(pipTapped))
+        // Só aparece quando o motor deixa a janela pronta (`setPiPDisponivel`).
+        pipButton.isHidden = true
 
         // Área de toque generosa: o alvo confortável para o dedo é 44 pt, e
         // esses botões ficam perto da borda inferior, onde errar é mais fácil.
@@ -316,6 +322,7 @@ final class PlayerControlsView: UIView {
         ajustes.alignment = .center
         ajustes.spacing = 8
         ajustes.translatesAutoresizingMaskIntoConstraints = false
+        ajustes.addArrangedSubview(pipButton)
         ajustes.addArrangedSubview(aspectButton)
 
         [elapsedLabel, trilhaFundo, trilhaCarregada, slider, totalLabel, rotuloFino,
@@ -676,6 +683,16 @@ final class PlayerControlsView: UIView {
     @objc private func subtitlesTapped() { onShowTracks?(.subtitle) }
     @objc private func audioTapped()     { onShowTracks?(.audio) }
     @objc private func aspectTapped()    { onCycleAspect?() }
+    @objc private func pipTapped()       { onPiP?() }
+
+    func setPiPDisponivel(_ disponivel: Bool) {
+        pipButton.isHidden = !disponivel
+    }
+
+    /// O ícone diz o que o toque vai fazer: entrar na janela ou sair dela.
+    func setPiPAberto(_ aberto: Bool) {
+        pipButton.setImage(UIImage(systemName: aberto ? "pip.exit" : "pip.enter"), for: .normal)
+    }
 
     @objc private func lockTapped() {
         // O ícone tem que dizer o que vai acontecer, não o que já aconteceu.

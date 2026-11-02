@@ -223,6 +223,11 @@ final class PlayerViewController: UIViewController {
         controls.onRotate = { [weak self] in self?.toggleOrientation() }
         controls.onShowSpeed = { [weak self] in self?.showSpeedSheet() }
         controls.onCycleAspect = { [weak self] in self?.cycleAspect() }
+        if let janela = engine as? ComJanelaFlutuante {
+            controls.onPiP = { janela.alternarJanela() }
+            janela.onJanelaPronta = { [weak self] pronta in self?.controls.setPiPDisponivel(pronta) }
+            janela.onJanela = { [weak self] aberta in self?.controls.setPiPAberto(aberta) }
+        }
         controls.onUnmute = { [weak self] in self?.alternarMudo(false) }
         controls.onShowTools = { [weak self] in self?.showToolsPanel() }
 
@@ -380,11 +385,6 @@ final class PlayerViewController: UIViewController {
         }
     }
 
-    /// Liga a janela flutuante quando quem assumiu foi o AVPlayer.
-    ///
-    /// Com ele o sistema controlaria pausa e avanço sozinho. O VLC desenha por
-    /// conta própria e não oferece essa camada, então hoje não há janela — o
-    /// botão fica e explica, em vez de sumir sem motivo aparente.
     /// Pergunta antes de retomar.
     ///
     /// Voltar sozinho ao meio do filme é útil na maioria das vezes e péssimo

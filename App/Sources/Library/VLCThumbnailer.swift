@@ -1,5 +1,5 @@
 import UIKit
-import VLCKitSPM
+import VLCKit
 
 /// Miniatura pelo VLC.
 ///

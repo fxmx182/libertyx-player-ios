@@ -140,3 +140,17 @@ enum PlaybackError: LocalizedError {
 extension PlaybackEngine {
     var bufferedTime: Double { 0 }
 }
+
+/// Motor que sabe pôr o vídeo numa janela flutuante (o PiP do iOS).
+///
+/// À parte do `PlaybackEngine` porque nem todo motor oferece: o player só
+/// mostra o botão quando o motor diz que a janela está pronta.
+@MainActor
+protocol ComJanelaFlutuante: AnyObject {
+    /// A janela ficou pronta para abrir (ou deixou de estar).
+    var onJanelaPronta: ((Bool) -> Void)? { get set }
+    /// A janela abriu ou fechou — pelo botão ou pelo próprio sistema.
+    var onJanela: ((Bool) -> Void)? { get set }
+    var janelaAberta: Bool { get }
+    func alternarJanela()
+}
