@@ -352,6 +352,7 @@ final class PlayerViewController: UIViewController {
     }
 
     private func loadAndPlay() {
+        encerrado = false
         Historico.shared.registrar(item)
         Task { @MainActor in
             do {
@@ -489,15 +490,8 @@ final class PlayerViewController: UIViewController {
     }
 
     private func close() {
-        // Grava sem o intervalo de cinco segundos: sair é justamente quando a
-        // posição mais precisa estar certa. Menos quando o vídeo acabou: aí o
-        // ponto já foi apagado de propósito, para a próxima vez começar do início.
-        if engine.state != .ended, engine.duration > 0, engine.currentTime > 30 {
-            ResumeStore.shared.save(position: engine.currentTime,
-                                    duration: engine.duration,
-                                    for: item.origin.resumeKey)
-        }
-        aviso.parou(em: engine.currentTime)
+        // Depois do fim o vídeo já passou por aqui, e nada mais é gravado.
+        encerrar(em: engine.currentTime)
         nowPlaying.deactivate()
         engine.teardown()
         dismiss(animated: true)
@@ -538,10 +532,7 @@ final class PlayerViewController: UIViewController {
             return
         }
 
-        // Quem assistiu até o fim não quer voltar para os créditos na próxima.
-        ResumeStore.shared.clear(key: item.origin.resumeKey)
-        // No fim, e não onde o tempo parou de contar: é o que marca como visto.
-        aviso.parou(em: engine.duration)
+        encerrar(em: engine.duration, acabou: true)
 
         if isShuffling, playlist.count > 1 {
             goToNext()
@@ -557,7 +548,7 @@ final class PlayerViewController: UIViewController {
 
     private func switchTo(index: Int) {
         guard playlist.indices.contains(index) else { return }
-        aviso.parou(em: engine.currentTime)
+        encerrar(em: engine.currentTime)
 
         currentIndex = index
         item = playlist[index]
@@ -585,6 +576,49 @@ final class PlayerViewController: UIViewController {
         hud.hideAfterDelay(1.2)
 
         loadAndPlay()
+    }
+
+    /// Se o vídeo atual já passou por `encerrar`; volta a `false` a cada vídeo.
+    private var encerrado = false
+
+    /// O vídeo atual sai de cena: acabou, foi trocado ou o player fechou.
+    ///
+    /// Visto até o fim — pela regra do Jellyfin, ver `ResumeStore.terminou` —,
+    /// ele sai do histórico e o próximo episódio entra no lugar; senão, fica a
+    /// marca para retomar, gravada sem o intervalo de cinco segundos: sair é
+    /// justamente quando a posição mais precisa estar certa. `acabou`: o
+    /// vídeo chegou ao fim sozinho, e então conta como visto mesmo sem saber
+    /// a duração.
+    private func encerrar(em posicao: Double, acabou: Bool = false) {
+        guard !encerrado else { return }
+        encerrado = true
+        let chave = item.origin.resumeKey
+        let visto = acabou || ResumeStore.terminou(posicao: posicao, duracao: engine.duration)
+        if visto {
+            ResumeStore.shared.clear(key: chave)
+            // O do servidor vem do "A seguir" dele (ver AvisoAoServidor), que
+            // sabe da temporada seguinte; a fila só tem esta.
+            var proximo: MediaItem?
+            if case .midia = item.origin {} else { proximo = proximoEpisodioDaFila() }
+            Historico.shared.terminou(chave: chave, proximo: proximo)
+        } else if engine.duration > 0, posicao > 30 {
+            ResumeStore.shared.save(position: posicao, duration: engine.duration, for: chave)
+        }
+        aviso.parou(em: posicao, visto: visto)
+    }
+
+    /// O vídeo seguinte da fila, quando os dois têm nome de episódio (S01E02,
+    /// 1x02). Numa pasta de filmes, o seguinte é outro filme — e um filme que
+    /// ninguém começou não tem por que aparecer no histórico.
+    private func proximoEpisodioDaFila() -> MediaItem? {
+        guard !isShuffling, playlist.indices.contains(currentIndex + 1) else { return nil }
+        let seguinte = playlist[currentIndex + 1]
+        return Self.ehEpisodio(item.title) && Self.ehEpisodio(seguinte.title) ? seguinte : nil
+    }
+
+    /// Nome de episódio: "S01E02", "s1 e2" ou "1x02".
+    private static func ehEpisodio(_ nome: String) -> Bool {
+        nome.range(of: #"(?i)(\bS\d{1,2}\s?E\d{1,3}\b|\b\d{1,2}x\d{2,3}\b)"#, options: .regularExpression) != nil
     }
 
     private func updateNavigation() {

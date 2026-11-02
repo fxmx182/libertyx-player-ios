@@ -7,11 +7,14 @@ import Foundation
 /// outros vídeos do app, não faz nada.
 ///
 /// Os avisos saem um de cada vez e na ordem: um "parou" que chegasse antes do
-/// "começou" deixaria o servidor achando que o filme ainda está tocando.
+/// "começou" deixaria o servidor achando que o filme ainda está tocando. A
+/// fila é uma só para o app inteiro: a tela do servidor espera por ela
+/// (`emDia`) antes de pedir o "Continuar".
 @MainActor
 final class AvisoAoServidor {
 
     private struct Sessao {
+        let contaID: String
         let servidor: ServidorDeMidia
         let item: String
         let id = UUID().uuidString
@@ -22,14 +25,26 @@ final class AvisoAoServidor {
     private var sessao: Sessao?
     private var ultimoAviso = Date.distantPast
     private var pausado = false
-    /// O aviso anterior: o próximo só sai depois dele.
-    private var fila: Task<Void, Never>?
+    /// O último aviso posto na fila: o próximo só sai depois dele.
+    private static var fila: Task<Void, Never>?
+
+    /// Espera os avisos a caminho do servidor — no máximo uns segundos, para
+    /// a tela não travar sem rede.
+    static func emDia() async {
+        guard let fila else { return }
+        await withTaskGroup(of: Void.self) { grupo in
+            grupo.addTask { await fila.value }
+            grupo.addTask { try? await Task.sleep(nanoseconds: 4_000_000_000) }
+            await grupo.next()
+            grupo.cancelAll()
+        }
+    }
 
     func comecou(_ item: MediaItem, em segundos: Double) {
         parou(em: segundos)
         guard case .midia(let contaID, let itemID) = item.origin,
               let conta = ContasDeRede.shared.conta(contaID) else { return }
-        let nova = Sessao(servidor: ServidorDeMidia(conta: conta, token: ContasDeRede.shared.segredo(conta)),
+        let nova = Sessao(contaID: contaID, servidor: ServidorDeMidia(conta: conta, token: ContasDeRede.shared.segredo(conta)),
                           item: itemID)
         sessao = nova
         pausado = false
@@ -49,21 +64,37 @@ final class AvisoAoServidor {
     }
 
     /// Pode ser chamado mais de uma vez: só o primeiro chega ao servidor.
-    func parou(em segundos: Double) {
+    ///
+    /// `visto`: assistido até o fim. Depois que o servidor marca o episódio
+    /// como visto, o "A seguir" dele já aponta o próximo — e é esse que entra
+    /// no histórico, no lugar do que terminou.
+    func parou(em segundos: Double, visto: Bool = false) {
         guard let atual = sessao else { return }
         sessao = nil
         avisar(atual, "Stopped", segundos)
+        guard visto else { return }
+        enfileirar {
+            guard let proximo = try? await atual.servidor.proximoEpisodio(atual.item) else { return }
+            let terminado = MediaOrigin.midia(conta: atual.contaID, item: atual.item).resumeKey
+            Historico.shared.terminou(chave: terminado, proximo: atual.servidor.paraTocar(proximo))
+        }
     }
 
     private func avisar(_ sessao: Sessao, _ evento: String?, _ segundos: Double) {
         let pausadoAgora = pausado
-        let anterior = fila
-        fila = Task {
-            await anterior?.value
+        enfileirar {
             // Sem rede, o aviso se perde, e o vídeo segue tocando: a marca do
             // aparelho continua valendo, e o próximo aviso corrige o servidor.
             try? await sessao.servidor.informar(evento, item: sessao.item, segundos: segundos,
                                                 pausado: pausadoAgora, sessao: sessao.id)
+        }
+    }
+
+    private func enfileirar(_ trabalho: @escaping @MainActor () async -> Void) {
+        let anterior = Self.fila
+        Self.fila = Task {
+            await anterior?.value
+            await trabalho()
         }
     }
 }

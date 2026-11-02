@@ -222,6 +222,29 @@ struct ServidorDeMidia {
         return episodios.isEmpty ? [episodio] : episodios
     }
 
+    /// O episódio que vem depois deste, pelo "A seguir" do servidor — que
+    /// sabe das outras temporadas e do que já foi visto em outro aparelho.
+    /// `nil` para filme ou quando a série acabou.
+    func proximoEpisodio(_ itemID: String) async throws -> Item? {
+        let atual: Item = try await pedir("/Users/\(usuarioID)/Items/\(itemID)")
+        guard let serie = atual.serieID else { return nil }
+        let lista: Lista = try await pedir("/Shows/NextUp", consulta: [
+            URLQueryItem(name: "UserId", value: usuarioID),
+            URLQueryItem(name: "SeriesId", value: serie),
+            URLQueryItem(name: "Limit", value: "1"),
+            URLQueryItem(name: "Fields", value: "DateCreated"),
+            URLQueryItem(name: "EnableUserData", value: "true"),
+        ])
+        return await lembrandoOndeParou(lista.Items).first { $0.ehVideo && $0.id != itemID }
+    }
+
+    /// O vídeo do servidor como o player e o histórico o conhecem — o mesmo
+    /// título das pastas, para a retomada e o histórico baterem.
+    func paraTocar(_ item: Item) -> MediaItem {
+        MediaItem(title: item.titulo, origin: .midia(conta: conta.id, item: item.id),
+                  modifiedAt: item.dataDeCriacao, duration: item.duracao)
+    }
+
     /// Conta ao servidor o que está tocando, para o "Continuar assistindo" e
     /// o "visto" valerem também no app dele, na TV e no navegador.
     ///

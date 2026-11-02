@@ -118,16 +118,10 @@ struct InicioDoServidorView: View {
                 lista = temporada
             }
             abrindo = false
-            let itens = lista.map(paraTocar)
+            let itens = lista.map(servidor.paraTocar)
             fila = itens
-            tocando = itens.first { $0.origin == paraTocar(item).origin }
+            tocando = itens.first { $0.origin == servidor.paraTocar(item).origin }
         }
-    }
-
-    /// O mesmo título das pastas do servidor, para a retomada e o histórico baterem.
-    private func paraTocar(_ item: Item) -> MediaItem {
-        MediaItem(title: item.titulo, origin: .midia(conta: conta.id, item: item.id),
-                  modifiedAt: item.dataDeCriacao, duration: item.duracao)
     }
 
     // MARK: - Leitura
@@ -149,6 +143,9 @@ struct InicioDoServidorView: View {
     /// falham — é o pedido que diz se o servidor está lá e aceitou a conta.
     /// Uma faixa que falha sozinha só não aparece.
     private func carregar() async {
+        // Quem acabou de fechar o player chega aqui antes de o "parou" chegar
+        // ao servidor; sem esperar, o filme que terminou voltaria ao "Continuar".
+        await AvisoAoServidor.emDia()
         let servidor = servidor
         do {
             async let continuar = (try? await servidor.continuar()) ?? []

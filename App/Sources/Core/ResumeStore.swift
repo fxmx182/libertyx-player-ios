@@ -49,11 +49,27 @@ final class ResumeStore {
         guard let marca = marcas[key] else { return nil }
         guard marca.position > 30 else { return nil }
         if marca.duration > 0, marca.position > marca.duration - 30 { return nil }
+        if Self.terminou(posicao: marca.position, duracao: marca.duration) { return nil }
         return marca.position
+    }
+
+    /// Se quem parou aqui já viu o vídeo — a mesma regra do Jellyfin.
+    ///
+    /// Lá, passar de 90% da duração (o `MaxResumePct` do servidor) ou chegar
+    /// a um segundo do fim marca como visto e zera a posição: os créditos não
+    /// contam. Usar a mesma conta aqui faz o app e o servidor concordarem
+    /// sobre o que sai do "Continuar".
+    nonisolated static func terminou(posicao: Double, duracao: Double) -> Bool {
+        duracao > 0 && (posicao >= duracao * 0.9 || posicao >= duracao - 1)
     }
 
     func save(position: Double, duration: Double, for key: String) {
         guard position.isFinite, position > 0 else { return }
+        // Nos créditos já conta como visto: a marca sai, em vez de mudar.
+        if Self.terminou(posicao: position, duracao: duration) {
+            if marcas.removeValue(forKey: key) != nil { persist() }
+            return
+        }
         marcas[key] = Marca(position: position, duration: duration, updatedAt: Date())
         persist()
     }

@@ -33,6 +33,18 @@ final class Historico: ObservableObject {
         persistir()
     }
 
+    /// Visto até o fim: sai da lista, e o próximo episódio, se houver, entra
+    /// no lugar dele — como o "Continuar" e o "A seguir" do Jellyfin.
+    func terminou(chave: String, proximo: MediaItem?) {
+        let lugar = itens.firstIndex { $0.origin.resumeKey == chave } ?? 0
+        itens.removeAll { $0.origin.resumeKey == chave }
+        if let proximo {
+            itens.removeAll { $0.origin.resumeKey == proximo.origin.resumeKey }
+            itens.insert(proximo, at: min(lugar, itens.count))
+        }
+        persistir()
+    }
+
     func remover(_ item: MediaItem) {
         let chaveDoItem = item.origin.resumeKey
         itens.removeAll { $0.origin.resumeKey == chaveDoItem }
