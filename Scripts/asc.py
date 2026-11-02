@@ -35,8 +35,13 @@ def token() -> str:
 
 
 def chamar(metodo: str, caminho: str, corpo: dict | None = None) -> dict:
-    r = requests.request(metodo, BASE + caminho, json=corpo,
-                         headers={"Authorization": f"Bearer {token()}"}, timeout=60)
+    # A API às vezes responde 500 sem motivo e aceita o mesmo pedido logo depois.
+    for tentativa in range(3):
+        r = requests.request(metodo, BASE + caminho, json=corpo,
+                             headers={"Authorization": f"Bearer {token()}"}, timeout=60)
+        if r.status_code < 500:
+            break
+        time.sleep(15 * (tentativa + 1))
     if r.status_code >= 400:
         sys.stderr.write(f"{r.status_code} {r.text}\n")
         raise SystemExit(1)
