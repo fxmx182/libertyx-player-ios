@@ -261,11 +261,11 @@ struct ProcurarView: View {
         for conta in alvos {
             let servidor = ServidorDeMidia(conta: conta, token: ContasDeRede.shared.segredo(conta))
             guard let itens = try? await servidor.buscar(termo), !itens.isEmpty else { continue }
-            achados.append(Achados(conta: conta, itens: itens.map {
+            achados.append(Achados(conta: conta, itens: itens.map { item in
                 // Episódio solto não diz nada sem a série na frente.
-                MediaItem(title: $0.serie.map { serie in "\(serie) · \($0.titulo)" } ?? $0.titulo,
-                          origin: .midia(conta: conta.id, item: $0.id),
-                          modifiedAt: $0.dataDeCriacao, duration: $0.duracao)
+                MediaItem(title: item.serie.map { "\($0) · \(item.titulo)" } ?? item.titulo,
+                          origin: .midia(conta: conta.id, item: item.id),
+                          modifiedAt: item.dataDeCriacao, duration: item.duracao)
             }))
         }
         guard !Task.isCancelled else { return }
