@@ -15,6 +15,7 @@ struct LabPlayerApp: App {
         // usuário não tem para onde mandar os vídeos.
         DocumentsSetup.run()
         Self.aplicarLetraNaNavegacao()
+        VLCEngine.prepararEventos()
     }
 
     /// A Manrope também nos títulos das barras de navegação.

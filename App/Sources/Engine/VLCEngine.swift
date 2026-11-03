@@ -16,7 +16,11 @@ import VLCKit
 @MainActor
 final class VLCEngine: NSObject, PlaybackEngine {
 
-    private let player = VLCMediaPlayer()
+    /// Criado depois de `prepararEventos`, que o VLC lê aqui, ao nascer.
+    private let player: VLCMediaPlayer = {
+        VLCEngine.prepararEventos()
+        return VLCMediaPlayer()
+    }()
     private let container = VLCRenderView()
     private var savedVolume: Float = 1.0
 
@@ -161,6 +165,17 @@ final class VLCEngine: NSObject, PlaybackEngine {
     var isMuted: Bool {
         get { player.audio?.isMuted ?? false }
         set { player.audio?.isMuted = newValue }
+    }
+
+    /// Os avisos do VLC (tocando, pausado, o tempo andando) na fila principal.
+    ///
+    /// O VLC 3 já os entregava ali; o 4, por padrão, os entrega na linha
+    /// interna dele. Cada aviso mexe na tela — o botão de play, a barra do
+    /// tempo —, e mexer na tela fora da fila principal fecha o app. Era o que
+    /// acontecia ao voltar da janela flutuante e pausar. O VLC lê esta
+    /// escolha ao criar cada player, então ela vem antes do primeiro.
+    static func prepararEventos() {
+        VLCLibrary.sharedEventsConfiguration = VLCEventsLegacyConfiguration()
     }
 
     override init() {
@@ -749,9 +764,13 @@ extension VLCEngine: VLCDrawable, VLCPictureInPictureDrawable, VLCPictureInPictu
                      ComJanelaFlutuante {
 
     func addSubview(_ view: UIView!) {
-        view.frame = container.bounds
-        view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        container.addSubview(view)
+        // A imagem volta da janela flutuante para cá; mexer na tela, só na
+        // fila principal.
+        naFilaPrincipal { [container] in
+            view.frame = container.bounds
+            view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            container.addSubview(view)
+        }
     }
 
     func bounds() -> CGRect { container.bounds }
@@ -761,12 +780,16 @@ extension VLCEngine: VLCDrawable, VLCPictureInPictureDrawable, VLCPictureInPictu
     func pictureInPictureReady() -> ((VLCPictureInPictureWindowControlling?) -> Void)! {
         { [weak self] janela in
             guard let self else { return }
-            self.janela = janela
-            janela?.stateChangeEventHandler = { [weak self] aberta in
-                self?.janelaAberta = aberta
-                self?.onJanela?(aberta)
+            naFilaPrincipal {
+                self.janela = janela
+                janela?.stateChangeEventHandler = { [weak self] aberta in
+                    naFilaPrincipal {
+                        self?.janelaAberta = aberta
+                        self?.onJanela?(aberta)
+                    }
+                }
+                self.onJanelaPronta?(janela != nil)
             }
-            self.onJanelaPronta?(janela != nil)
         }
     }
 
@@ -785,4 +808,9 @@ extension VLCEngine: VLCDrawable, VLCPictureInPictureDrawable, VLCPictureInPictu
     func alternarJanela() {
         if janelaAberta { janela?.stopPictureInPicture() } else { janela?.startPictureInPicture() }
     }
+}
+
+/// Roda já, se estiver na fila principal; senão, manda para ela.
+private func naFilaPrincipal(_ trabalho: @escaping () -> Void) {
+    if Thread.isMainThread { trabalho() } else { DispatchQueue.main.async(execute: trabalho) }
 }
