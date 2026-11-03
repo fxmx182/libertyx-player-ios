@@ -293,3 +293,5 @@
 "Recentes em %@" = "Latest in %@";
 "T%lld:E%lld" = "S%lld:E%lld";
 "Tocar um vídeo de demonstração" = "Play a demo video";
+"Atraso da legenda" = "Subtitle delay";
+"− mostra a legenda antes · + depois" = "− shows the subtitle earlier · + later";

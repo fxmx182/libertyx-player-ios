@@ -415,10 +415,14 @@ final class PlayerViewController: UIViewController {
         alerta.addAction(UIAlertAction(title: String(localized: "Continuar de \(TimeFormat.clock(instante))"),
                                        style: .default) { [weak self] _ in
             guard let self else { return }
-            // Buscar antes de a reprodução começar é ignorado pelo VLC — ele
-            // ainda não tem o arquivo posicionado. A marca fica guardada e é
-            // aplicada assim que ele começa a tocar.
-            self.pendingResume = instante
+            if let motor = self.engine as? ComecaNoInstante {
+                motor.comecar(em: instante)
+            } else {
+                // Buscar antes de a reprodução começar é ignorado — o motor
+                // ainda não tem o arquivo posicionado. A marca fica guardada e
+                // é aplicada assim que ele começa a tocar.
+                self.pendingResume = instante
+            }
             self.engine.play()
             self.scheduleControlsHide()
         })
@@ -1125,6 +1129,15 @@ final class PlayerViewController: UIViewController {
         var itens: [ToolsPanelView.Ferramenta] = [
             .init(rotulo: String(localized: "Faixa de áudio"), simbolo: "music.note") { [weak self] in self?.showTracks(.audio) },
             .init(rotulo: String(localized: "Legenda"), simbolo: "captions.bubble") { [weak self] in self?.showTracks(.subtitle) },
+        ]
+        if let atrasa = engine as? AtrasaLegenda {
+            let atraso = atrasa.atrasoDaLegenda
+            let ligado = abs(atraso) >= 0.05
+            itens.append(.init(rotulo: String(localized: "Atraso da legenda"), simbolo: "captions.bubble",
+                               valor: ligado ? AtrasoDaLegendaView.texto(atraso) : nil,
+                               aceso: ligado) { [weak self] in self?.showSubtitleDelay(atrasa) })
+        }
+        itens += [
             .init(rotulo: String(localized: "Proporção"), simbolo: "aspectratio") { [weak self] in self?.cycleAspect() },
             .init(rotulo: String(localized: "Velocidade"), simbolo: "speedometer", aceso: playbackSpeed != 1,
                   noAnel: velocidade(playbackSpeed)) { [weak self] in self?.showSpeedSheet() },
@@ -1190,6 +1203,28 @@ final class PlayerViewController: UIViewController {
             painel.trailingAnchor.constraint(equalTo: view.trailingAnchor),
         ])
         painel.aparecer()
+    }
+
+    /// O atraso da legenda numa barra no alto (ver `AtrasoDaLegendaView`). Os
+    /// controles saem enquanto ela está aberta: o ajuste se faz olhando a cena.
+    private func showSubtitleDelay(_ atrasa: AtrasaLegenda) {
+        controlsHideWorkItem?.cancel()
+        controls.setVisible(false, animated: true)
+        painelAberto = true
+        let barra = AtrasoDaLegendaView(atraso: atrasa.atrasoDaLegenda)
+        barra.onChange = { atrasa.atrasoDaLegenda = $0 }
+        barra.onClose = { [weak self] in
+            self?.painelAberto = false
+            self?.controls.setVisible(true, animated: true)
+            self?.scheduleControlsHide()
+        }
+        view.addSubview(barra)
+        NSLayoutConstraint.activate([
+            barra.topAnchor.constraint(equalTo: view.topAnchor),
+            barra.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            barra.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            barra.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        ])
     }
 
     private func showSleepSheet() {

@@ -155,6 +155,22 @@ protocol ComJanelaFlutuante: AnyObject {
     func alternarJanela()
 }
 
+/// Motor que abre o vídeo já num instante, sem buscar depois de começar.
+@MainActor
+protocol ComecaNoInstante: AnyObject {
+    /// Vale para o próximo `play()` do vídeo carregado.
+    func comecar(em segundos: Double)
+}
+
+/// Motor que atrasa ou adianta a legenda — para o arquivo cuja legenda veio
+/// fora de compasso com a fala.
+@MainActor
+protocol AtrasaLegenda: AnyObject {
+    /// Em segundos: positivo mostra a legenda mais tarde, negativo mais cedo.
+    /// Vale para o vídeo da vez; o descompasso é de um arquivo, não do aparelho.
+    var atrasoDaLegenda: Double { get set }
+}
+
 /// Motor que aceita legenda em arquivo à parte, depois de o vídeo abrir —
 /// as que moram ao lado dele na pasta (ver `LegendasAoLado`).
 @MainActor

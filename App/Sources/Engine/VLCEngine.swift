@@ -820,3 +820,19 @@ extension VLCEngine: AceitaLegendaDeFora {
         _ = player.addPlaybackSlave(arquivo, type: .subtitle, enforce: false)
     }
 }
+
+extension VLCEngine: AtrasaLegenda {
+    var atrasoDaLegenda: Double {
+        get { Double(player.currentVideoSubTitleDelay) / 1_000_000 }
+        set { player.currentVideoSubTitleDelay = Int(newValue * 1_000_000) }
+    }
+}
+
+/// A retomada entra como opção da mídia, e o VLC já abre no ponto — como faz o
+/// app do próprio VLC. Buscar no primeiro sinal de tempo, como antes, pegava o
+/// VLC 4 com o decodificador ainda subindo, e o app fechava ao "Continuar".
+extension VLCEngine: ComecaNoInstante {
+    func comecar(em segundos: Double) {
+        player.media?.addOption(String(format: ":start-time=%.3f", segundos))
+    }
+}
