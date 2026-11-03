@@ -250,6 +250,16 @@ final class VLCEngine: NSObject, PlaybackEngine {
         guard let media = VLCMedia(url: url) else { throw PlaybackError.unsupportedOrigin }
         Self.credenciais(para: item.origin).forEach(media.addOption)
         Self.configurarBuffer(media, origem: item.origin)
+        // O relógio do VLC 3, e não o do áudio, que é o padrão do VLC 4.
+        //
+        // No VLC 4 o áudio manda no relógio, e a velocidade nova só vale para
+        // o som que ainda vai entrar na saída do iPhone — que já guarda toda a
+        // folga da rede, um segundo e meio, sem esvaziar ao trocar. Segurar
+        // para acelerar só acelerava depois disso, e soltar demorava o mesmo
+        // para voltar; um toque curto nem chegava a acelerar. Com o relógio da
+        // entrada, como no VLC 3, a imagem muda de ritmo na hora e o áudio se
+        // ajusta a ela.
+        media.addOption(":clock-master=input")
         tamanhoDoArquivo = item.fileSize
         bytesNaBusca = nil
         origemAtual = item.origin
