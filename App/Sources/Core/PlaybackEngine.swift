@@ -154,3 +154,11 @@ protocol ComJanelaFlutuante: AnyObject {
     var janelaAberta: Bool { get }
     func alternarJanela()
 }
+
+/// Motor que aceita legenda em arquivo à parte, depois de o vídeo abrir —
+/// as que moram ao lado dele na pasta (ver `LegendasAoLado`).
+@MainActor
+protocol AceitaLegendaDeFora: AnyObject {
+    /// Entra na lista de legendas sem ser ligada: quem liga é a regra da forçada.
+    func adicionarLegenda(_ arquivo: URL)
+}

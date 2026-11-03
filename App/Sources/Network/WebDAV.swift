@@ -71,6 +71,19 @@ struct WebDAV {
         }
     }
 
+    /// Um arquivo inteiro do servidor — as legendas ao lado do vídeo.
+    func baixar(_ caminho: String) async throws -> Data {
+        guard let url = Self.url(base: conta.url, caminho: caminho, pasta: false) else {
+            throw ErroDeServidor(mensagem: String(localized: "Endereço inválido."))
+        }
+        var pedido = URLRequest(url: url, timeoutInterval: 20)
+        if let autorizacao = autorizacao { pedido.setValue(autorizacao, forHTTPHeaderField: "Authorization") }
+        let (dados, resposta) = try await URLSession.shared.data(for: pedido)
+        let codigo = (resposta as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(codigo) else { throw ErroDeServidor.http(codigo) }
+        return dados
+    }
+
     // MARK: - Endereços
 
     /// Endereço de reprodução: a ponte local, que fala com o servidor pelo

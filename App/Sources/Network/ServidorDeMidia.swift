@@ -245,6 +245,45 @@ struct ServidorDeMidia {
                   modifiedAt: item.dataDeCriacao, duration: item.duracao)
     }
 
+    /// As legendas "externas" do vídeo: os `.srt` que o servidor achou ao lado
+    /// do arquivo, na pasta dele. As de dentro do arquivo o VLC já lê; estas
+    /// ele não vê, porque recebe só o vídeo.
+    ///
+    /// Cada uma com o nome do arquivo: o título que o servidor dá à faixa — e
+    /// "forced" quando ela é marcada como forçada, que é como a regra da
+    /// legenda a reconhece.
+    func legendasExternas(_ itemID: String) async throws -> [(nome: String, dados: Data)] {
+        let resposta = try await pedirDados("/Users/\(usuarioID)/Items/\(itemID)",
+                                            consulta: [URLQueryItem(name: "Fields", value: "MediaSources,MediaStreams")])
+        guard let json = try JSONSerialization.jsonObject(with: resposta) as? [String: Any],
+              let fonte = (json["MediaSources"] as? [[String: Any]])?.first,
+              let fluxos = fonte["MediaStreams"] as? [[String: Any]] else { return [] }
+        let fonteID = fonte["Id"] as? String ?? itemID
+
+        var legendas: [(nome: String, dados: Data)] = []
+        for fluxo in fluxos where fluxo["Type"] as? String == "Subtitle" && fluxo["IsExternal"] as? Bool == true {
+            guard let indice = fluxo["Index"] as? Int else { continue }
+            // O servidor converte qualquer legenda de texto para SRT; ASS vem
+            // como ASS, para não perder cor e posição.
+            let formato: String
+            switch (fluxo["Codec"] as? String)?.lowercased() {
+            case "ass": formato = "ass"
+            case "ssa": formato = "ssa"
+            default:    formato = "srt"
+            }
+            guard let dados = try? await pedirDados("/Videos/\(itemID)/\(fonteID)/Subtitles/\(indice)/0/Stream.\(formato)"),
+                  !dados.isEmpty else { continue }
+            var titulo = fluxo["DisplayTitle"] as? String ?? fluxo["Language"] as? String ?? "Legenda"
+            if fluxo["IsForced"] as? Bool == true, titulo.range(of: "forced", options: .caseInsensitive) == nil {
+                titulo += " forced"
+            }
+            let limpo = titulo.components(separatedBy: CharacterSet(charactersIn: "/\\:*?\"<>|")).joined(separator: "_")
+            // O índice no nome: duas faixas com o mesmo título não se sobrescrevem.
+            legendas.append((nome: "\(limpo) (\(indice)).\(formato)", dados: dados))
+        }
+        return legendas
+    }
+
     /// Conta ao servidor o que está tocando, para o "Continuar assistindo" e
     /// o "visto" valerem também no app dele, na TV e no navegador.
     ///

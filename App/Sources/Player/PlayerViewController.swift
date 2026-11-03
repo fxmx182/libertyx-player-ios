@@ -363,6 +363,7 @@ final class PlayerViewController: UIViewController {
             do {
                 try await engine.load(item)
                 controls.update(currentTime: 0, duration: engine.duration)
+                buscarLegendasAoLado(item)
 
                 // Retomar é pergunta, não regra: às vezes se quer rever o
                 // filme desde o começo, e voltar sozinho ao meio obriga a
@@ -382,6 +383,19 @@ final class PlayerViewController: UIViewController {
             } catch {
                 presentError(error.localizedDescription)
             }
+        }
+    }
+
+    /// As legendas em arquivo próprio ao lado do vídeo (ver `LegendasAoLado`).
+    /// Chegam com o vídeo já tocando — buscar antes atrasaria a abertura por
+    /// uma ida ao servidor.
+    private func buscarLegendasAoLado(_ alvo: MediaItem) {
+        guard let motor = engine as? AceitaLegendaDeFora else { return }
+        Task { @MainActor [weak self] in
+            let arquivos = await LegendasAoLado.buscar(alvo.origin)
+            // Trocou de vídeo enquanto baixava: estas eram do anterior.
+            guard let self, self.item.origin == alvo.origin else { return }
+            arquivos.forEach(motor.adicionarLegenda)
         }
     }
 

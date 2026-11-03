@@ -814,3 +814,9 @@ extension VLCEngine: VLCDrawable, VLCPictureInPictureDrawable, VLCPictureInPictu
 private func naFilaPrincipal(_ trabalho: @escaping () -> Void) {
     if Thread.isMainThread { trabalho() } else { DispatchQueue.main.async(execute: trabalho) }
 }
+
+extension VLCEngine: AceitaLegendaDeFora {
+    func adicionarLegenda(_ arquivo: URL) {
+        _ = player.addPlaybackSlave(arquivo, type: .subtitle, enforce: false)
+    }
+}
