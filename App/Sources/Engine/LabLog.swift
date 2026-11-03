@@ -13,6 +13,7 @@ enum LabLog {
 
     static func open(_ message: String) {
         engine.notice("[abrir] \(message, privacy: .public)")
+        RegistroDeErros.shared.anotar("abrir: \(message)")
     }
 
     static func loop(_ message: String) {
@@ -21,5 +22,12 @@ enum LabLog {
 
     static func problem(_ message: String) {
         engine.error("[erro] \(message, privacy: .public)")
+        RegistroDeErros.shared.anotar("erro: \(message)")
+    }
+
+    /// O que o player fez — buscar, mudar a velocidade, os estados. Vai só
+    /// para o registro de erros: é o que conta a história antes de um problema.
+    static func passo(_ message: String) {
+        RegistroDeErros.shared.anotar(message)
     }
 }

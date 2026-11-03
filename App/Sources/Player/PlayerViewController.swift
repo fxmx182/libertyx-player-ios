@@ -326,6 +326,7 @@ final class PlayerViewController: UIViewController {
             // seguia do zero. Atualização de tempo só chega com ele rodando.
             if let alvo = self.pendingResume, self.engine.duration > 0 {
                 self.pendingResume = nil
+                LabLog.passo("retomar: aplicando \(TimeFormat.clock(alvo))")
                 Task { @MainActor in await self.engine.seek(to: alvo, precise: false) }
                 return
             }
@@ -415,14 +416,13 @@ final class PlayerViewController: UIViewController {
         alerta.addAction(UIAlertAction(title: String(localized: "Continuar de \(TimeFormat.clock(instante))"),
                                        style: .default) { [weak self] _ in
             guard let self else { return }
-            if let motor = self.engine as? ComecaNoInstante {
-                motor.comecar(em: instante)
-            } else {
-                // Buscar antes de a reprodução começar é ignorado — o motor
-                // ainda não tem o arquivo posicionado. A marca fica guardada e
-                // é aplicada assim que ele começa a tocar.
-                self.pendingResume = instante
-            }
+            // Buscar antes de a reprodução começar é ignorado — o motor ainda
+            // não tem o arquivo posicionado. A marca fica guardada e é
+            // aplicada uma vez, assim que ele começa a tocar. (Abrir já no
+            // ponto pela opção da mídia confundia o VLCKit 4: o vídeo voltava
+            // ao lugar, mas a barra ficava parada no começo.)
+            self.pendingResume = instante
+            LabLog.passo("retomar: \(TimeFormat.clock(instante))")
             self.engine.play()
             self.scheduleControlsHide()
         })
@@ -900,6 +900,7 @@ final class PlayerViewController: UIViewController {
             // andava aos trancos, e o lado esquerdo virava armadilha para quem
             // só queria acelerar. Para voltar, o toque duplo e o arrasto servem.
             rateBeforeHold = engine.rate
+            LabLog.passo("segurar: acelerar")
             engine.rate = PlayerPreferences.holdSpeed
             // Na tela, só a velocidade: o filme correndo é o que se quer ver.
             if controls.isVisible { controls.setVisible(false, animated: true) }
@@ -918,6 +919,7 @@ final class PlayerViewController: UIViewController {
     private func desfazerAceleracao() {
         guard aceleracaoAtiva else { return }
         aceleracaoAtiva = false
+        LabLog.passo("segurar: soltou")
         engine.rate = rateBeforeHold
         haloEsq.sumir()
         haloDir.sumir()

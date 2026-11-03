@@ -16,6 +16,8 @@ struct LabPlayerApp: App {
         DocumentsSetup.run()
         Self.aplicarLetraNaNavegacao()
         VLCEngine.prepararEventos()
+        // Antes do primeiro player: o VLC lê os registradores ao nascer.
+        RegistroDeErros.shared.iniciar()
     }
 
     /// A Manrope também nos títulos das barras de navegação.

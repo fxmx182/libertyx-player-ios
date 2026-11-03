@@ -139,18 +139,41 @@ final class VLCEngine: NSObject, PlaybackEngine {
 
     /// Toda ida a um ponto passa por aqui, para o destino ficar registrado.
     private func irPara(_ alvo: Double) {
+        LabLog.passo("buscar: \(String(format: "%.1f", tempoDoVLC)) s → \(String(format: "%.1f", alvo)) s (duração \(String(format: "%.0f", duration)) s)")
         player.time = VLCTime(int: Int32(alvo * 1000))
         alvoPendente = (alvo, CACurrentMediaTime(), 0)
     }
 
+    /// A duração, só depois de o vídeo começar a tocar.
+    ///
+    /// O VLCKit 4 guarda a duração da mídia na primeira vez que alguém a lê, e
+    /// lida antes de o VLC abrir o arquivo ela vem zero — e fica zero para
+    /// sempre: a barra não andava e a busca se recusava a sair do lugar. Antes
+    /// de tocar não há o que dizer; e se ainda assim vier zero, a conta pelo
+    /// tempo e pela fração já andada serve.
     var duration: Double {
+        guard tocou else { return 0 }
         let ms = player.media?.length.intValue ?? 0
-        return ms > 0 ? Double(ms) / 1000 : 0
+        if ms > 0 { return Double(ms) / 1000 }
+        let fracao = player.position
+        let tempo = tempoDoVLC
+        return fracao > 0.0005 && tempo > 0 ? tempo / fracao : 0
+    }
+
+    /// Servidor, compartilhamento ou endereço: a busca vai pela rede.
+    private var naRede: Bool {
+        switch origemAtual {
+        case .smb, .remote, .webdav, .midia: return true
+        default: return false
+        }
     }
 
     var rate: Float {
         get { player.rate }
-        set { player.rate = newValue }
+        set {
+            LabLog.passo("velocidade: \(player.rate)× → \(newValue)×")
+            player.rate = newValue
+        }
     }
 
     /// O VLC trabalha com 0–200; acima de 100 é ganho além do original.
@@ -256,6 +279,7 @@ final class VLCEngine: NSObject, PlaybackEngine {
 
         // Trocar de mídia para a anterior, e esse "parou" não é o fim do vídeo.
         tocou = false
+        LabLog.passo("carregar: \(Self.tipo(item.origin)) · \(item.title)")
         player.media = media
         state = .ready
         LabLog.open("VLC pronto: \(item.title)")
@@ -429,6 +453,11 @@ final class VLCEngine: NSObject, PlaybackEngine {
         pendingScrub = alvo
         alvoDaRolagem = alvo
         onTimeUpdate?(alvo)
+        // Na rede, uma busca só, ao soltar o dedo: cada busca no meio do
+        // caminho abria um pedido novo ao servidor antes de o anterior chegar,
+        // e foi só na rede que o app fechou ao arrastar. A barra e o tempo
+        // acompanham o dedo; a imagem vai ao destino quando ele sai da tela.
+        if naRede { return }
 
         let agora = CACurrentMediaTime()
         guard agora - lastScrubApplied >= cadenciaDeRolagem else {
@@ -616,6 +645,7 @@ final class VLCEngine: NSObject, PlaybackEngine {
 extension VLCEngine: VLCMediaPlayerDelegate {
 
     func mediaPlayerStateChanged(_ novo: VLCMediaPlayerState) {
+        LabLog.passo("VLC estado: \(Self.nome(novo)) (tempo \(String(format: "%.1f", tempoDoVLC)) s)")
         // A janela flutuante mostra play ou pausa conforme o estado.
         janela?.invalidatePlaybackState()
         switch novo {
@@ -677,13 +707,10 @@ extension VLCEngine: VLCMediaPlayerDelegate {
                 case .smb, .remote, .webdav, .midia: prazo = 2.5
                 default:            prazo = 1.2
                 }
+                // Sem pedir de novo: uma segunda busca em cima da primeira, que
+                // na rede ainda estava a caminho, é o que não se quer no VLC 4.
                 if CACurrentMediaTime() - pendente.desde > prazo {
-                    if pendente.tentativas == 0 {
-                        player.time = VLCTime(int: Int32(pendente.tempo * 1000))
-                        alvoPendente = (pendente.tempo, CACurrentMediaTime(), 1)
-                    } else {
-                        alvoPendente = nil
-                    }
+                    alvoPendente = nil
                 }
                 if alvoPendente != nil { return }
             }
@@ -808,18 +835,28 @@ extension VLCEngine: AtrasaLegenda {
     }
 }
 
-/// A retomada entra como opção da mídia, e o VLC já abre no ponto — como faz o
-/// app do próprio VLC. Buscar no primeiro sinal de tempo, como antes, pegava o
-/// VLC 4 com o decodificador ainda subindo, e o app fechava ao "Continuar".
-extension VLCEngine: ComecaNoInstante {
-    func comecar(em segundos: Double) {
-        guard let media = player.media else { return }
-        media.addOption(String(format: ":start-time=%.3f", segundos))
-        // O VLC 4 prepara a mídia no instante em que ela é entregue ao player,
-        // e opção posta depois não vale: o vídeo abria do zero. Entregar de
-        // novo a refaz com a opção — passando por `nil`, porque o VLCKit
-        // ignora a mesma mídia entregue duas vezes.
-        player.media = nil
-        player.media = media
+extension VLCEngine {
+    /// Para o registro de erros: de onde vem, sem endereço nem senha.
+    fileprivate static func tipo(_ origem: MediaOrigin) -> String {
+        switch origem {
+        case .file:   return "arquivo do aparelho"
+        case .smb:    return "SMB"
+        case .webdav: return "WebDAV"
+        case .midia:  return "Jellyfin/Emby"
+        case .remote: return "endereço"
+        }
+    }
+
+    fileprivate static func nome(_ estado: VLCMediaPlayerState) -> String {
+        switch estado {
+        case .nothingSpecial: return "nada"
+        case .opening:        return "abrindo"
+        case .playing:        return "tocando"
+        case .paused:         return "pausado"
+        case .stopped:        return "parado"
+        case .stopping:       return "parando"
+        case .error:          return "erro"
+        @unknown default:     return "\(estado.rawValue)"
+        }
     }
 }

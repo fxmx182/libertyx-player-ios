@@ -353,6 +353,11 @@ struct AjustesView: View {
                             NavigationLink { LicencasView() } label: {
                                 LinhaDeAjuste(simbolo: "doc.text", titulo: String(localized: "Licenças de código aberto"))
                             }
+                            divisoria
+                            NavigationLink { RegistroDeErrosView() } label: {
+                                LinhaDeAjuste(simbolo: "ladybug", titulo: String(localized: "Registro de erros"),
+                                              sub: String(localized: "Para copiar e mandar ao suporte"))
+                            }
                         }
 
                         grupo(String(localized: "Fale com a gente")) {

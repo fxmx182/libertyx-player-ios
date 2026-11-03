@@ -296,3 +296,9 @@
 "Atraso da legenda" = "Subtitle delay";
 "− mostra a legenda antes · + depois" = "− shows the subtitle earlier · + later";
 "Já reproduzido" = "Played";
+"Registro de erros" = "Error log";
+"Para copiar e mandar ao suporte" = "To copy and send to support";
+"Copiar" = "Copy";
+"Copiado" = "Copied";
+"Nada registrado ainda." = "Nothing logged yet.";
+"Se algo deu errado, toque em Copiar e cole a mensagem na conversa de suporte. As senhas não aparecem aqui." = "If something went wrong, tap Copy and paste the message into the support chat. Passwords never appear here.";
