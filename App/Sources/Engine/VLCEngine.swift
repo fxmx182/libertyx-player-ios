@@ -843,6 +843,13 @@ extension VLCEngine: AtrasaLegenda {
 /// VLC 4 com o decodificador ainda subindo, e o app fechava ao "Continuar".
 extension VLCEngine: ComecaNoInstante {
     func comecar(em segundos: Double) {
-        player.media?.addOption(String(format: ":start-time=%.3f", segundos))
+        guard let media = player.media else { return }
+        media.addOption(String(format: ":start-time=%.3f", segundos))
+        // O VLC 4 prepara a mídia no instante em que ela é entregue ao player,
+        // e opção posta depois não vale: o vídeo abria do zero. Entregar de
+        // novo a refaz com a opção — passando por `nil`, porque o VLCKit
+        // ignora a mesma mídia entregue duas vezes.
+        player.media = nil
+        player.media = media
     }
 }
