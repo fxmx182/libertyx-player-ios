@@ -17,9 +17,9 @@ packages:
     url: https://github.com/kishikawakatsumi/SMBClient
     from: "0.3.1"
 
-  # VLCKit 4: vinte anos de correções em sincronia A/V, buffering de rede e
-  # recuperação de erro, e fala SMB nativamente — basta uma URL smb://. O 4
-  # (e não o 3) porque é o que traz a janela flutuante. Ver Packages/VLCKit.
+  # MobileVLCKit 3.7.5: vinte anos de correções em sincronia A/V, buffering de
+  # rede e recuperação de erro, e fala SMB nativamente — basta uma URL smb://.
+  # O 3 estável, e não o 4 de prévia: ver Packages/VLCKit.
   VLCKit:
     path: Packages/VLCKit
 
@@ -70,6 +70,26 @@ targets:
         HEADER_SEARCH_PATHS:
           - $(inherited)
           - $(SRCROOT)/Vendor/FFmpeg.xcframework/**
+
+    # O MobileVLCKit chega com armv7/armv7s, de 32 bits, que nenhum iPhone do
+    # iOS 17 executa e que a App Store recusa. Fica só o arm64, e o framework
+    # é reassinado com a mesma identidade antes de o app ser assinado.
+    postBuildScripts:
+      - name: MobileVLCKit só com arm64
+        basedOnDependencyAnalysis: false
+        script: |
+          FW="$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/MobileVLCKit.framework"
+          BIN="$FW/MobileVLCKit"
+          [ "$PLATFORM_NAME" = iphoneos ] && [ -f "$BIN" ] || exit 0
+          if [ "$(lipo -archs "$BIN")" != "arm64" ]; then
+            lipo "$BIN" -thin arm64 -output "$BIN.arm64"
+            mv "$BIN.arm64" "$BIN"
+            echo "MobileVLCKit: $(lipo -archs "$BIN")"
+          fi
+          if [ "$CODE_SIGNING_ALLOWED" = YES ] && [ -n "$EXPANDED_CODE_SIGN_IDENTITY" ]; then
+            codesign --force --sign "$EXPANDED_CODE_SIGN_IDENTITY" $OTHER_CODE_SIGN_FLAGS \
+              --preserve-metadata=identifier,entitlements "$FW"
+          fi
 
     dependencies:
       - package: SMBClient

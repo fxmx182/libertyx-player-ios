@@ -1,5 +1,5 @@
 import UIKit
-import VLCKit
+import MobileVLCKit
 
 /// Miniatura pelo VLC.
 ///
@@ -44,7 +44,7 @@ enum VLCThumbnailer {
             }
         }
 
-        guard let media = VLCMedia(url: url) else { return nil }
+        let media = VLCMedia(url: url)
         // A miniatura do servidor precisa entrar com as mesmas credenciais da
         // reprodução — senão ela bate na porta como anônima e volta vazia.
         VLCEngine.credenciais(para: item.origin).forEach(media.addOption)

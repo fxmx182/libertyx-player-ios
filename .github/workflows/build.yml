@@ -56,6 +56,15 @@ jobs:
           /usr/libexec/PlistBuddy -c "Set :LabPlayerBuild ${GITHUB_SHA:0:7}" App/Info.plist
           /usr/libexec/PlistBuddy -c "Print :LabPlayerBuild" App/Info.plist
 
+      - name: Restaurar MobileVLCKit do cache
+        uses: actions/cache@v4
+        with:
+          path: Packages/VLCKit/MobileVLCKit.xcframework
+          key: mobilevlckit-3.7.5-a213fd11
+
+      - name: Baixar MobileVLCKit (só se o cache falhar)
+        run: Scripts/baixar-vlckit.sh
+
       - name: Gerar projeto
         run: xcodegen generate
 
@@ -240,6 +249,15 @@ jobs:
 
       - name: Carimbar o build com o commit
         run: /usr/libexec/PlistBuddy -c "Set :LabPlayerBuild ${GITHUB_SHA:0:7}" App/Info.plist
+
+      - name: Restaurar MobileVLCKit do cache
+        uses: actions/cache@v4
+        with:
+          path: Packages/VLCKit/MobileVLCKit.xcframework
+          key: mobilevlckit-3.7.5-a213fd11
+
+      - name: Baixar MobileVLCKit (só se o cache falhar)
+        run: Scripts/baixar-vlckit.sh
 
       - name: Gerar projeto
         run: xcodegen generate

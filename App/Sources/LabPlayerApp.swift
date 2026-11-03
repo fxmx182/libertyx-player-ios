@@ -15,7 +15,6 @@ struct LabPlayerApp: App {
         // usuário não tem para onde mandar os vídeos.
         DocumentsSetup.run()
         Self.aplicarLetraNaNavegacao()
-        VLCEngine.prepararEventos()
         // Antes do primeiro player: o VLC lê os registradores ao nascer.
         RegistroDeErros.shared.iniciar()
     }
