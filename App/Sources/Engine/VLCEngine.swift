@@ -250,16 +250,6 @@ final class VLCEngine: NSObject, PlaybackEngine {
         guard let media = VLCMedia(url: url) else { throw PlaybackError.unsupportedOrigin }
         Self.credenciais(para: item.origin).forEach(media.addOption)
         Self.configurarBuffer(media, origem: item.origin)
-        // O relógio do VLC 3, e não o do áudio, que é o padrão do VLC 4.
-        //
-        // No VLC 4 o áudio manda no relógio, e a velocidade nova só vale para
-        // o som que ainda vai entrar na saída do iPhone — que já guarda toda a
-        // folga da rede, um segundo e meio, sem esvaziar ao trocar. Segurar
-        // para acelerar só acelerava depois disso, e soltar demorava o mesmo
-        // para voltar; um toque curto nem chegava a acelerar. Com o relógio da
-        // entrada, como no VLC 3, a imagem muda de ritmo na hora e o áudio se
-        // ajusta a ela.
-        media.addOption(":clock-master=input")
         tamanhoDoArquivo = item.fileSize
         bytesNaBusca = nil
         origemAtual = item.origin
@@ -271,44 +261,24 @@ final class VLCEngine: NSObject, PlaybackEngine {
         LabLog.open("VLC pronto: \(item.title)")
     }
 
-    /// Quanto o VLC guarda adiantado antes de precisar.
-    ///
-    /// Dois mecanismos diferentes, e é preciso os dois no servidor:
-    ///
-    /// - **`network-caching`** é o fôlego do reprodutor: quantos milissegundos
-    ///   de vídeo já decodificado ele mantém à frente. É o que absorve uma
-    ///   engasgada da rede sem a imagem parar.
-    /// - **`prefetch`** é o fôlego da leitura: um bloco grande em memória lido
-    ///   adiantado, para que o pedido seguinte não vire uma ida ao servidor.
-    ///   Sem ele, cada leitura é uma viagem de rede feita no exato momento em
-    ///   que os bytes fazem falta.
-    ///
-    /// O que faz diferença ao arrastar a barra é o segundo: depois de uma
-    /// busca, o bloco novo chega de uma vez em vez de gota a gota. Em troca,
-    /// o vídeo demora um pouco mais para começar — é o preço de nunca engasgar
-    /// no meio, e num filme inteiro esse preço se paga logo nos primeiros
-    /// segundos.
+    /// Quanto o VLC guarda adiantado antes de precisar: a folga que absorve
+    /// uma engasgada da rede sem a imagem parar. Maior engasga menos, mas
+    /// atrasa a imagem depois de cada busca e a troca de velocidade.
     private static func configurarBuffer(_ media: VLCMedia, origem: MediaOrigin) {
         switch origem {
         case .smb, .remote, .webdav, .midia:
-            // Um segundo e meio, e não cinco.
+            // 0,7 s — perto do meio segundo do arquivo no aparelho.
             //
-            // Este número é quanto o VLC espera acumular antes de mostrar
-            // imagem — no começo do vídeo e **depois de cada busca**. Em cinco
-            // segundos, cada soltada do dedo na barra virava cinco segundos de
-            // tela parada, e a troca de faixa de áudio, que também busca,
-            // pagava o mesmo. Quem mantém a reprodução contínua sem engasgar é
-            // o prefetch logo abaixo, que lê adiantado; este aqui só atrasava a
-            // volta da imagem.
-            media.addOption(":network-caching=1500")
-            // 32 MB adiantados: uns 20 segundos de um filme 1080p comum.
-            media.addOption(":prefetch-buffer-size=32768")
-            // Blocos de 256 KB em vez dos 16 KB padrão — menos idas ao
-            // servidor, cada uma trazendo muito mais.
-            media.addOption(":prefetch-read-size=262144")
-            // Busca curta aproveita o que já está em memória em vez de jogar
-            // fora e ler tudo de novo; é o caso de ajustar a posição no fino.
-            media.addOption(":prefetch-seek-threshold=1048576")
+            // É quanto o VLC junta antes de mostrar imagem, no começo e depois
+            // de cada busca, e no VLC 4 é também quanto de som fica entregue à
+            // saída do iPhone. A velocidade nova só vale depois que esse som
+            // toca: com 1,5 s, segurar para acelerar atrasava (e um toque curto
+            // nem acelerava) só na rede, e no arquivo do aparelho não.
+            //
+            // O prefetch que estava aqui não existe mais na prática: no VLC 4
+            // ele só entra quando pedido pelo nome, e uma das opções saiu da
+            // versão. Quem segura a rede é só este número.
+            media.addOption(":network-caching=700")
 
         case .file:
             media.addOption(":file-caching=500")
