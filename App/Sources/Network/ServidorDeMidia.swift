@@ -303,6 +303,15 @@ struct ServidorDeMidia {
         _ = try await pedirDados("/Sessions/Playing" + (evento.map { "/\($0)" } ?? ""), corpo: corpo)
     }
 
+    /// A caixinha "Já reproduzido" do app do Jellyfin: marca ou desmarca o
+    /// item. Numa série ou temporada, vale para todos os episódios; e o
+    /// servidor zera onde parou, então o vídeo sai do "Continuar" dos dois
+    /// jeitos.
+    func marcarVisto(_ itemID: String, _ visto: Bool) async throws {
+        _ = try await pedirDados("/Users/\(usuarioID)/PlayedItems/\(itemID)",
+                                 corpo: visto ? Data("{}".utf8) : nil, apagar: !visto)
+    }
+
     /// Toda lista que chega do servidor diz onde a pessoa parou em cada
     /// vídeo. Guardar isso junto das marcas do aparelho é o que faz o "Você
     /// parou em…" do player valer para o que foi visto na TV ou no navegador.
@@ -414,7 +423,7 @@ struct ServidorDeMidia {
     }
 
     private func pedirDados(_ caminho: String, consulta: [URLQueryItem] = [],
-                            corpo: Data? = nil) async throws -> Data {
+                            corpo: Data? = nil, apagar: Bool = false) async throws -> Data {
         guard let url = url(caminho, consulta: consulta) else {
             throw ErroDeServidor(mensagem: String(localized: "Endereço inválido."))
         }
@@ -428,6 +437,7 @@ struct ServidorDeMidia {
             pedido.httpBody = corpo
             pedido.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
+        if apagar { pedido.httpMethod = "DELETE" }
         let (dados, resposta) = try await URLSession.shared.data(for: pedido)
         let codigo = (resposta as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(codigo) else {

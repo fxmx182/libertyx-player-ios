@@ -59,6 +59,7 @@ struct InicioDoServidorView: View {
                         ForEach(inicio.continuar) { item in
                             Button { abrir(item) } label: { CartaoDeitado(servidor: servidor, item: item) }
                                 .buttonStyle(.plain)
+                                .menuDoVisto(servidor, item) { volta += 1 }
                         }
                     }
                 }
@@ -67,6 +68,7 @@ struct InicioDoServidorView: View {
                         ForEach(inicio.aSeguir) { item in
                             Button { abrir(item) } label: { CartaoDeitado(servidor: servidor, item: item) }
                                 .buttonStyle(.plain)
+                                .menuDoVisto(servidor, item) { volta += 1 }
                         }
                     }
                 }
@@ -82,13 +84,16 @@ struct InicioDoServidorView: View {
                     FaixaDoServidor(titulo: String(localized: "Recentes em \(faixa.biblioteca.nome)"),
                           destino: AnyView(pasta(faixa.biblioteca))) {
                         ForEach(faixa.itens) { item in
-                            if item.ehVideo {
-                                Button { abrir(item) } label: { Cartaz(servidor: servidor, item: item) }
-                                    .buttonStyle(.plain)
-                            } else {
-                                NavigationLink { pasta(item) } label: { Cartaz(servidor: servidor, item: item) }
-                                    .buttonStyle(.plain)
+                            Group {
+                                if item.ehVideo {
+                                    Button { abrir(item) } label: { Cartaz(servidor: servidor, item: item) }
+                                        .buttonStyle(.plain)
+                                } else {
+                                    NavigationLink { pasta(item) } label: { Cartaz(servidor: servidor, item: item) }
+                                        .buttonStyle(.plain)
+                                }
                             }
+                            .menuDoVisto(servidor, item) { volta += 1 }
                         }
                     }
                 }
@@ -341,6 +346,153 @@ private struct CartaoDeBiblioteca: View {
     }
 }
 
+// MARK: - Já reproduzido
+
+/// Segurar um vídeo, uma série ou uma temporada do Jellyfin ou do Emby: a
+/// caixinha "Já reproduzido", de marcar e desmarcar, como no app do servidor.
+/// Numa série vale para todos os episódios. Quem chama relê a tela em
+/// `aoMudar`: o item marcado sai do "Continuar", o desmarcado volta a não visto.
+private struct MenuDoVisto: ViewModifier {
+    let servidor: ServidorDeMidia
+    let item: ServidorDeMidia.Item
+    let aoMudar: () -> Void
+
+    @State private var falha: String?
+
+    func body(content: Content) -> some View {
+        content
+            .contextMenu {
+                Toggle(isOn: Binding(get: { item.visto }, set: mudar)) {
+                    Label("Já reproduzido", systemImage: "checkmark.circle")
+                }
+            }
+            .alert("Não conectou", isPresented: Binding(get: { falha != nil }, set: { if !$0 { falha = nil } })) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(falha ?? "")
+            }
+    }
+
+    private func mudar(_ visto: Bool) {
+        Task { @MainActor in
+            do {
+                try await servidor.marcarVisto(item.id, visto)
+                // O servidor zera onde parou nos dois sentidos; a marca daqui
+                // segue, ou o cartão voltaria com a barrinha.
+                ResumeStore.shared.clear(key: MediaOrigin.midia(conta: servidor.conta.id, item: item.id).resumeKey)
+                aoMudar()
+            } catch {
+                falha = error.localizedDescription
+            }
+        }
+    }
+}
+
+extension View {
+    func menuDoVisto(_ servidor: ServidorDeMidia, _ item: ServidorDeMidia.Item,
+                     aoMudar: @escaping () -> Void) -> some View {
+        modifier(MenuDoVisto(servidor: servidor, item: item, aoMudar: aoMudar))
+    }
+}
+
+// MARK: - Capas das pastas
+
+/// Série, temporada ou coleção dentro de uma biblioteca: a capa deitada, como
+/// no app do servidor e no do computador. Antes era uma linha com um ícone de
+/// pasta, e uma biblioteca de séries virava uma lista de nomes sem rosto.
+///
+/// O selo diz quantos episódios faltam ver; o visto, quando não falta nenhum.
+struct CapaDePastaDoServidor: View {
+    let servidor: ServidorDeMidia
+    let item: ServidorDeMidia.Item
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ImagemDoServidor(servidor: servidor, id: idDaCapa(item), tipos: ["Thumb", "Backdrop", "Primary"],
+                             largura: 480, semImagem: simboloDaCapa(item))
+                .aspectRatio(16 / 9, contentMode: .fit)
+                .overlay(alignment: .bottomTrailing) { SeloDeVistos(item: item).padding(7) }
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(LabTheme.glassBorder, lineWidth: 0.5))
+            Text(item.nome)
+                .font(LabFont.swiftUI(13, .semibold))
+                .foregroundStyle(LabTheme.text)
+                .lineLimit(1)
+                .padding(.top, 7)
+            Text(verbatim: item.ano.map(String.init) ?? " ")
+                .font(LabFont.swiftUI(11, .medium))
+                .foregroundStyle(LabTheme.faint)
+        }
+        .contentShape(Rectangle())
+    }
+}
+
+/// A mesma capa, pequena, na linha da lista — para quem prefere a pasta em lista.
+struct LinhaDePastaDoServidor: View {
+    var escala = Escala()
+    let servidor: ServidorDeMidia
+    let item: ServidorDeMidia.Item
+
+    var body: some View {
+        HStack(spacing: 14) {
+            ImagemDoServidor(servidor: servidor, id: idDaCapa(item), tipos: ["Thumb", "Backdrop", "Primary"],
+                             largura: 320, semImagem: simboloDaCapa(item))
+                .aspectRatio(16 / 9, contentMode: .fit)
+                .frame(width: 124 * escala.fator)
+                .overlay(alignment: .bottomTrailing) { SeloDeVistos(item: item).padding(5) }
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(LabTheme.glassBorder, lineWidth: 0.5))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(item.nome)
+                    .font(LabFont.swiftUI(14, .semibold))
+                    .foregroundStyle(LabTheme.text)
+                    .lineLimit(2)
+                if let ano = item.ano {
+                    Text(verbatim: String(ano))
+                        .font(LabFont.swiftUI(11, .medium))
+                        .foregroundStyle(LabTheme.faint)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+    }
+}
+
+/// A temporada quase nunca tem cena deitada própria, só o cartaz em pé — que
+/// cortado em 16:9 vira um retalho. A da série serve a todas as temporadas.
+private func idDaCapa(_ item: ServidorDeMidia.Item) -> String {
+    item.tipo == "Season" ? (item.serieID ?? item.id) : item.id
+}
+
+private func simboloDaCapa(_ item: ServidorDeMidia.Item) -> String {
+    item.tipo == "Series" || item.tipo == "Season" ? "tv" : "film"
+}
+
+private struct SeloDeVistos: View {
+    let item: ServidorDeMidia.Item
+
+    var body: some View {
+        if let naoVistos = item.naoVistos {
+            Text(verbatim: "\(naoVistos)")
+                .font(LabFont.swiftUI(11, .bold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 2)
+                .background(.black.opacity(0.72), in: Capsule())
+        } else if item.visto {
+            Image(systemName: "checkmark")
+                .font(.system(size: 10, weight: .heavy))
+                .foregroundStyle(.black)
+                .frame(width: 20, height: 20)
+                .background(LabTheme.accent, in: Circle())
+        }
+    }
+}
+
 // MARK: - Imagens
 
 /// Cartazes e cenas que o servidor já tem prontos — diferente das miniaturas
@@ -360,7 +512,7 @@ private enum CapasDoServidor {
     }
 }
 
-private struct ImagemDoServidor: View {
+struct ImagemDoServidor: View {
     let servidor: ServidorDeMidia
     let id: String
     let tipos: [String]

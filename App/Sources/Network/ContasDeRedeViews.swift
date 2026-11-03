@@ -211,6 +211,9 @@ struct PastaRemota: Identifiable, Hashable {
     let nome: String
     let simbolo: String
     let destino: DestinoRemoto
+    /// Jellyfin e Emby: a série, temporada ou coleção por trás — é o que
+    /// ganha capa (ver `CapaDePastaDoServidor`) e o "Já reproduzido".
+    var doServidor: ServidorDeMidia.Item? = nil
 }
 
 /// Uma pasta de WebDAV, ou uma biblioteca, série ou temporada de
@@ -232,6 +235,15 @@ struct PastaRemotaView: View {
     @State private var failure: String?
     @State private var playing: MediaItem?
     @State private var mostrandoOpcoes = false
+    /// Jellyfin e Emby: o item do servidor por trás de cada vídeo, pela
+    /// chave da retomada — para o "Já reproduzido" ao segurar.
+    @State private var doServidor: [String: ServidorDeMidia.Item] = [:]
+
+    /// Só Jellyfin e Emby têm capas e "Já reproduzido"; o WebDAV fica como era.
+    private var servidorDaPasta: ServidorDeMidia? {
+        guard case .midia(let conta, _) = destino else { return nil }
+        return servidor(conta)
+    }
 
     /// Na ordem escolhida nas opções, como no SMB. Episódio se chama
     /// "3. Nome", e a ordem por título é natural — então a ordem padrão já é
@@ -295,9 +307,14 @@ struct PastaRemotaView: View {
                         NavigationLink {
                             PastaRemotaView(titulo: pasta.nome, destino: pasta.destino)
                         } label: {
-                            LinhaDePastaDeRede(nome: pasta.nome, simbolo: pasta.simbolo, seta: false)
+                            if let servidor = servidorDaPasta, let item = pasta.doServidor {
+                                LinhaDePastaDoServidor(servidor: servidor, item: item)
+                            } else {
+                                LinhaDePastaDeRede(nome: pasta.nome, simbolo: pasta.simbolo, seta: false)
+                            }
                         }
                         .linhaDeVidro()
+                        .menuDoVistoSeHouver(servidorDaPasta, pasta.doServidor) { recarregar() }
                     }
                 }
             }
@@ -307,6 +324,7 @@ struct PastaRemotaView: View {
                         Button { playing = item } label: { VideoRow(item: item) }
                             .buttonStyle(.plain)
                             .linhaDeVidro()
+                            .menuDoVistoSeHouver(servidorDaPasta, doServidor[item.origin.resumeKey]) { recarregar() }
                     }
                 }
             }
@@ -318,7 +336,23 @@ struct PastaRemotaView: View {
     private var grade: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                if !pastas.isEmpty {
+                if let servidor = servidorDaPasta, pastas.contains(where: { $0.doServidor != nil }) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: escala.capa), spacing: 12, alignment: .top)], spacing: 14) {
+                        ForEach(pastas) { pasta in
+                            NavigationLink {
+                                PastaRemotaView(titulo: pasta.nome, destino: pasta.destino)
+                            } label: {
+                                if let item = pasta.doServidor {
+                                    CapaDePastaDoServidor(servidor: servidor, item: item)
+                                } else {
+                                    LinhaDePastaDeRede(nome: pasta.nome, simbolo: pasta.simbolo)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .menuDoVistoSeHouver(servidor, pasta.doServidor) { recarregar() }
+                        }
+                    }
+                } else if !pastas.isEmpty {
                     VStack(spacing: 8) {
                         ForEach(pastas) { pasta in
                             NavigationLink {
@@ -335,6 +369,7 @@ struct PastaRemotaView: View {
                     ForEach(videos) { item in
                         Button { playing = item } label: { VideoCard(item: item) }
                             .buttonStyle(.plain)
+                            .menuDoVistoSeHouver(servidorDaPasta, doServidor[item.origin.resumeKey]) { recarregar() }
                     }
                 }
             }
@@ -359,8 +394,12 @@ struct PastaRemotaView: View {
             case .midia(let conta, let pai):
                 let itens = try await servidor(conta).itens(de: pai)
                 pastas = itens.filter(\.ehPasta).map {
-                    PastaRemota(nome: $0.titulo, simbolo: simbolo(doTipo: $0.tipo), destino: .midia(conta, $0))
+                    PastaRemota(nome: $0.titulo, simbolo: simbolo(doTipo: $0.tipo), destino: .midia(conta, $0),
+                                doServidor: $0)
                 }
+                doServidor = Dictionary(
+                    itens.filter(\.ehVideo).map { (MediaOrigin.midia(conta: conta.id, item: $0.id).resumeKey, $0) },
+                    uniquingKeysWith: { primeiro, _ in primeiro })
                 lidos = itens.filter(\.ehVideo)
                     .map {
                         MediaItem(title: $0.titulo, origin: .midia(conta: conta.id, item: $0.id),
@@ -371,6 +410,11 @@ struct PastaRemotaView: View {
             failure = error.localizedDescription
         }
         loading = false
+    }
+
+    /// Depois do "Já reproduzido": a pasta se relê por baixo, sem apagar a tela.
+    private func recarregar() {
+        Task { await carregar() }
     }
 
     private func lerWebDAV(_ conta: ContaDeRede, _ caminho: String) async throws {
@@ -405,6 +449,19 @@ struct PastaRemotaView: View {
         case "Season":   return "square.stack.fill"
         case "BoxSet":   return "rectangle.stack.fill"
         default:         return "folder.fill"
+        }
+    }
+}
+
+private extension View {
+    /// O "Já reproduzido" só onde há item do servidor por trás.
+    @ViewBuilder
+    func menuDoVistoSeHouver(_ servidor: ServidorDeMidia?, _ item: ServidorDeMidia.Item?,
+                             aoMudar: @escaping () -> Void) -> some View {
+        if let servidor, let item {
+            menuDoVisto(servidor, item, aoMudar: aoMudar)
+        } else {
+            self
         }
     }
 }
