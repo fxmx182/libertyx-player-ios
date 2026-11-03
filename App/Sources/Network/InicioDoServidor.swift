@@ -178,6 +178,8 @@ struct InicioDoServidorView: View {
                     return Recentes(biblioteca: biblioteca, itens: itens)
                 })
             falha = nil
+        } catch where error.foiCancelado {
+            return
         } catch {
             if inicio == nil { falha = error.localizedDescription }
         }
@@ -381,6 +383,8 @@ private struct MenuDoVisto: ViewModifier {
                 // segue, ou o cartão voltaria com a barrinha.
                 ResumeStore.shared.clear(key: MediaOrigin.midia(conta: servidor.conta.id, item: item.id).resumeKey)
                 aoMudar()
+            } catch where error.foiCancelado {
+                return
             } catch {
                 falha = error.localizedDescription
             }

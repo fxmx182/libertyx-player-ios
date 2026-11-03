@@ -432,6 +432,8 @@ struct SMBShareListView: View {
         connection = conexao
         do {
             shares = try await conexao.listShares()
+        } catch where error.foiCancelado {
+            return
         } catch {
             failure = error.localizedDescription
         }
@@ -621,6 +623,8 @@ struct SMBDirectoryView: View {
             }
             itensPorCaminho = itens
             entries = lidas
+        } catch where error.foiCancelado {
+            return
         } catch {
             failure = error.localizedDescription
         }

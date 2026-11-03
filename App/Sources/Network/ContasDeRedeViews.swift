@@ -406,6 +406,8 @@ struct PastaRemotaView: View {
                                   modifiedAt: $0.dataDeCriacao, duration: $0.duracao)
                     }
             }
+        } catch where error.foiCancelado {
+            return
         } catch {
             failure = error.localizedDescription
         }
