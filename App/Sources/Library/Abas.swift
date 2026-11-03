@@ -6,23 +6,38 @@ import SwiftUI
 /// vidro flutuante, a mesma do Infuse, e herda de graça a área segura, o
 /// VoiceOver e o toque duplo que volta ao topo. Desenhar uma à mão seria
 /// refazer tudo isso para chegar no mesmo lugar.
+///
+/// Uma diferença do padrão do iOS, de propósito, para ser igual ao Android:
+/// cada aba abre sempre do começo. O iOS guarda a última tela de cada aba, e
+/// tocar em Início trazia de volta a pasta do Jellyfin deixada aberta. Quem
+/// troca de aba esquece a pilha da aba que deixou — recriada enquanto não
+/// aparece, então ninguém vê o salto.
 struct Abas: View {
     enum Aba: Hashable { case inicio, arquivos, procurar, ajustes }
 
     @State private var aba: Aba = .inicio
+    /// Muda o `id` da aba, e a pilha dela nasce de novo na raiz.
+    @State private var geracao: [Aba: Int] = [:]
 
     var body: some View {
-        TabView(selection: $aba) {
+        TabView(selection: Binding(get: { aba }, set: { nova in
+            if nova != aba { geracao[aba, default: 0] += 1 }
+            aba = nova
+        })) {
             LibraryView()
+                .id(geracao[.inicio, default: 0])
                 .tabItem { Label("Início", systemImage: "play") }
                 .tag(Aba.inicio)
             ArquivosView()
+                .id(geracao[.arquivos, default: 0])
                 .tabItem { Label("Arquivos", systemImage: "folder") }
                 .tag(Aba.arquivos)
             ProcurarView()
+                .id(geracao[.procurar, default: 0])
                 .tabItem { Label("Procurar", systemImage: "magnifyingglass") }
                 .tag(Aba.procurar)
             AjustesView()
+                .id(geracao[.ajustes, default: 0])
                 .tabItem { Label("Ajustes", systemImage: "gearshape") }
                 .tag(Aba.ajustes)
         }
