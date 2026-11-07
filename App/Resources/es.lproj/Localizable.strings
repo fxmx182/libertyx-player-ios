@@ -176,6 +176,8 @@
 "Quadro decodificado pelo FFmpeg aos %@." = "Cuadro decodificado por FFmpeg en %@.";
 "Quanto tempo a barra fica na tela depois do último toque — ou se ela fica sempre." = "Cuánto tiempo queda la barra en pantalla tras el último toque, o si queda siempre.";
 "Remove “%@” da lista e apaga a senha guardada no Keychain do aparelho." = "Quita “%@” de la lista y borra la contraseña guardada en el Llavero del dispositivo.";
+"Limpar o histórico?" = "¿Borrar el historial?";
+"Os vídeos saem desta lista. Os arquivos e o ponto onde você parou continuam." = "Los videos salen de esta lista. Los archivos y el punto donde te quedaste se mantienen.";
 "Remover do histórico" = "Quitar del historial";
 "Repete o vídeo atual sem parar. Acende enquanto estiver ligado." = "Repite el video actual sin parar. Se ilumina mientras está activo.";
 "Repetir" = "Repetir";

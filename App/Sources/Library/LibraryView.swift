@@ -25,6 +25,7 @@ struct LibraryView: View {
     @State private var showingInfo: MediaItem?
     @State private var errorMessage: String?
     @State private var pendingDeletion: MediaItem?
+    @State private var limpandoHistorico = false
     /// Conta as voltas do player. A marca de onde parou muda enquanto o filme
     /// toca; sem reler ao voltar, "continuar" mostraria o ponto de antes.
     @State private var volta = 0
@@ -47,6 +48,12 @@ struct LibraryView: View {
                 Button("Cancelar", role: .cancel) {}
             } message: { item in
                 Text("“\(item.title)” será apagado do aparelho. Não dá para desfazer.")
+            }
+            .alert("Limpar o histórico?", isPresented: $limpandoHistorico) {
+                Button("Limpar", role: .destructive) { withAnimation { historico.limpar() } }
+                Button("Cancelar", role: .cancel) {}
+            } message: {
+                Text("Os vídeos saem desta lista. Os arquivos e o ponto onde você parou continuam.")
             }
             // Uma vez: voltar de outra aba não varre de novo — puxar a tela
             // para baixo é o jeito de pedir.
@@ -244,7 +251,17 @@ struct LibraryView: View {
     private func faixaDeContinuar(_ itens: [MediaItem]) -> some View {
         if !itens.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
-                Secao(titulo: String(localized: "Histórico"))
+                HStack {
+                    Secao(titulo: String(localized: "Histórico"))
+                    // Remover um a um continua no toque longo do cartão; isto
+                    // é para quando a lista inteira já não interessa.
+                    Button { limpandoHistorico = true } label: {
+                        Text("Limpar")
+                            .font(LabFont.swiftUI(13, .semibold))
+                            .foregroundStyle(LabTheme.accent)
+                    }
+                    .buttonStyle(.plain)
+                }
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: 12) {
                         ForEach(itens) { item in

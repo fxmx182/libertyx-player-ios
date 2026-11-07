@@ -51,6 +51,13 @@ final class Historico: ObservableObject {
         persistir()
     }
 
+    /// A lista inteira. Só a lista: os arquivos e as marcas de onde parou
+    /// ficam, e o vídeo volta a ela da próxima vez que for aberto.
+    func limpar() {
+        itens.removeAll()
+        persistir()
+    }
+
     private func persistir() {
         guard let dados = try? JSONEncoder().encode(itens) else { return }
         UserDefaults.standard.set(dados, forKey: chave)
