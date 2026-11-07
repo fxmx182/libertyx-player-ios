@@ -304,3 +304,17 @@
 "Copiado" = "Copied";
 "Nada registrado ainda." = "Nothing logged yet.";
 "Se algo deu errado, toque em Copiar e cole a mensagem na conversa de suporte. As senhas não aparecem aqui." = "If something went wrong, tap Copy and paste the message into the support chat. Passwords never appear here.";
+
+/* Página do vídeo no Jellyfin/Emby */
+"Termina às %@" = "Ends at %@";
+"Assistir" = "Play";
+"Continuar" = "Resume";
+"Favorito" = "Favorite";
+"Áudio" = "Audio";
+"Nenhuma" = "None";
+"Gêneros" = "Genres";
+"Direção" = "Director";
+"Roteiro" = "Writer";
+"Mais de %@" = "More from %@";
+"Temporada" = "Season";
+"Elenco" = "Cast";

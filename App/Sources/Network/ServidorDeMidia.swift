@@ -40,10 +40,12 @@ struct ServidorDeMidia {
             let naoVistos: Int?
             /// Quando foi tocado pela última vez, em qualquer aparelho.
             let ultimaVez: String?
+            let favorito: Bool?
 
             enum CodingKeys: String, CodingKey {
                 case posicaoTicks = "PlaybackPositionTicks", visto = "Played"
                 case naoVistos = "UnplayedItemCount", ultimaVez = "LastPlayedDate"
+                case favorito = "IsFavorite"
             }
         }
 
@@ -91,6 +93,8 @@ struct ServidorDeMidia {
         }
 
         var visto: Bool { usuario?.visto == true }
+
+        var favorito: Bool { usuario?.favorito == true }
 
         var naoVistos: Int? { usuario?.naoVistos.flatMap { $0 > 0 ? $0 : nil } }
 
@@ -238,6 +242,120 @@ struct ServidorDeMidia {
         return await lembrandoOndeParou(lista.Items).first { $0.ehVideo && $0.id != itemID }
     }
 
+    // MARK: - Detalhes
+
+    /// O que a tela de detalhes mostra antes de tocar — sinopse, elenco, as
+    /// faixas do arquivo e de onde vêm o logotipo e o fundo. Os textos e as
+    /// imagens vêm dos provedores do servidor (TMDB, OMDb, AniDB…); as faixas,
+    /// da leitura que ele fez do próprio arquivo.
+    struct Detalhes: Decodable {
+        let sinopse: String?
+        let estreia: Date?
+        let nota: Double?
+        let classificacao: String?
+        let generos: [String]
+        let pessoas: [Pessoa]
+        let fluxos: [Fluxo]
+        let nomeDaTemporada: String?
+        /// O logotipo e o fundo são do próprio item ou, num episódio, da série.
+        let logoDe: String?
+        let fundoDe: String?
+
+        struct Pessoa: Decodable, Identifiable, Hashable {
+            let id: String
+            let nome: String
+            let papel: String?
+            let tipo: String
+
+            enum CodingKeys: String, CodingKey { case id = "Id", nome = "Name", papel = "Role", tipo = "Type" }
+
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                id = try c.decode(String.self, forKey: .id)
+                nome = (try? c.decode(String.self, forKey: .nome)) ?? ""
+                papel = (try? c.decode(String.self, forKey: .papel)).flatMap { $0.isEmpty ? nil : $0 }
+                tipo = (try? c.decode(String.self, forKey: .tipo)) ?? ""
+            }
+        }
+
+        struct Fluxo: Decodable, Hashable {
+            let tipo: String
+            let titulo: String
+            let externo: Bool
+
+            enum CodingKeys: String, CodingKey {
+                case tipo = "Type", titulo = "DisplayTitle", codec = "Codec", idioma = "Language", externo = "IsExternal"
+            }
+
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                tipo = (try? c.decode(String.self, forKey: .tipo)) ?? ""
+                externo = (try? c.decode(Bool.self, forKey: .externo)) ?? false
+                // O "1080p H264 SDR" e o "Portuguese - Dolby Digital+ - Stereo"
+                // do app do servidor são este campo, montado por ele.
+                let idioma = try? c.decode(String.self, forKey: .idioma)
+                let codec = try? c.decode(String.self, forKey: .codec)
+                titulo = (try? c.decode(String.self, forKey: .titulo))
+                    ?? [idioma, codec].compactMap { $0 }.joined(separator: " - ")
+            }
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case sinopse = "Overview", estreia = "PremiereDate", nota = "CommunityRating"
+            case classificacao = "OfficialRating", generos = "Genres", pessoas = "People"
+            case fluxos = "MediaStreams", fontes = "MediaSources", nomeDaTemporada = "SeasonName"
+            case id = "Id", imagens = "ImageTags", fundos = "BackdropImageTags"
+            case logoDoPai = "ParentLogoItemId", fundoDoPai = "ParentBackdropItemId"
+        }
+
+        private struct Fonte: Decodable { let MediaStreams: [Fluxo]? }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            let id = (try? c.decode(String.self, forKey: .id)) ?? ""
+            sinopse = (try? c.decode(String.self, forKey: .sinopse)).flatMap { $0.isEmpty ? nil : $0 }
+            estreia = (try? c.decode(String.self, forKey: .estreia)).flatMap(ServidorDeMidia.data)
+            nota = (try? c.decode(Double.self, forKey: .nota)).flatMap { $0 > 0 ? $0 : nil }
+            classificacao = try? c.decode(String.self, forKey: .classificacao)
+            generos = (try? c.decode([String].self, forKey: .generos)) ?? []
+            pessoas = (try? c.decode([Pessoa].self, forKey: .pessoas)) ?? []
+            // O Emby nem sempre põe as faixas no item; na primeira fonte, sim.
+            let soltos = (try? c.decode([Fluxo].self, forKey: .fluxos)) ?? []
+            fluxos = soltos.isEmpty
+                ? ((try? c.decode([Fonte].self, forKey: .fontes))?.first?.MediaStreams ?? [])
+                : soltos
+            nomeDaTemporada = try? c.decode(String.self, forKey: .nomeDaTemporada)
+            let imagens = (try? c.decode([String: String].self, forKey: .imagens)) ?? [:]
+            let logoDoPai = try? c.decode(String.self, forKey: .logoDoPai)
+            logoDe = imagens["Logo"] != nil ? id : logoDoPai
+            let fundos = (try? c.decode([String].self, forKey: .fundos)) ?? []
+            let fundoDoPai = try? c.decode(String.self, forKey: .fundoDoPai)
+            fundoDe = !fundos.isEmpty ? id : fundoDoPai
+        }
+
+        func faixasDo(_ tipo: String) -> [String] {
+            fluxos.filter { $0.tipo == tipo }.map(\.titulo).filter { !$0.isEmpty }
+        }
+
+        func pessoasCom(_ tipos: Set<String>) -> [Pessoa] { pessoas.filter { tipos.contains($0.tipo) } }
+    }
+
+    /// O item de novo (o "visto" e onde parou podem ter mudado) e os detalhes dele.
+    func detalhes(_ id: String) async throws -> (item: Item, detalhes: Detalhes) {
+        let dados = try await pedirDados("/Users/\(usuarioID)/Items/\(id)", consulta: [
+            URLQueryItem(name: "Fields", value: "Overview,People,Genres,MediaSources,MediaStreams,PremiereDate,DateCreated"),
+        ])
+        do {
+            let decodificador = JSONDecoder()
+            let item = try decodificador.decode(Item.self, from: dados)
+            let detalhes = try decodificador.decode(Detalhes.self, from: dados)
+            _ = await lembrandoOndeParou([item])
+            return (item, detalhes)
+        } catch {
+            throw ErroDeServidor(mensagem: String(localized: "Não há um servidor \(conta.tipo.nome) nesse endereço."))
+        }
+    }
+
     /// O vídeo do servidor como o player e o histórico o conhecem — o mesmo
     /// título das pastas, para a retomada e o histórico baterem.
     func paraTocar(_ item: Item) -> MediaItem {
@@ -310,6 +428,13 @@ struct ServidorDeMidia {
     func marcarVisto(_ itemID: String, _ visto: Bool) async throws {
         _ = try await pedirDados("/Users/\(usuarioID)/PlayedItems/\(itemID)",
                                  corpo: visto ? Data("{}".utf8) : nil, apagar: !visto)
+    }
+
+    /// O coração do app do Jellyfin: os favoritos são do usuário, valem em
+    /// todo aparelho.
+    func marcarFavorito(_ itemID: String, _ favorito: Bool) async throws {
+        _ = try await pedirDados("/Users/\(usuarioID)/FavoriteItems/\(itemID)",
+                                 corpo: favorito ? Data("{}".utf8) : nil, apagar: !favorito)
     }
 
     /// Toda lista que chega do servidor diz onde a pessoa parou em cada

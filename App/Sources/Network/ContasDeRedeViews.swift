@@ -321,8 +321,7 @@ struct PastaRemotaView: View {
             if !videos.isEmpty {
                 Section {
                     ForEach(videos) { item in
-                        Button { playing = item } label: { VideoRow(item: item) }
-                            .buttonStyle(.plain)
+                        abrir(item) { VideoRow(item: item) }
                             .linhaDeVidro()
                             .menuDoVistoSeHouver(servidorDaPasta, doServidor[item.origin.resumeKey]) { recarregar() }
                     }
@@ -367,8 +366,7 @@ struct PastaRemotaView: View {
 
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: escala.capa), spacing: 12, alignment: .top)], spacing: 14) {
                     ForEach(videos) { item in
-                        Button { playing = item } label: { VideoCard(item: item) }
-                            .buttonStyle(.plain)
+                        abrir(item) { VideoCard(item: item) }
                             .menuDoVistoSeHouver(servidorDaPasta, doServidor[item.origin.resumeKey]) { recarregar() }
                     }
                 }
@@ -376,6 +374,22 @@ struct PastaRemotaView: View {
             .padding(16)
         }
         .fundoDaRede()
+    }
+
+    /// Do Jellyfin e do Emby, o vídeo abre a página dele, com a sinopse e o
+    /// "Assistir"; do WebDAV, que só tem o arquivo, toca direto.
+    @ViewBuilder
+    private func abrir<Rotulo: View>(_ item: MediaItem, @ViewBuilder rotulo: () -> Rotulo) -> some View {
+        if let servidor = servidorDaPasta, let doServidor = doServidor[item.origin.resumeKey] {
+            NavigationLink {
+                DetalhesDoServidorView(servidor: servidor, inicial: doServidor)
+                    .onDisappear { recarregar() }
+            } label: { rotulo() }
+            .buttonStyle(.plain)
+        } else {
+            Button { playing = item } label: { rotulo() }
+                .buttonStyle(.plain)
+        }
     }
 
     // MARK: - Leitura

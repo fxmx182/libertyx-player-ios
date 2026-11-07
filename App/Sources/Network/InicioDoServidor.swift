@@ -11,11 +11,8 @@ struct InicioDoServidorView: View {
 
     @State private var inicio: Inicio?
     @State private var falha: String?
-    @State private var tocando: MediaItem?
-    @State private var fila: [MediaItem] = []
-    @State private var abrindo = false
-    /// Conta as voltas do player: o filme que acabou de ser visto sai do
-    /// "Continuar", e o episódio seguinte entra no "A seguir".
+    /// Conta as voltas da página do vídeo: o filme que acabou de ser visto
+    /// sai do "Continuar", e o episódio seguinte entra no "A seguir".
     @State private var volta = 0
 
     private typealias Item = ServidorDeMidia.Item
@@ -29,9 +26,6 @@ struct InicioDoServidorView: View {
             // A tela antiga fica enquanto a nova carrega, sem piscar.
             .task(id: volta) { await carregar() }
             .refreshable { await carregar() }
-            .fullScreenCover(item: $tocando, onDismiss: { volta += 1 }) { item in
-                PlayerScreen(item: item, playlist: fila).ignoresSafeArea()
-            }
     }
 
     @ViewBuilder
@@ -57,7 +51,7 @@ struct InicioDoServidorView: View {
                 if !inicio.continuar.isEmpty {
                     FaixaDoServidor(titulo: String(localized: "Continuar assistindo")) {
                         ForEach(inicio.continuar) { item in
-                            Button { abrir(item) } label: { CartaoDeitado(servidor: servidor, item: item) }
+                            NavigationLink { detalhes(item) } label: { CartaoDeitado(servidor: servidor, item: item) }
                                 .buttonStyle(.plain)
                                 .menuDoVisto(servidor, item) { volta += 1 }
                         }
@@ -66,7 +60,7 @@ struct InicioDoServidorView: View {
                 if !inicio.aSeguir.isEmpty {
                     FaixaDoServidor(titulo: String(localized: "A seguir")) {
                         ForEach(inicio.aSeguir) { item in
-                            Button { abrir(item) } label: { CartaoDeitado(servidor: servidor, item: item) }
+                            NavigationLink { detalhes(item) } label: { CartaoDeitado(servidor: servidor, item: item) }
                                 .buttonStyle(.plain)
                                 .menuDoVisto(servidor, item) { volta += 1 }
                         }
@@ -86,7 +80,7 @@ struct InicioDoServidorView: View {
                         ForEach(faixa.itens) { item in
                             Group {
                                 if item.ehVideo {
-                                    Button { abrir(item) } label: { Cartaz(servidor: servidor, item: item) }
+                                    NavigationLink { detalhes(item) } label: { Cartaz(servidor: servidor, item: item) }
                                         .buttonStyle(.plain)
                                 } else {
                                     NavigationLink { pasta(item) } label: { Cartaz(servidor: servidor, item: item) }
@@ -108,25 +102,13 @@ struct InicioDoServidorView: View {
         PastaRemotaView(titulo: item.titulo, destino: .midia(conta, item))
     }
 
-    // MARK: - Tocar
+    // MARK: - Abrir
 
-    private func abrir(_ item: Item) {
-        guard !abrindo else { return }
-        abrindo = true
-        Task {
-            // Episódio toca com a temporada em volta, para o "próximo" do
-            // player ir ao episódio seguinte, e não ao vizinho da faixa.
-            var lista = [item]
-            if item.tipo == "Episode",
-               let temporada = try? await servidor.temporada(item),
-               temporada.contains(where: { $0.id == item.id }) {
-                lista = temporada
-            }
-            abrindo = false
-            let itens = lista.map(servidor.paraTocar)
-            fila = itens
-            tocando = itens.first { $0.origin == servidor.paraTocar(item).origin }
-        }
+    /// Filme e episódio abrem a página deles, como no app do servidor; o
+    /// "Assistir" está lá.
+    private func detalhes(_ item: Item) -> some View {
+        DetalhesDoServidorView(servidor: servidor, inicial: item)
+            .onDisappear { volta += 1 }
     }
 
     // MARK: - Leitura
@@ -224,7 +206,7 @@ private struct FaixaDoServidor<Conteudo: View>: View {
 }
 
 /// "Continuar" e "A seguir": a cena deitada, com o quanto falta.
-private struct CartaoDeitado: View {
+struct CartaoDeitado: View {
     var escala = Escala()
     let servidor: ServidorDeMidia
     let item: ServidorDeMidia.Item
@@ -266,7 +248,7 @@ private struct CartaoDeitado: View {
     }
 }
 
-private func numeroDoEpisodio(_ item: ServidorDeMidia.Item) -> String? {
+func numeroDoEpisodio(_ item: ServidorDeMidia.Item) -> String? {
     guard let temporada = item.temporada, let numero = item.numero else { return nil }
     return String(localized: "T\(temporada):E\(numero)")
 }
