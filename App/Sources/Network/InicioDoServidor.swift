@@ -66,6 +66,15 @@ struct InicioDoServidorView: View {
                         }
                     }
                 }
+                if !inicio.favoritos.isEmpty {
+                    FaixaDoServidor(titulo: String(localized: "Favoritos")) {
+                        ForEach(inicio.favoritos) { item in
+                            NavigationLink { pagina(item) } label: { Cartaz(servidor: servidor, item: item) }
+                                .buttonStyle(.plain)
+                                .menuDoVisto(servidor, item) { volta += 1 }
+                        }
+                    }
+                }
                 FaixaDoServidor(titulo: String(localized: "Bibliotecas")) {
                     ForEach(inicio.bibliotecas) { biblioteca in
                         NavigationLink { pasta(biblioteca) } label: {
@@ -83,7 +92,7 @@ struct InicioDoServidorView: View {
                                     NavigationLink { detalhes(item) } label: { Cartaz(servidor: servidor, item: item) }
                                         .buttonStyle(.plain)
                                 } else {
-                                    NavigationLink { pasta(item) } label: { Cartaz(servidor: servidor, item: item) }
+                                    NavigationLink { pagina(item) } label: { Cartaz(servidor: servidor, item: item) }
                                         .buttonStyle(.plain)
                                 }
                             }
@@ -111,11 +120,18 @@ struct InicioDoServidorView: View {
             .onDisappear { volta += 1 }
     }
 
+    /// Série abre a página dela; o resto, a pasta.
+    private func pagina(_ item: Item) -> some View {
+        paginaDoServidor(servidor, item)
+            .onDisappear { volta += 1 }
+    }
+
     // MARK: - Leitura
 
     private struct Inicio {
         let continuar: [Item]
         let aSeguir: [Item]
+        let favoritos: [Item]
         let bibliotecas: [Item]
         let recentes: [Recentes]
     }
@@ -137,6 +153,7 @@ struct InicioDoServidorView: View {
         do {
             async let continuar = (try? await servidor.continuar()) ?? []
             async let aSeguir = (try? await servidor.aSeguir()) ?? []
+            async let favoritos = (try? await servidor.favoritos()) ?? []
             let bibliotecas = try await servidor.bibliotecas()
             // Coleções só repetem filmes que já aparecem na biblioteca deles.
             let comRecentes = bibliotecas.filter { $0.tipoDeColecao != "boxsets" }
@@ -154,6 +171,7 @@ struct InicioDoServidorView: View {
                 continuar: comecados,
                 // O servidor põe no "A seguir" o episódio que já está no "Continuar".
                 aSeguir: await aSeguir.filter { !comecadosIDs.contains($0.id) },
+                favoritos: await favoritos,
                 bibliotecas: bibliotecas,
                 recentes: comRecentes.enumerated().compactMap { indice, biblioteca in
                     guard let itens = recentes[indice], !itens.isEmpty else { return nil }
@@ -254,7 +272,7 @@ func numeroDoEpisodio(_ item: ServidorDeMidia.Item) -> String? {
 }
 
 /// "Recentes": o cartaz em pé, com os episódios por ver ou a marca de visto.
-private struct Cartaz: View {
+struct Cartaz: View {
     var escala = Escala()
     let servidor: ServidorDeMidia
     let item: ServidorDeMidia.Item

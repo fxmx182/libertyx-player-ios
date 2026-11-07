@@ -100,6 +100,15 @@ final class VLCEngine: NSObject, PlaybackEngine {
     private var legendaDoUsuario = false
     private var origemDaLegenda: MediaOrigin?
 
+    /// O áudio e a legenda escolhidos na página do servidor (ver
+    /// `EscolhaDeFaixas`), à espera de as faixas aparecerem.
+    private var pedidoDeFaixas: EscolhaDeFaixas.Pedido?
+    /// As legendas que já vinham no arquivo — as que existiam antes da
+    /// primeira de fora entrar. As de fora chegam depois, na ordem em que
+    /// foram acrescentadas, com o nome de cada uma aqui.
+    private var idsInternos: Set<Int32>?
+    private var legendasDeFora: [String] = []
+
     private(set) var state: PlaybackState = .idle {
         didSet {
             guard state != oldValue else { return }
@@ -210,6 +219,9 @@ final class VLCEngine: NSObject, PlaybackEngine {
             legendaDoUsuario = false
             origemDaLegenda = item.origin
         }
+        pedidoDeFaixas = EscolhaDeFaixas.shared.consumir(item.origin.resumeKey)
+        idsInternos = nil
+        legendasDeFora = []
 
         // Abre o escopo ANTES de entregar o caminho ao VLC, e o mantém: ele lê
         // o arquivo durante todo o filme, não só na abertura.
@@ -312,10 +324,19 @@ final class VLCEngine: NSObject, PlaybackEngine {
             guard let conta = ContasDeRede.shared.conta(id) else {
                 throw PlaybackError.loadFailed(String(localized: "servidor não encontrado"))
             }
-            // Pela ponte também: o VLC do iPhone não fala TLS 1.3 (ver PonteHTTP).
-            guard let url = ServidorDeMidia(conta: conta, token: ContasDeRede.shared.segredo(conta)).urlDoVideo(item) else {
-                return nil
+            let servidor = ServidorDeMidia(conta: conta, token: ContasDeRede.shared.segredo(conta))
+            // A qualidade escolhida para a conta: abaixo do original, o
+            // servidor converte e manda uma lista HLS (ver Qualidade).
+            let kbps = Qualidade.da(conta.id)
+            if kbps > 0 {
+                let sessao = Conversoes.shared.comecar(item)
+                guard let url = servidor.urlDaConversao(item, kbps: kbps, sessao: sessao,
+                                                        audio: Conversoes.shared.audio(item)) else { return nil }
+                return try await PonteHTTP.shared.endereco(paraLista: url, cabecalhos: servidor.cabecalhoDoToken)
             }
+            Conversoes.shared.encerrar(item)
+            // Pela ponte também: o VLC do iPhone não fala TLS 1.3 (ver PonteHTTP).
+            guard let url = servidor.urlDoVideo(item) else { return nil }
             return try await PonteHTTP.shared.endereco(para: url, nome: "video")
         }
     }
@@ -559,12 +580,51 @@ final class VLCEngine: NSObject, PlaybackEngine {
     /// arquivos a marcam ("Forced", "Forçada", "Forzados"). Quem escolhe no
     /// menu manda até o vídeo trocar.
     fileprivate func aplicarRegraDaLegenda() {
-        guard !legendaDoUsuario else { return }
+        guard !legendaDoUsuario, pedidoDeFaixas?.legenda == nil else { return }
         let forcada = subtitleTracks.first { faixa in
             (faixa.title ?? "").range(of: Self.forcada, options: [.regularExpression, .caseInsensitive]) != nil
         }
         let alvo = forcada?.id ?? -1
         if player.currentVideoSubTitleIndex != alvo { player.currentVideoSubTitleIndex = alvo }
+    }
+
+    /// Aplica o que foi escolhido na página do servidor assim que a faixa
+    /// pedida existe. As de dentro do arquivo aparecem ao abrir; a legenda de
+    /// fora, só depois de baixada — por isso isto roda a cada faixa nova.
+    fileprivate func aplicarPedidoDeFaixas() {
+        guard var pedido = pedidoDeFaixas else { return }
+        if let posicao = pedido.audio {
+            let faixas = audioTracks
+            if posicao < faixas.count {
+                if player.currentAudioTrackIndex != faixas[posicao].id {
+                    player.currentAudioTrackIndex = faixas[posicao].id
+                    if state == .playing { Task { await recomecarDoPonto() } }
+                }
+                pedido.audio = nil
+            }
+        }
+        if let legenda = pedido.legenda {
+            let internas = subtitleTracks.filter { idsInternos?.contains($0.id) ?? true }
+            let deFora = subtitleTracks.filter { !(idsInternos?.contains($0.id) ?? true) }
+            var alvo: Int32?
+            switch legenda {
+            case .desligada:
+                alvo = -1
+            case .interna(let posicao):
+                if posicao < internas.count { alvo = internas[posicao].id }
+            case .externa(let indice):
+                if let ordem = legendasDeFora.firstIndex(where: { $0.contains("(\(indice)).") }),
+                   ordem < deFora.count {
+                    alvo = deFora[ordem].id
+                }
+            }
+            if let alvo {
+                legendaDoUsuario = true
+                if player.currentVideoSubTitleIndex != alvo { player.currentVideoSubTitleIndex = alvo }
+                pedido.legenda = nil
+            }
+        }
+        pedidoDeFaixas = pedido.audio == nil && pedido.legenda == nil ? nil : pedido
     }
 
     /// "Forced", "Forçada(s)", "Forzado(s)", "Forcée(s)" — palavra inteira.
@@ -629,6 +689,7 @@ extension VLCEngine: VLCMediaPlayerDelegate {
             // reaplicar aqui garante que o ganho interno fique em 100% e o
             // volume que vale seja o do aparelho.
             player.audio?.volume = Int32(savedVolume * 100)
+            aplicarPedidoDeFaixas()
             aplicarRegraDaLegenda()
             state = .playing
         case .paused:    state = .paused
@@ -638,7 +699,9 @@ extension VLCEngine: VLCMediaPlayerDelegate {
         case .error:     state = .failed(String(localized: "o VLC não conseguiu abrir este arquivo"))
         // As faixas chegam aos poucos (a legenda ao lado do arquivo, por
         // último), e o VLC liga a padrão por conta própria: a regra vale de novo.
-        case .esAdded:   aplicarRegraDaLegenda()
+        case .esAdded:
+            aplicarPedidoDeFaixas()
+            aplicarRegraDaLegenda()
         default:         break
         }
     }
@@ -723,6 +786,8 @@ final class VLCRenderView: UIView, VideoGravityAdjustable {
 
 extension VLCEngine: AceitaLegendaDeFora {
     func adicionarLegenda(_ arquivo: URL) {
+        if idsInternos == nil { idsInternos = Set(subtitleTracks.map(\.id)) }
+        legendasDeFora.append(arquivo.lastPathComponent)
         _ = player.addPlaybackSlave(arquivo, type: .subtitle, enforce: false)
     }
 }

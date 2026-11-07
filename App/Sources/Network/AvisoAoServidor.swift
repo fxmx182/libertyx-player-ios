@@ -17,7 +17,10 @@ final class AvisoAoServidor {
         let contaID: UUID
         let servidor: ServidorDeMidia
         let item: String
-        let id = UUID().uuidString
+        /// Na conversão, o número que já foi no endereço do vídeo (ver
+        /// `Conversoes`): é por ele que o servidor sabe qual desligar.
+        let id: String
+        let convertendo: Bool
     }
 
     private static let intervalo: TimeInterval = 10
@@ -44,8 +47,9 @@ final class AvisoAoServidor {
         parou(em: segundos)
         guard case .midia(let contaID, let itemID) = item.origin,
               let conta = ContasDeRede.shared.conta(contaID) else { return }
+        let conversao = Conversoes.shared.sessao(itemID)
         let nova = Sessao(contaID: contaID, servidor: ServidorDeMidia(conta: conta, token: ContasDeRede.shared.segredo(conta)),
-                          item: itemID)
+                          item: itemID, id: conversao ?? UUID().uuidString, convertendo: conversao != nil)
         sessao = nova
         pausado = false
         ultimoAviso = Date()
@@ -72,6 +76,10 @@ final class AvisoAoServidor {
         guard let atual = sessao else { return }
         sessao = nil
         avisar(atual, "Stopped", segundos)
+        if atual.convertendo {
+            Conversoes.shared.encerrar(atual.item)
+            enfileirar { await atual.servidor.pararConversao(atual.id) }
+        }
         guard visto else { return }
         enfileirar {
             guard let proximo = try? await atual.servidor.proximoEpisodio(atual.item) else { return }
@@ -86,7 +94,8 @@ final class AvisoAoServidor {
             // Sem rede, o aviso se perde, e o vídeo segue tocando: a marca do
             // aparelho continua valendo, e o próximo aviso corrige o servidor.
             try? await sessao.servidor.informar(evento, item: sessao.item, segundos: segundos,
-                                                pausado: pausadoAgora, sessao: sessao.id)
+                                                pausado: pausadoAgora, sessao: sessao.id,
+                                                convertendo: sessao.convertendo)
         }
     }
 

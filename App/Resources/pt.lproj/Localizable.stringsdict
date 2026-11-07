@@ -50,6 +50,38 @@
 			<string>%lld segundos</string>
 		</dict>
 	</dict>
+	<key>%lld temporadas</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld temporada</string>
+			<key>other</key>
+			<string>%lld temporadas</string>
+		</dict>
+	</dict>
+	<key>%lld títulos</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld título</string>
+			<key>other</key>
+			<string>%lld títulos</string>
+		</dict>
+	</dict>
 	<key>%lld vídeos</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>

@@ -12,6 +12,8 @@ enum Plural {
     static func pastas(_ n: Int) -> String { String(localized: "\(n) pastas") }
     static func minutos(_ n: Int) -> String { String(localized: "\(n) minutos") }
     static func segundos(_ n: Int) -> String { String(localized: "\(n) segundos") }
+    static func temporadas(_ n: Int) -> String { String(localized: "\(n) temporadas") }
+    static func titulos(_ n: Int) -> String { String(localized: "\(n) títulos") }
 }
 
 /// Números no formato do país: "1,5×" aqui, "1.5×" lá fora.

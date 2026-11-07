@@ -318,3 +318,33 @@
 "Mais de %@" = "More from %@";
 "Temporada" = "Season";
 "Elenco" = "Cast";
+
+/* Cliente Jellyfin/Emby completo */
+"Automática (só as forçadas)" = "Automatic (forced only)";
+"Qualidade" = "Quality";
+"O servidor converte o vídeo para esta qualidade. Legendas de dentro do arquivo não vêm junto." = "The server converts the video to this quality. Subtitles inside the file are not included.";
+"Trailer" = "Trailer";
+"Extras" = "Extras";
+"Original" = "Original";
+"Favoritos" = "Favorites";
+"No servidor" = "On the server";
+"Nascimento: %@" = "Born: %@";
+"Ordenar por" = "Sort by";
+"Não vistos" = "Unwatched";
+"Gênero" = "Genre";
+"Todos os gêneros" = "All genres";
+"Limpar filtros" = "Clear filters";
+"Nome" = "Name";
+"Adicionado em" = "Date added";
+"Lançamento" = "Release date";
+"Nota" = "Rating";
+"Pular créditos" = "Skip credits";
+"Pular recapitulação" = "Skip recap";
+"Pular prévia" = "Skip preview";
+"Pular abertura" = "Skip intro";
+"Escolher usuário" = "Choose user";
+"Aprove este código em outro aparelho já conectado ao servidor (Configurações › Quick Connect):" = "Approve this code on another device already signed in to the server (Settings › Quick Connect):";
+"Esperando a aprovação…" = "Waiting for approval…";
+"Entrar com Quick Connect" = "Sign in with Quick Connect";
+"Sem digitar a senha: o app mostra um código, e você aprova num aparelho que já está conectado." = "No password needed: the app shows a code, and you approve it on a device that is already signed in.";
+"Este servidor não tem o Quick Connect ligado." = "Quick Connect is not enabled on this server.";

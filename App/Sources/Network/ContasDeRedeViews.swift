@@ -25,6 +25,11 @@ struct ContaDeRedeEditView: View {
     @State private var senha = ""
     @State private var testando = false
     @State private var falha: String?
+    /// Os usuários que o servidor mostra na tela de entrada dele.
+    @State private var usuariosDoServidor: [String] = []
+    /// O código do Quick Connect enquanto espera a aprovação.
+    @State private var codigoQuick: String?
+    @State private var tarefaQuick: Task<Void, Never>?
 
     private var isValid: Bool {
         !endereco.trimmingCharacters(in: .whitespaces).isEmpty
@@ -54,11 +59,22 @@ struct ContaDeRedeEditView: View {
                     TextField("Usuário", text: $usuario)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                    if !usuariosDoServidor.isEmpty {
+                        Menu {
+                            ForEach(usuariosDoServidor, id: \.self) { nome in
+                                Button(nome) { usuario = nome }
+                            }
+                        } label: {
+                            Label("Escolher usuário", systemImage: "person.2")
+                        }
+                    }
                     SecureField(conta != nil && tipo.ehServidorDeMidia
                                 ? String(localized: "Senha (só para entrar de novo)")
                                 : String(localized: "Senha"),
                                 text: $senha)
                 }
+
+                if tipo.ehServidorDeMidia { secaoQuickConnect }
 
                 if let falha {
                     Section {
@@ -93,7 +109,99 @@ struct ContaDeRedeEditView: View {
                 }
             }
             .onAppear(perform: preencher)
+            .onDisappear { tarefaQuick?.cancel() }
+            .task(id: endereco) { await lerUsuarios() }
         }
+    }
+
+    // MARK: - Quick Connect
+
+    /// Entrar sem digitar a senha: o app mostra um código, e alguém já
+    /// conectado a este servidor (no app dele ou no navegador) aprova.
+    private var secaoQuickConnect: some View {
+        Section {
+            if let codigoQuick {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Aprove este código em outro aparelho já conectado ao servidor (Configurações › Quick Connect):")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    Text(verbatim: codigoQuick)
+                        .font(.system(size: 34, weight: .heavy, design: .monospaced))
+                        .tracking(6)
+                        .textSelection(.enabled)
+                    HStack(spacing: 8) {
+                        ProgressView()
+                        Text("Esperando a aprovação…").foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.vertical, 4)
+                Button("Cancelar", role: .cancel) {
+                    tarefaQuick?.cancel()
+                    self.codigoQuick = nil
+                }
+            } else {
+                Button { comecarQuickConnect() } label: {
+                    Label("Entrar com Quick Connect", systemImage: "number.square")
+                }
+                .disabled(endereco.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        } footer: {
+            Text("Sem digitar a senha: o app mostra um código, e você aprova num aparelho que já está conectado.")
+        }
+    }
+
+    private func comecarQuickConnect() {
+        falha = nil
+        tarefaQuick?.cancel()
+        tarefaQuick = Task { @MainActor in
+            let candidatos = enderecosPossiveis
+            for candidato in candidatos {
+                do {
+                    let pedido = try await ServidorDeMidia.iniciarQuickConnect(tipo: tipo, endereco: candidato)
+                    codigoQuick = pedido.Code
+                    let acesso = try await ServidorDeMidia.esperarQuickConnect(tipo: tipo, endereco: candidato, pedido)
+                    var nova = conta ?? ContaDeRede(tipo: tipo, nome: "", endereco: "", usuario: "")
+                    nova.endereco = candidato
+                    nova.usuario = acesso.usuario
+                    nova.nome = nome.isEmpty ? nova.enderecoCurto : nome
+                    nova.idNoServidor = acesso.usuarioID
+                    contas.salvar(nova, segredo: acesso.token)
+                    codigoQuick = nil
+                    dismiss()
+                    return
+                } catch where error.foiCancelado {
+                    codigoQuick = nil
+                    return
+                } catch is URLError where candidato != candidatos.last {
+                    continue
+                } catch {
+                    falha = error.localizedDescription
+                    codigoQuick = nil
+                    return
+                }
+            }
+        }
+    }
+
+    /// Os usuários visíveis do servidor, para escolher sem digitar. Espera a
+    /// pessoa parar de digitar o endereço.
+    private func lerUsuarios() async {
+        guard tipo.ehServidorDeMidia,
+              !endereco.trimmingCharacters(in: .whitespaces).isEmpty else {
+            usuariosDoServidor = []
+            return
+        }
+        try? await Task.sleep(nanoseconds: 700_000_000)
+        guard !Task.isCancelled else { return }
+        for candidato in enderecosPossiveis {
+            let nomes = await ServidorDeMidia.usuariosVisiveis(tipo: tipo, endereco: candidato)
+            guard !Task.isCancelled else { return }
+            if !nomes.isEmpty {
+                usuariosDoServidor = nomes
+                return
+            }
+        }
+        usuariosDoServidor = []
     }
 
     private func preencher() {
@@ -238,6 +346,9 @@ struct PastaRemotaView: View {
     /// Jellyfin e Emby: o item do servidor por trás de cada vídeo, pela
     /// chave da retomada — para o "Já reproduzido" ao segurar.
     @State private var doServidor: [String: ServidorDeMidia.Item] = [:]
+    /// Biblioteca de filmes ou séries: ordem e filtros do servidor.
+    @State private var filtro = ServidorDeMidia.Filtro()
+    @State private var generos: [String] = []
 
     /// Só Jellyfin e Emby têm capas e "Já reproduzido"; o WebDAV fica como era.
     private var servidorDaPasta: ServidorDeMidia? {
@@ -248,7 +359,15 @@ struct PastaRemotaView: View {
     /// Na ordem escolhida nas opções, como no SMB. Episódio se chama
     /// "3. Nome", e a ordem por título é natural — então a ordem padrão já é
     /// a da temporada.
-    private var videos: [MediaItem] { options.sorted(lidos) }
+    private var videos: [MediaItem] { bibliotecaFiltravel != nil ? lidos : options.sorted(lidos) }
+
+    /// A biblioteca de filmes ou de séries, que o servidor sabe ordenar por
+    /// nota, data e gênero — a ordem dela vem de lá, não das opções.
+    private var bibliotecaFiltravel: ServidorDeMidia.Item? {
+        guard case .midia(_, let pai) = destino,
+              pai.tipoDeColecao == "movies" || pai.tipoDeColecao == "tvshows" else { return nil }
+        return pai
+    }
 
     var body: some View {
         if case .bibliotecas(let conta) = destino {
@@ -267,13 +386,21 @@ struct PastaRemotaView: View {
             .navigationTitle(titulo)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                if bibliotecaFiltravel != nil {
+                    ToolbarItem(placement: .topBarTrailing) { menuDeFiltro }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { mostrandoOpcoes = true } label: {
                         Image(systemName: "slider.horizontal.3")
                     }
                 }
             }
-            .task { await carregar() }
+            .task(id: filtro) { await carregar() }
+            .task {
+                if let biblioteca = bibliotecaFiltravel, let servidor = servidorDaPasta {
+                    generos = (try? await servidor.generos(biblioteca)) ?? []
+                }
+            }
             .sheet(isPresented: $mostrandoOpcoes) {
                 LibraryOptionsSheet(options: options)
             }
@@ -305,7 +432,7 @@ struct PastaRemotaView: View {
                 Section {
                     ForEach(pastas) { pasta in
                         NavigationLink {
-                            PastaRemotaView(titulo: pasta.nome, destino: pasta.destino)
+                            destinoDaPasta(pasta)
                         } label: {
                             if let servidor = servidorDaPasta, let item = pasta.doServidor {
                                 LinhaDePastaDoServidor(servidor: servidor, item: item)
@@ -339,7 +466,7 @@ struct PastaRemotaView: View {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: escala.capa), spacing: 12, alignment: .top)], spacing: 14) {
                         ForEach(pastas) { pasta in
                             NavigationLink {
-                                PastaRemotaView(titulo: pasta.nome, destino: pasta.destino)
+                                destinoDaPasta(pasta)
                             } label: {
                                 if let item = pasta.doServidor {
                                     CapaDePastaDoServidor(servidor: servidor, item: item)
@@ -355,7 +482,7 @@ struct PastaRemotaView: View {
                     VStack(spacing: 8) {
                         ForEach(pastas) { pasta in
                             NavigationLink {
-                                PastaRemotaView(titulo: pasta.nome, destino: pasta.destino)
+                                destinoDaPasta(pasta)
                             } label: {
                                 LinhaDePastaDeRede(nome: pasta.nome, simbolo: pasta.simbolo)
                             }
@@ -374,6 +501,58 @@ struct PastaRemotaView: View {
             .padding(16)
         }
         .fundoDaRede()
+    }
+
+    /// A série abre a página dela, com as temporadas em abas; o resto é pasta.
+    @ViewBuilder
+    private func destinoDaPasta(_ pasta: PastaRemota) -> some View {
+        if let servidor = servidorDaPasta, let item = pasta.doServidor, item.tipo == "Series" {
+            SerieDoServidorView(servidor: servidor, serieID: item.id, nome: item.nome)
+                .onDisappear { recarregar() }
+        } else {
+            PastaRemotaView(titulo: pasta.nome, destino: pasta.destino)
+        }
+    }
+
+    /// Ordem, não vistos, favoritos e gênero — os filtros do app do Jellyfin.
+    private var menuDeFiltro: some View {
+        Menu {
+            Picker("Ordenar por", selection: $filtro.ordem) {
+                ForEach(ServidorDeMidia.Filtro.Ordem.allCases, id: \.self) { ordem in
+                    Text(nomeDaOrdem(ordem)).tag(ordem)
+                }
+            }
+            Toggle("Decrescente", isOn: $filtro.decrescente)
+            Divider()
+            Toggle("Não vistos", isOn: $filtro.naoVistos)
+            Toggle("Favoritos", isOn: $filtro.favoritos)
+            if !generos.isEmpty {
+                Picker("Gênero", selection: $filtro.genero) {
+                    Text("Todos os gêneros").tag(String?.none)
+                    ForEach(generos, id: \.self) { genero in
+                        Text(verbatim: genero).tag(String?.some(genero))
+                    }
+                }
+                .pickerStyle(.menu)
+            }
+            if filtro.ativo {
+                Divider()
+                Button("Limpar filtros", role: .destructive) { filtro = ServidorDeMidia.Filtro() }
+            }
+        } label: {
+            Image(systemName: filtro.ativo ? "line.3.horizontal.decrease.circle.fill"
+                                           : "line.3.horizontal.decrease.circle")
+        }
+    }
+
+    private func nomeDaOrdem(_ ordem: ServidorDeMidia.Filtro.Ordem) -> LocalizedStringKey {
+        switch ordem {
+        case .nome:       return "Nome"
+        case .adicionado: return "Adicionado em"
+        case .lancamento: return "Lançamento"
+        case .nota:       return "Nota"
+        case .aleatorio:  return "Aleatório"
+        }
     }
 
     /// Do Jellyfin e do Emby, o vídeo abre a página dele, com a sinopse e o
@@ -406,7 +585,12 @@ struct PastaRemotaView: View {
                                 destino: .midia(conta, $0))
                 }
             case .midia(let conta, let pai):
-                let itens = try await servidor(conta).itens(de: pai)
+                let itens: [ServidorDeMidia.Item]
+                if bibliotecaFiltravel != nil {
+                    itens = try await servidor(conta).itens(de: pai, filtro: filtro)
+                } else {
+                    itens = try await servidor(conta).itens(de: pai)
+                }
                 pastas = itens.filter(\.ehPasta).map {
                     PastaRemota(nome: $0.titulo, simbolo: simbolo(doTipo: $0.tipo), destino: .midia(conta, $0),
                                 doServidor: $0)

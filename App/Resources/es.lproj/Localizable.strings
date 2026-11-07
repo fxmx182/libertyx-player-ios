@@ -318,3 +318,33 @@
 "Mais de %@" = "Más de %@";
 "Temporada" = "Temporada";
 "Elenco" = "Reparto";
+
+/* Cliente Jellyfin/Emby completo */
+"Automática (só as forçadas)" = "Automático (solo las forzadas)";
+"Qualidade" = "Calidad";
+"O servidor converte o vídeo para esta qualidade. Legendas de dentro do arquivo não vêm junto." = "El servidor convierte el video a esta calidad. Los subtítulos dentro del archivo no se incluyen.";
+"Trailer" = "Tráiler";
+"Extras" = "Extras";
+"Original" = "Original";
+"Favoritos" = "Favoritos";
+"No servidor" = "En el servidor";
+"Nascimento: %@" = "Nacimiento: %@";
+"Ordenar por" = "Ordenar por";
+"Não vistos" = "No vistos";
+"Gênero" = "Género";
+"Todos os gêneros" = "Todos los géneros";
+"Limpar filtros" = "Borrar filtros";
+"Nome" = "Nombre";
+"Adicionado em" = "Fecha de agregado";
+"Lançamento" = "Estreno";
+"Nota" = "Calificación";
+"Pular créditos" = "Saltar créditos";
+"Pular recapitulação" = "Saltar resumen";
+"Pular prévia" = "Saltar avance";
+"Pular abertura" = "Saltar intro";
+"Escolher usuário" = "Elegir usuario";
+"Aprove este código em outro aparelho já conectado ao servidor (Configurações › Quick Connect):" = "Aprueba este código en otro dispositivo ya conectado al servidor (Configuración › Quick Connect):";
+"Esperando a aprovação…" = "Esperando la aprobación…";
+"Entrar com Quick Connect" = "Entrar con Quick Connect";
+"Sem digitar a senha: o app mostra um código, e você aprova num aparelho que já está conectado." = "Sin escribir la contraseña: la app muestra un código y lo apruebas en un dispositivo ya conectado.";
+"Este servidor não tem o Quick Connect ligado." = "Este servidor no tiene Quick Connect activado.";

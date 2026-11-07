@@ -162,7 +162,8 @@ struct ProcurarView: View {
     /// O que um servidor achou.
     private struct Achados: Identifiable {
         let conta: ContaDeRede
-        let itens: [MediaItem]
+        let servidor: ServidorDeMidia
+        let itens: [ServidorDeMidia.Item]
         var id: UUID { conta.id }
     }
 
@@ -195,7 +196,7 @@ struct ProcurarView: View {
                         }
                         ForEach(remotos) { grupo in
                             Secao(titulo: grupo.conta.nome, extra: "\(grupo.itens.count)").padding(.top, 10)
-                            lista(grupo.itens)
+                            listaDoServidor(grupo)
                         }
 
                         if buscando {
@@ -261,6 +262,26 @@ struct ProcurarView: View {
         }
     }
 
+    /// Do servidor, cada achado abre a página dele — o filme com a sinopse e
+    /// o "Assistir", a série com as temporadas.
+    private func listaDoServidor(_ grupo: Achados) -> some View {
+        LazyVStack(spacing: 4) {
+            ForEach(grupo.itens) { item in
+                NavigationLink { paginaDoServidor(grupo.servidor, item) } label: {
+                    if item.ehVideo {
+                        // Episódio solto não diz nada sem a série na frente.
+                        VideoRow(item: MediaItem(title: item.serie.map { "\($0) · \(item.titulo)" } ?? item.titulo,
+                                                 origin: .midia(conta: grupo.conta.id, item: item.id),
+                                                 modifiedAt: item.dataDeCriacao, duration: item.duracao))
+                    } else {
+                        LinhaDePastaDoServidor(servidor: grupo.servidor, item: item)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
     private func buscarNosServidores(_ termo: String) async {
         remotos = []
         guard termo.count >= 2 else { buscando = false; return }
@@ -276,12 +297,7 @@ struct ProcurarView: View {
         for conta in alvos {
             let servidor = ServidorDeMidia(conta: conta, token: ContasDeRede.shared.segredo(conta))
             guard let itens = try? await servidor.buscar(termo), !itens.isEmpty else { continue }
-            achados.append(Achados(conta: conta, itens: itens.map { item in
-                // Episódio solto não diz nada sem a série na frente.
-                MediaItem(title: item.serie.map { "\($0) · \(item.titulo)" } ?? item.titulo,
-                          origin: .midia(conta: conta.id, item: item.id),
-                          modifiedAt: item.dataDeCriacao, duration: item.duracao)
-            }))
+            achados.append(Achados(conta: conta, servidor: servidor, itens: itens))
         }
         guard !Task.isCancelled else { return }
         remotos = achados

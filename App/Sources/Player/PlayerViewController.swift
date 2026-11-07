@@ -71,6 +71,12 @@ final class PlayerViewController: UIViewController {
     private let nowPlaying = NowPlayingCenter()
     private let aviso = AvisoAoServidor()
 
+    /// Abertura, créditos e recapitulação marcados no Jellyfin (ver
+    /// `ServidorDeMidia.segmentos`), e o botão de pular o que está passando.
+    private var segmentos: [ServidorDeMidia.Segmento] = []
+    private var segmentoNaTela: ServidorDeMidia.Segmento?
+    private let botaoPular = UIButton(type: .system)
+
     private var rateBeforeHold: Float = 1.0
     /// O "segurar para acelerar" está valendo agora.
     private var aceleracaoAtiva = false
@@ -164,6 +170,7 @@ final class PlayerViewController: UIViewController {
         view.addSubview(haloDir)
 
         setupSubtitleLabel()
+        prepararBotaoPular()
         systemVolume.attach(to: view)
         observeHardwareVolume()
 
@@ -332,6 +339,7 @@ final class PlayerViewController: UIViewController {
             }
 
             self.controls.update(currentTime: time, duration: self.engine.duration)
+            self.atualizarPulo(time)
             self.refreshIndicadores()
             self.controls.setBuffered(self.engine.bufferedTime)
             self.saveResumePoint(time)
@@ -365,6 +373,7 @@ final class PlayerViewController: UIViewController {
                 try await engine.load(item)
                 controls.update(currentTime: 0, duration: engine.duration)
                 buscarLegendasAoLado(item)
+                carregarSegmentos(item)
 
                 // Retomar é pergunta, não regra: às vezes se quer rever o
                 // filme desde o começo, e voltar sozinho ao meio obriga a
@@ -385,6 +394,78 @@ final class PlayerViewController: UIViewController {
                 presentError(error.localizedDescription)
             }
         }
+    }
+
+    // MARK: - Pular abertura
+
+    /// O botão claro no canto, por cima de tudo, como no app do Jellyfin e
+    /// nos de streaming: aparece só enquanto o trecho marcado passa, com ou
+    /// sem os controles na tela.
+    private func prepararBotaoPular() {
+        var config = UIButton.Configuration.filled()
+        config.baseBackgroundColor = UIColor.white.withAlphaComponent(0.92)
+        config.baseForegroundColor = .black
+        config.cornerStyle = .capsule
+        config.image = UIImage(systemName: "forward.end.fill")
+        config.imagePadding = 8
+        config.contentInsets = NSDirectionalEdgeInsets(top: 11, leading: 18, bottom: 11, trailing: 18)
+        botaoPular.configuration = config
+        botaoPular.alpha = 0
+        botaoPular.isHidden = true
+        botaoPular.translatesAutoresizingMaskIntoConstraints = false
+        botaoPular.addTarget(self, action: #selector(pularSegmento), for: .touchUpInside)
+        view.addSubview(botaoPular)
+        NSLayoutConstraint.activate([
+            botaoPular.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -24),
+            botaoPular.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -110),
+        ])
+    }
+
+    private func carregarSegmentos(_ alvo: MediaItem) {
+        segmentos = []
+        mostrarPulo(nil)
+        guard case .midia(let contaID, let itemID) = alvo.origin,
+              let conta = ContasDeRede.shared.conta(contaID) else { return }
+        Task { @MainActor [weak self] in
+            let lidos = await ServidorDeMidia(conta: conta, token: ContasDeRede.shared.segredo(conta)).segmentos(itemID)
+            guard let self, self.item.origin == alvo.origin else { return }
+            self.segmentos = lidos.filter { ["Intro", "Outro", "Recap", "Preview"].contains($0.tipo) }
+        }
+    }
+
+    private func atualizarPulo(_ tempo: Double) {
+        guard !segmentos.isEmpty else { return }
+        // Some no último segundo do trecho: pular dali já não adianta nada.
+        let atual = segmentos.first { tempo >= $0.inicio && tempo < $0.fim - 1 }
+        if atual != segmentoNaTela { mostrarPulo(atual) }
+    }
+
+    private func mostrarPulo(_ segmento: ServidorDeMidia.Segmento?) {
+        segmentoNaTela = segmento
+        if let segmento {
+            var config = botaoPular.configuration
+            switch segmento.tipo {
+            case "Outro":   config?.title = String(localized: "Pular créditos")
+            case "Recap":   config?.title = String(localized: "Pular recapitulação")
+            case "Preview": config?.title = String(localized: "Pular prévia")
+            default:        config?.title = String(localized: "Pular abertura")
+            }
+            botaoPular.configuration = config
+            botaoPular.isHidden = false
+        }
+        UIView.animate(withDuration: 0.2, animations: {
+            self.botaoPular.alpha = segmento == nil ? 0 : 1
+        }, completion: { _ in
+            if self.segmentoNaTela == nil { self.botaoPular.isHidden = true }
+        })
+    }
+
+    @objc private func pularSegmento() {
+        guard let segmento = segmentoNaTela else { return }
+        mostrarPulo(nil)
+        // Créditos que vão até o fim levam ao fim — e o fim leva ao próximo episódio.
+        let destino = min(segmento.fim, max(0, engine.duration - 0.5))
+        Task { @MainActor in await self.engine.seek(to: destino, precise: false) }
     }
 
     /// As legendas em arquivo próprio ao lado do vídeo (ver `LegendasAoLado`).

@@ -25,6 +25,9 @@ final class PonteHTTP: @unchecked Sendable {
     private struct Destino {
         let url: URL
         let cabecalhos: [String: String]
+        /// Lista HLS (a conversão do Jellyfin): cada pedido é um arquivo
+        /// diferente ao lado da lista, e não um pedaço do mesmo arquivo.
+        var lista = false
     }
 
     private let fila = DispatchQueue(label: "libertyx.ponte")
@@ -64,6 +67,21 @@ final class PonteHTTP: @unchecked Sendable {
             throw URLError(.badURL)
         }
         return local
+    }
+
+    /// O endereço local de uma lista HLS. A lista e os pedaços dela usam
+    /// endereços relativos, então tudo o que o VLC pedir depois do token é
+    /// resolvido a partir de `url` e repassado inteiro, sem faixas de bytes.
+    func endereco(paraLista url: URL, cabecalhos: [String: String] = [:]) async throws -> URL {
+        let porta = try await portaPronta()
+        let token = UUID().uuidString
+        trava.lock()
+        destinos[token] = Destino(url: url, cabecalhos: cabecalhos, lista: true)
+        trava.unlock()
+        var local = "http://127.0.0.1:\(porta)/\(token)/\(url.lastPathComponent)"
+        if let consulta = url.query { local += "?" + consulta }
+        guard let endereco = URL(string: local) else { throw URLError(.badURL) }
+        return endereco
     }
 
     // MARK: - Servidor local
@@ -124,6 +142,8 @@ final class PonteHTTP: @unchecked Sendable {
     private struct Pedido {
         let metodo: String
         let token: String
+        /// O que vem depois do token, com a consulta: o arquivo pedido numa lista.
+        let resto: String
         let inicio: Int64?
         let fim: Int64?
 
@@ -132,9 +152,10 @@ final class PonteHTTP: @unchecked Sendable {
             let partes = linhas.first?.split(separator: " ") ?? []
             guard partes.count >= 2 else { return nil }
             metodo = String(partes[0])
-            let caminho = partes[1].split(separator: "/")
+            let caminho = partes[1].split(separator: "/", maxSplits: 1)
             guard let primeiro = caminho.first else { return nil }
             token = String(primeiro)
+            resto = caminho.count > 1 ? String(caminho[1]) : ""
 
             var inicio: Int64?
             var fim: Int64?
@@ -170,6 +191,11 @@ final class PonteHTTP: @unchecked Sendable {
         }
         guard pedido.metodo == "GET" || pedido.metodo == "HEAD" else {
             try? await enviarCabecalho(conexao, status: 405, campos: ["Content-Length": "0"])
+            return
+        }
+
+        if destino.lista {
+            await repassar(conexao, destino, pedido)
             return
         }
 
@@ -221,6 +247,30 @@ final class PonteHTTP: @unchecked Sendable {
             }
         } catch {
             LabLog.problem("ponte: \(error.localizedDescription)")
+        }
+    }
+
+    /// Um arquivo da lista HLS, inteiro: a lista em texto ou um pedaço de
+    /// poucos segundos de vídeo.
+    private func repassar(_ conexao: NWConnection, _ destino: Destino, _ pedido: Pedido) async {
+        do {
+            guard let url = URL(string: pedido.resto, relativeTo: destino.url)?.absoluteURL else {
+                try await enviarCabecalho(conexao, status: 404, campos: ["Content-Length": "0"])
+                return
+            }
+            var requisicao = URLRequest(url: url)
+            destino.cabecalhos.forEach { requisicao.setValue($1, forHTTPHeaderField: $0) }
+            requisicao.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
+            // A conversão de um pedaço pode levar uns segundos no servidor.
+            requisicao.timeoutInterval = 90
+            let (dados, resposta) = try await sessao.data(for: requisicao)
+            let http = resposta as? HTTPURLResponse
+            var campos = ["Content-Length": "\(dados.count)"]
+            if let tipo = http?.value(forHTTPHeaderField: "Content-Type") { campos["Content-Type"] = tipo }
+            try await enviarCabecalho(conexao, status: http?.statusCode ?? 502, campos: campos)
+            if pedido.metodo == "GET" { try await enviar(conexao, dados) }
+        } catch {
+            LabLog.problem("ponte (lista): \(error.localizedDescription)")
         }
     }
 

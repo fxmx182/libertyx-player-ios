@@ -22,13 +22,28 @@ final class FineScrubSlider: UISlider {
 
     private var ultimoX: CGFloat = 0
 
+    /// A área de toque passa bem da barra, para cima e para baixo: a trilha
+    /// tem 5 pontos e a bolinha 24, menos que a ponta de um dedo — e errar
+    /// por pouco fazia o toque cair no vídeo e esconder os controles.
+    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        bounds.insetBy(dx: -6, dy: -22).contains(point)
+    }
+
     override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
-        let comecou = super.beginTracking(touch, with: event)
-        if comecou {
-            ultimoX = touch.location(in: self).x
-            mudarVelocidade(para: 1)
+        let ponto = touch.location(in: self)
+        // O controle do sistema só arrasta quem encosta na bolinha. Aqui o
+        // dedo pega a barra onde encostar: a bolinha vem até ele e segue
+        // dali, sem precisar mirar.
+        if !super.beginTracking(touch, with: event) {
+            let trilha = trackRect(forBounds: bounds)
+            guard trilha.width > 0 else { return false }
+            let fracao = Float(max(0, min(1, (ponto.x - trilha.minX) / trilha.width)))
+            value = minimumValue + fracao * (maximumValue - minimumValue)
+            sendActions(for: .valueChanged)
         }
-        return comecou
+        ultimoX = ponto.x
+        mudarVelocidade(para: 1)
+        return true
     }
 
     override func continueTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {

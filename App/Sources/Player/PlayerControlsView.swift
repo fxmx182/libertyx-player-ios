@@ -226,20 +226,22 @@ final class PlayerControlsView: UIView {
 
         // Trilha desenhada, e não escalada: escalar o controle inteiro
         // engrossava a barra mas esticava o marcador junto, deixando-o oval.
-        slider.setMinimumTrackImage(Self.trackImage(color: tintColor), for: .normal)
+        slider.setMinimumTrackImage(Self.trackImage(color: tintColor, height: 5), for: .normal)
         // Transparente de propósito: quem desenha o fundo agora é a trilha
         // própria, para caber a faixa do que já foi carregado entre os dois.
-        slider.setMaximumTrackImage(Self.trackImage(color: .clear), for: .normal)
+        slider.setMaximumTrackImage(Self.trackImage(color: .clear, height: 5), for: .normal)
 
         trilhaFundo.backgroundColor = UIColor.white.withAlphaComponent(0.28)
         trilhaCarregada.backgroundColor = UIColor.white.withAlphaComponent(0.55)
         [trilhaFundo, trilhaCarregada].forEach {
-            $0.layer.cornerRadius = 1.5
+            $0.layer.cornerRadius = 2.5
             $0.isUserInteractionEnabled = false
             $0.translatesAutoresizingMaskIntoConstraints = false
         }
-        slider.setThumbImage(Self.thumbImage(diameter: 16), for: .normal)
-        slider.setThumbImage(Self.thumbImage(diameter: 22), for: .highlighted)
+        // Grande o bastante para o polegar achar sem mirar; maior ainda
+        // enquanto arrasta, para se ver por baixo do dedo.
+        slider.setThumbImage(Self.thumbImage(diameter: 24), for: .normal)
+        slider.setThumbImage(Self.thumbImage(diameter: 32), for: .highlighted)
         slider.translatesAutoresizingMaskIntoConstraints = false
         // Sem aviso, a rolagem fina parece a barra emperrando: o dedo anda e
         // ela anda menos. Dizendo a velocidade, vira ferramenta.
@@ -382,11 +384,11 @@ final class PlayerControlsView: UIView {
             trilhaFundo.leadingAnchor.constraint(equalTo: slider.leadingAnchor, constant: 2),
             trilhaFundo.trailingAnchor.constraint(equalTo: slider.trailingAnchor, constant: -2),
             trilhaFundo.centerYAnchor.constraint(equalTo: slider.centerYAnchor),
-            trilhaFundo.heightAnchor.constraint(equalToConstant: 3),
+            trilhaFundo.heightAnchor.constraint(equalToConstant: 5),
 
             trilhaCarregada.leadingAnchor.constraint(equalTo: trilhaFundo.leadingAnchor),
             trilhaCarregada.centerYAnchor.constraint(equalTo: trilhaFundo.centerYAnchor),
-            trilhaCarregada.heightAnchor.constraint(equalToConstant: 3),
+            trilhaCarregada.heightAnchor.constraint(equalToConstant: 5),
         ])
     }
 
@@ -568,8 +570,14 @@ final class PlayerControlsView: UIView {
         return UIGraphicsImageRenderer(size: size).image { context in
             // Dourada: a bolinha é a marca do ponto atual, e na cor da marca
             // ela se acha sobre qualquer quadro.
+            // A borda branca e a sombra a separam de um quadro também dourado.
+            let circulo = CGRect(origin: .zero, size: size).insetBy(dx: 2, dy: 2)
+            context.cgContext.setShadow(offset: .zero, blur: 2, color: UIColor.black.withAlphaComponent(0.5).cgColor)
+            UIColor.white.setFill()
+            context.cgContext.fillEllipse(in: circulo)
+            context.cgContext.setShadow(offset: .zero, blur: 0, color: nil)
             LabTheme.accentUI.setFill()
-            context.cgContext.fillEllipse(in: CGRect(origin: .zero, size: size))
+            context.cgContext.fillEllipse(in: circulo.insetBy(dx: 2, dy: 2))
         }
     }
 

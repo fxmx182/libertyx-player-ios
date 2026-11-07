@@ -166,16 +166,16 @@ struct ServidorDeMidia {
         return await lembrandoOndeParou(lista.Items)
     }
 
-    /// Filmes e episódios cujo nome tem `termo`, de todas as bibliotecas.
+    /// Filmes, séries e episódios cujo nome tem `termo`, de todas as bibliotecas.
     func buscar(_ termo: String) async throws -> [Item] {
         let lista: Lista = try await pedir("/Users/\(usuarioID)/Items", consulta: [
             URLQueryItem(name: "searchTerm", value: termo),
             URLQueryItem(name: "Recursive", value: "true"),
-            URLQueryItem(name: "IncludeItemTypes", value: "Movie,Episode,Video,MusicVideo"),
+            URLQueryItem(name: "IncludeItemTypes", value: "Movie,Series,Episode,Video,MusicVideo"),
             URLQueryItem(name: "Fields", value: "DateCreated"),
             URLQueryItem(name: "Limit", value: "40"),
         ])
-        return await lembrandoOndeParou(lista.Items.filter(\.ehVideo))
+        return await lembrandoOndeParou(lista.Items.filter { $0.ehVideo || $0.tipo == "Series" })
     }
 
     /// O que a pessoa começou e não terminou, do mais recente ao mais antigo.
@@ -257,6 +257,10 @@ struct ServidorDeMidia {
         let pessoas: [Pessoa]
         let fluxos: [Fluxo]
         let nomeDaTemporada: String?
+        /// Trailers do YouTube que os provedores acharam, e quantos há no disco.
+        let trailersDaInternet: [URL]
+        let trailersNoDisco: Int
+        let extras: Int
         /// O logotipo e o fundo são do próprio item ou, num episódio, da série.
         let logoDe: String?
         let fundoDe: String?
@@ -282,15 +286,21 @@ struct ServidorDeMidia {
             let tipo: String
             let titulo: String
             let externo: Bool
+            /// O número da faixa no servidor — o que a conversão e as legendas de fora usam.
+            let indice: Int
+            let padrao: Bool
 
             enum CodingKeys: String, CodingKey {
                 case tipo = "Type", titulo = "DisplayTitle", codec = "Codec", idioma = "Language", externo = "IsExternal"
+                case indice = "Index", padrao = "IsDefault"
             }
 
             init(from decoder: Decoder) throws {
                 let c = try decoder.container(keyedBy: CodingKeys.self)
                 tipo = (try? c.decode(String.self, forKey: .tipo)) ?? ""
                 externo = (try? c.decode(Bool.self, forKey: .externo)) ?? false
+                indice = (try? c.decode(Int.self, forKey: .indice)) ?? -1
+                padrao = (try? c.decode(Bool.self, forKey: .padrao)) ?? false
                 // O "1080p H264 SDR" e o "Portuguese - Dolby Digital+ - Stereo"
                 // do app do servidor são este campo, montado por ele.
                 let idioma = try? c.decode(String.self, forKey: .idioma)
@@ -306,9 +316,12 @@ struct ServidorDeMidia {
             case fluxos = "MediaStreams", fontes = "MediaSources", nomeDaTemporada = "SeasonName"
             case id = "Id", imagens = "ImageTags", fundos = "BackdropImageTags"
             case logoDoPai = "ParentLogoItemId", fundoDoPai = "ParentBackdropItemId"
+            case trailersDaInternet = "RemoteTrailers", trailersNoDisco = "LocalTrailerCount"
+            case extras = "SpecialFeatureCount"
         }
 
         private struct Fonte: Decodable { let MediaStreams: [Fluxo]? }
+        private struct Trailer: Decodable { let Url: String? }
 
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -325,6 +338,10 @@ struct ServidorDeMidia {
                 ? ((try? c.decode([Fonte].self, forKey: .fontes))?.first?.MediaStreams ?? [])
                 : soltos
             nomeDaTemporada = try? c.decode(String.self, forKey: .nomeDaTemporada)
+            trailersDaInternet = ((try? c.decode([Trailer].self, forKey: .trailersDaInternet)) ?? [])
+                .compactMap { $0.Url.flatMap(URL.init(string:)) }
+            trailersNoDisco = (try? c.decode(Int.self, forKey: .trailersNoDisco)) ?? 0
+            extras = (try? c.decode(Int.self, forKey: .extras)) ?? 0
             let imagens = (try? c.decode([String: String].self, forKey: .imagens)) ?? [:]
             let logoDoPai = try? c.decode(String.self, forKey: .logoDoPai)
             logoDe = imagens["Logo"] != nil ? id : logoDoPai
@@ -337,13 +354,15 @@ struct ServidorDeMidia {
             fluxos.filter { $0.tipo == tipo }.map(\.titulo).filter { !$0.isEmpty }
         }
 
+        func fluxosDo(_ tipo: String) -> [Fluxo] { fluxos.filter { $0.tipo == tipo } }
+
         func pessoasCom(_ tipos: Set<String>) -> [Pessoa] { pessoas.filter { tipos.contains($0.tipo) } }
     }
 
     /// O item de novo (o "visto" e onde parou podem ter mudado) e os detalhes dele.
     func detalhes(_ id: String) async throws -> (item: Item, detalhes: Detalhes) {
         let dados = try await pedirDados("/Users/\(usuarioID)/Items/\(id)", consulta: [
-            URLQueryItem(name: "Fields", value: "Overview,People,Genres,MediaSources,MediaStreams,PremiereDate,DateCreated"),
+            URLQueryItem(name: "Fields", value: "Overview,People,Genres,MediaSources,MediaStreams,PremiereDate,DateCreated,RemoteTrailers"),
         ])
         do {
             let decodificador = JSONDecoder()
@@ -354,6 +373,204 @@ struct ServidorDeMidia {
         } catch {
             throw ErroDeServidor(mensagem: String(localized: "Não há um servidor \(conta.tipo.nome) nesse endereço."))
         }
+    }
+
+    // MARK: - Séries, pessoas, favoritos
+
+    /// As temporadas da série, na ordem.
+    func temporadas(_ serieID: String) async throws -> [Item] {
+        let lista: Lista = try await pedir("/Shows/\(serieID)/Seasons", consulta: [
+            URLQueryItem(name: "UserId", value: usuarioID),
+            URLQueryItem(name: "Fields", value: "DateCreated"),
+            URLQueryItem(name: "EnableUserData", value: "true"),
+        ])
+        return lista.Items
+    }
+
+    /// Os episódios de uma temporada da série.
+    func episodios(_ serieID: String, temporada: String) async throws -> [Item] {
+        let lista: Lista = try await pedir("/Shows/\(serieID)/Episodes", consulta: [
+            URLQueryItem(name: "UserId", value: usuarioID),
+            URLQueryItem(name: "SeasonId", value: temporada),
+            URLQueryItem(name: "Fields", value: "DateCreated,Overview"),
+            URLQueryItem(name: "EnableUserData", value: "true"),
+        ])
+        return await lembrandoOndeParou(lista.Items.filter(\.ehVideo))
+    }
+
+    /// O episódio que a pessoa deve ver agora: o "A seguir" da série.
+    func proximoDaSerie(_ serieID: String) async throws -> Item? {
+        let lista: Lista = try await pedir("/Shows/NextUp", consulta: [
+            URLQueryItem(name: "UserId", value: usuarioID),
+            URLQueryItem(name: "SeriesId", value: serieID),
+            URLQueryItem(name: "Limit", value: "1"),
+            URLQueryItem(name: "Fields", value: "DateCreated"),
+            URLQueryItem(name: "EnableUserData", value: "true"),
+        ])
+        return await lembrandoOndeParou(lista.Items).first(where: \.ehVideo)
+    }
+
+    /// Os filmes e as séries de que a pessoa participou, do mais novo ao mais velho.
+    func obras(daPessoa id: String) async throws -> [Item] {
+        let lista: Lista = try await pedir("/Users/\(usuarioID)/Items", consulta: [
+            URLQueryItem(name: "PersonIds", value: id),
+            URLQueryItem(name: "Recursive", value: "true"),
+            URLQueryItem(name: "IncludeItemTypes", value: "Movie,Series"),
+            URLQueryItem(name: "SortBy", value: "PremiereDate,ProductionYear,SortName"),
+            URLQueryItem(name: "SortOrder", value: "Descending"),
+            URLQueryItem(name: "Fields", value: "DateCreated"),
+            URLQueryItem(name: "EnableUserData", value: "true"),
+        ])
+        return await lembrandoOndeParou(lista.Items)
+    }
+
+    /// Os favoritos do usuário: filmes, séries e episódios marcados com o coração.
+    func favoritos() async throws -> [Item] {
+        let lista: Lista = try await pedir("/Users/\(usuarioID)/Items", consulta: [
+            URLQueryItem(name: "Filters", value: "IsFavorite"),
+            URLQueryItem(name: "Recursive", value: "true"),
+            URLQueryItem(name: "IncludeItemTypes", value: "Movie,Series,Episode,Video"),
+            URLQueryItem(name: "SortBy", value: "SortName"),
+            URLQueryItem(name: "Fields", value: "DateCreated"),
+            URLQueryItem(name: "EnableUserData", value: "true"),
+        ])
+        return await lembrandoOndeParou(lista.Items)
+    }
+
+    /// Os gêneros que existem numa biblioteca, para o filtro.
+    func generos(_ biblioteca: Item) async throws -> [String] {
+        let lista: Lista = try await pedir("/Genres", consulta: [
+            URLQueryItem(name: "ParentId", value: biblioteca.id),
+            URLQueryItem(name: "UserId", value: usuarioID),
+            URLQueryItem(name: "SortBy", value: "SortName"),
+        ])
+        return lista.Items.map(\.nome).filter { !$0.isEmpty }
+    }
+
+    /// Ordem e filtros de uma biblioteca, como no app do Jellyfin.
+    struct Filtro: Equatable {
+        enum Ordem: String, CaseIterable {
+            case nome = "SortName", adicionado = "DateCreated", lancamento = "PremiereDate"
+            case nota = "CommunityRating", aleatorio = "Random"
+        }
+        var ordem: Ordem = .nome
+        var decrescente = false
+        var naoVistos = false
+        var favoritos = false
+        var genero: String?
+
+        var ativo: Bool { naoVistos || favoritos || genero != nil || ordem != .nome || decrescente }
+    }
+
+    /// O que há numa biblioteca de filmes ou séries, já ordenado e filtrado
+    /// pelo servidor — que sabe a nota, a data e o gênero de cada um.
+    func itens(de biblioteca: Item, filtro: Filtro) async throws -> [Item] {
+        var consulta = [
+            URLQueryItem(name: "ParentId", value: biblioteca.id),
+            URLQueryItem(name: "Recursive", value: "true"),
+            URLQueryItem(name: "IncludeItemTypes", value: biblioteca.tipoDeColecao == "tvshows" ? "Series" : "Movie"),
+            URLQueryItem(name: "SortBy", value: filtro.ordem == .nome ? "SortName" : "\(filtro.ordem.rawValue),SortName"),
+            URLQueryItem(name: "SortOrder", value: filtro.decrescente ? "Descending" : "Ascending"),
+            URLQueryItem(name: "Fields", value: "DateCreated"),
+            URLQueryItem(name: "EnableUserData", value: "true"),
+        ]
+        var filtros: [String] = []
+        if filtro.naoVistos { filtros.append("IsUnplayed") }
+        if filtro.favoritos { filtros.append("IsFavorite") }
+        if !filtros.isEmpty { consulta.append(URLQueryItem(name: "Filters", value: filtros.joined(separator: ","))) }
+        if let genero = filtro.genero { consulta.append(URLQueryItem(name: "Genres", value: genero)) }
+        let lista: Lista = try await pedir("/Users/\(usuarioID)/Items", consulta: consulta)
+        return await lembrandoOndeParou(lista.Items)
+    }
+
+    // MARK: - Trailers, extras e marcações
+
+    /// Os trailers guardados no disco, ao lado do filme.
+    func trailersNoDisco(_ id: String) async throws -> [Item] {
+        try await pedir("/Users/\(usuarioID)/Items/\(id)/LocalTrailers")
+    }
+
+    /// Bastidores, cenas cortadas, entrevistas: os extras da pasta do filme.
+    func extras(_ id: String) async throws -> [Item] {
+        try await pedir("/Users/\(usuarioID)/Items/\(id)/SpecialFeatures")
+    }
+
+    /// Um trecho marcado do vídeo — abertura, créditos, recapitulação.
+    struct Segmento: Decodable, Hashable {
+        let tipo: String
+        let inicio: Double
+        let fim: Double
+
+        enum CodingKeys: String, CodingKey { case tipo = "Type", inicio = "StartTicks", fim = "EndTicks" }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            tipo = (try? c.decode(String.self, forKey: .tipo)) ?? ""
+            inicio = Double((try? c.decode(Int64.self, forKey: .inicio)) ?? 0) / ServidorDeMidia.ticks
+            fim = Double((try? c.decode(Int64.self, forKey: .fim)) ?? 0) / ServidorDeMidia.ticks
+        }
+    }
+
+    /// As marcações do vídeo (Jellyfin 10.10 em diante). Quem as cria é um
+    /// plugin do servidor — o Intro Skipper, por exemplo; sem ele a lista vem
+    /// vazia e o player só não oferece o "Pular".
+    func segmentos(_ id: String) async -> [Segmento] {
+        struct Resposta: Decodable { let Items: [Segmento] }
+        guard let resposta: Resposta = try? await pedir("/MediaSegments/\(id)") else { return [] }
+        return resposta.Items.filter { $0.fim > $0.inicio }
+    }
+
+    // MARK: - Usuários e Quick Connect
+
+    /// Os usuários que o servidor mostra na tela de entrada — os que não
+    /// estão ocultos. Serve para escolher quem entra sem digitar o nome.
+    static func usuariosVisiveis(tipo: ContaDeRede.Tipo, endereco: String) async -> [String] {
+        let provisoria = ContaDeRede(tipo: tipo, nome: "", endereco: endereco, usuario: "")
+        struct Usuario: Decodable { let Name: String }
+        let lista: [Usuario]? = try? await ServidorDeMidia(conta: provisoria, token: nil).pedir("/Users/Public")
+        return (lista ?? []).map(\.Name)
+    }
+
+    /// O código do Quick Connect: aparece no app e é aprovado em outro
+    /// aparelho já conectado (Painel do usuário › Quick Connect).
+    struct PedidoDeQuickConnect: Decodable {
+        let Code: String
+        let Secret: String
+    }
+
+    static func iniciarQuickConnect(tipo: ContaDeRede.Tipo, endereco: String) async throws -> PedidoDeQuickConnect {
+        let provisoria = ContaDeRede(tipo: tipo, nome: "", endereco: endereco, usuario: "")
+        do {
+            return try await ServidorDeMidia(conta: provisoria, token: nil)
+                .pedir("/QuickConnect/Initiate", corpo: Data("{}".utf8))
+        } catch let erro as URLError {
+            // Sem conexão é outro problema: quem chama tenta o outro endereço.
+            throw erro
+        } catch {
+            throw ErroDeServidor(mensagem: String(localized: "Este servidor não tem o Quick Connect ligado."))
+        }
+    }
+
+    /// Espera a aprovação e entra. Devolve o nome, o id do usuário e o token.
+    static func esperarQuickConnect(tipo: ContaDeRede.Tipo, endereco: String,
+                                    _ pedido: PedidoDeQuickConnect) async throws -> (usuario: String, usuarioID: String, token: String) {
+        let provisoria = ContaDeRede(tipo: tipo, nome: "", endereco: endereco, usuario: "")
+        let servidor = ServidorDeMidia(conta: provisoria, token: nil)
+        struct Estado: Decodable { let Authenticated: Bool }
+        while true {
+            try await Task.sleep(nanoseconds: 3_000_000_000)
+            let estado: Estado = try await servidor.pedir("/QuickConnect/Connect",
+                                                          consulta: [URLQueryItem(name: "Secret", value: pedido.Secret)])
+            if estado.Authenticated { break }
+        }
+        struct Resposta: Decodable {
+            struct Usuario: Decodable { let Id: String; let Name: String }
+            let User: Usuario
+            let AccessToken: String
+        }
+        let corpo = try JSONSerialization.data(withJSONObject: ["Secret": pedido.Secret])
+        let resposta: Resposta = try await servidor.pedir("/Users/AuthenticateWithQuickConnect", corpo: corpo)
+        return (resposta.User.Name, resposta.User.Id, resposta.AccessToken)
     }
 
     /// O vídeo do servidor como o player e o histórico o conhecem — o mesmo
@@ -407,14 +624,15 @@ struct ServidorDeMidia {
     ///
     /// `evento` é `nil` no começo, `Progress` durante e `Stopped` no fim — e
     /// é no `Stopped` perto do fim que o servidor marca como visto.
-    func informar(_ evento: String?, item: String, segundos: Double, pausado: Bool, sessao: String) async throws {
+    func informar(_ evento: String?, item: String, segundos: Double, pausado: Bool, sessao: String,
+                  convertendo: Bool = false) async throws {
         let corpo = try JSONSerialization.data(withJSONObject: [
             "ItemId": item,
             "MediaSourceId": item,
             "PositionTicks": Int64(max(0, segundos) * Self.ticks),
             "IsPaused": pausado,
             "CanSeek": true,
-            "PlayMethod": "DirectPlay",
+            "PlayMethod": convertendo ? "Transcode" : "DirectPlay",
             "PlaySessionId": sessao,
         ] as [String: Any])
         // O servidor responde sem corpo (204): não há o que ler.
@@ -461,6 +679,44 @@ struct ServidorDeMidia {
             URLQueryItem(name: "static", value: "true"),
             URLQueryItem(name: "MediaSourceId", value: id),
         ] + chaveNaConsulta)
+    }
+
+    /// A versão convertida pelo servidor (ver `Qualidade`): uma lista HLS em
+    /// H.264 e AAC estéreo, no teto de bits pedido. Só o vídeo e o áudio
+    /// escolhido; as legendas de fora o app baixa à parte, como sempre.
+    func urlDaConversao(_ id: String, kbps: Int, sessao: String, audio: Int?) -> URL? {
+        let largura = kbps >= 10_000 ? 1920 : kbps >= 4_000 ? 1280 : kbps >= 2_000 ? 960 : 640
+        var consulta = [
+            URLQueryItem(name: "MediaSourceId", value: id),
+            URLQueryItem(name: "DeviceId", value: Self.idDoAparelho),
+            URLQueryItem(name: "PlaySessionId", value: sessao),
+            URLQueryItem(name: "VideoCodec", value: "h264"),
+            URLQueryItem(name: "AudioCodec", value: "aac"),
+            URLQueryItem(name: "VideoBitrate", value: "\(max(300_000, kbps * 1000 - 192_000))"),
+            URLQueryItem(name: "AudioBitrate", value: "192000"),
+            URLQueryItem(name: "MaxAudioChannels", value: "2"),
+            URLQueryItem(name: "TranscodingMaxAudioChannels", value: "2"),
+            URLQueryItem(name: "MaxWidth", value: "\(largura)"),
+            URLQueryItem(name: "SegmentContainer", value: "ts"),
+            URLQueryItem(name: "MinSegments", value: "1"),
+            URLQueryItem(name: "BreakOnNonKeyFrames", value: "true"),
+        ]
+        if let audio { consulta.append(URLQueryItem(name: "AudioStreamIndex", value: "\(audio)")) }
+        return url("/Videos/\(id)/master.m3u8", consulta: consulta + chaveNaConsulta)
+    }
+
+    /// Desliga a conversão no servidor quando o vídeo fecha — sem isto, o
+    /// ffmpeg de lá continuaria convertendo um filme que ninguém vê.
+    func pararConversao(_ sessao: String) async {
+        _ = try? await pedirDados("/Videos/ActiveEncodings", consulta: [
+            URLQueryItem(name: "DeviceId", value: Self.idDoAparelho),
+            URLQueryItem(name: "PlaySessionId", value: sessao),
+        ], apagar: true)
+    }
+
+    /// O token num cabeçalho, para a ponte repassar a cada pedaço da conversão.
+    var cabecalhoDoToken: [String: String] {
+        token.map { ["X-Emby-Token": $0] } ?? [:]
     }
 
     /// Imagem do item: `Thumb` e `Backdrop` são deitadas, como as capas do
