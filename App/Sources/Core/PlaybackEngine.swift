@@ -155,15 +155,15 @@ protocol ComJanelaFlutuante: AnyObject {
     func alternarJanela()
 }
 
-/// Motor que atrasa ou adianta a legenda — para o arquivo cuja legenda veio
-/// fora de compasso com a fala.
-@MainActor
 /// O motor que muda o tamanho da legenda (ver `TamanhoDaLegenda`).
 @MainActor
 protocol MudaTamanhoDaLegenda: AnyObject {
     func refazerComTamanhoDaLegenda() async
 }
 
+/// Motor que atrasa ou adianta a legenda — para o arquivo cuja legenda veio
+/// fora de compasso com a fala.
+@MainActor
 protocol AtrasaLegenda: AnyObject {
     /// Em segundos: positivo mostra a legenda mais tarde, negativo mais cedo.
     /// Vale para o vídeo da vez; o descompasso é de um arquivo, não do aparelho.
