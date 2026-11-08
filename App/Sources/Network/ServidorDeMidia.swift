@@ -523,6 +523,121 @@ struct ServidorDeMidia {
         return resposta.Items.filter { $0.fim > $0.inicio }
     }
 
+    // MARK: - TV ao vivo
+
+    /// Um canal da TV ao vivo do servidor (sintonizador, lista M3U, HDHomeRun…).
+    struct Canal: Decodable, Identifiable, Hashable {
+        let id: String
+        let nome: String
+        let numero: String?
+        let programa: Programa?
+
+        /// O que está passando agora no canal, segundo o guia do servidor.
+        struct Programa: Decodable, Hashable {
+            let nome: String
+            let inicio: Date?
+            let fim: Date?
+
+            enum CodingKeys: String, CodingKey { case nome = "Name", inicio = "StartDate", fim = "EndDate" }
+
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                nome = (try? c.decode(String.self, forKey: .nome)) ?? ""
+                inicio = (try? c.decode(String.self, forKey: .inicio)).flatMap(ServidorDeMidia.data)
+                fim = (try? c.decode(String.self, forKey: .fim)).flatMap(ServidorDeMidia.data)
+            }
+
+            /// De 0 a 1: quanto do programa já passou.
+            func andamento(_ agora: Date = Date()) -> Double? {
+                guard let inicio, let fim, fim > inicio else { return nil }
+                return min(1, max(0, agora.timeIntervalSince(inicio) / fim.timeIntervalSince(inicio)))
+            }
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case id = "Id", nome = "Name", numero = "Number", numeroDoCanal = "ChannelNumber"
+            case programa = "CurrentProgram"
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            id = try c.decode(String.self, forKey: .id)
+            nome = (try? c.decode(String.self, forKey: .nome)) ?? ""
+            let numero = try? c.decode(String.self, forKey: .numero)
+            self.numero = numero ?? (try? c.decode(String.self, forKey: .numeroDoCanal))
+            programa = try? c.decode(Programa.self, forKey: .programa)
+        }
+    }
+
+    /// Os canais, com o programa de agora. Vazio quando o servidor não tem TV
+    /// ao vivo configurada — e aí o app simplesmente não mostra a faixa.
+    func canais(limite: Int? = nil) async throws -> [Canal] {
+        struct Resposta: Decodable { let Items: [Canal] }
+        var consulta = [
+            URLQueryItem(name: "UserId", value: usuarioID),
+            URLQueryItem(name: "AddCurrentProgram", value: "true"),
+            URLQueryItem(name: "EnableImages", value: "true"),
+            URLQueryItem(name: "EnableUserData", value: "false"),
+        ]
+        if let limite { consulta.append(URLQueryItem(name: "Limit", value: "\(limite)")) }
+        let resposta: Resposta = try await pedir("/LiveTv/Channels", consulta: consulta)
+        return resposta.Items
+    }
+
+    /// O canal pronto para tocar: o servidor abre a transmissão e a entrega
+    /// em HLS. O perfil aceita H.264, HEVC e MPEG-2 com AAC, AC-3 e MP2 — o
+    /// que a TV aberta manda —, então ele só reempacota, sem converter o
+    /// vídeo (o servidor do usuário não tem aceleração).
+    func abrirCanal(_ id: String) async throws -> (url: URL, sessao: String, transmissao: String?) {
+        let perfil: [String: Any] = [
+            "Name": "LibertyX Player",
+            "MaxStreamingBitrate": 120_000_000,
+            "DirectPlayProfiles": [] as [Any],
+            "TranscodingProfiles": [[
+                "Container": "ts", "Type": "Video", "Protocol": "hls", "Context": "Streaming",
+                "VideoCodec": "h264,hevc,mpeg2video", "AudioCodec": "aac,ac3,eac3,mp2,mp3",
+                "BreakOnNonKeyFrames": true, "MinSegments": 1, "MaxAudioChannels": "6",
+            ] as [String: Any]],
+            "CodecProfiles": [] as [Any],
+            "SubtitleProfiles": [["Format": "srt", "Method": "External"]],
+        ]
+        let corpo = try JSONSerialization.data(withJSONObject: [
+            "UserId": usuarioID,
+            "DeviceProfile": perfil,
+            "AutoOpenLiveStream": true,
+            "EnableDirectPlay": false,
+            "EnableDirectStream": false,
+            "EnableTranscoding": true,
+            "MaxStreamingBitrate": 120_000_000,
+        ] as [String: Any])
+        let dados = try await pedirDados("/Items/\(id)/PlaybackInfo", consulta: [
+            URLQueryItem(name: "UserId", value: usuarioID),
+            URLQueryItem(name: "AutoOpenLiveStream", value: "true"),
+            URLQueryItem(name: "IsPlayback", value: "true"),
+        ], corpo: corpo)
+        guard let json = try JSONSerialization.jsonObject(with: dados) as? [String: Any],
+              let fonte = (json["MediaSources"] as? [[String: Any]])?.first,
+              let caminho = fonte["TranscodingUrl"] as? String,
+              let base = URL(string: conta.endereco.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + caminho),
+              var partes = URLComponents(url: base, resolvingAgainstBaseURL: false) else {
+            throw ErroDeServidor(mensagem: String(localized: "O servidor não conseguiu abrir este canal."))
+        }
+        // O endereço vem sem a chave quando a sessão é por cabeçalho; a ponte
+        // e os pedaços da lista precisam dela na consulta.
+        partes.queryItems = (partes.queryItems ?? []) + chaveNaConsulta
+        guard let url = partes.url else { throw URLError(.badURL) }
+        let sessao = json["PlaySessionId"] as? String ?? UUID().uuidString
+        return (url, sessao, fonte["LiveStreamId"] as? String)
+    }
+
+    /// Fecha a transmissão no servidor — sem isto o sintonizador ficaria
+    /// ocupado com um canal que ninguém vê.
+    func fecharCanal(_ transmissao: String) async {
+        _ = try? await pedirDados("/LiveStreams/Close", consulta: [
+            URLQueryItem(name: "LiveStreamId", value: transmissao),
+        ], corpo: Data("{}".utf8))
+    }
+
     // MARK: - Usuários e Quick Connect
 
     /// Os usuários que o servidor mostra na tela de entrada — os que não

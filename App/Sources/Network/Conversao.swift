@@ -37,6 +37,27 @@ final class Conversoes: @unchecked Sendable {
     private let trava = NSLock()
     private var sessoes: [String: String] = [:]
     private var audios: [String: Int] = [:]
+    /// Canais de TV ao vivo já abertos no servidor: o endereço HLS que ele
+    /// devolveu e a transmissão a fechar no fim.
+    private var aoVivo: [String: URL] = [:]
+    private var transmissoes: [String: String] = [:]
+
+    func registrarCanal(_ item: String, url: URL, sessao: String, transmissao: String?) {
+        trava.lock(); defer { trava.unlock() }
+        aoVivo[item] = url
+        sessoes[item] = sessao
+        transmissoes[item] = transmissao
+    }
+
+    func canal(_ item: String) -> URL? {
+        trava.lock(); defer { trava.unlock() }
+        return aoVivo[item]
+    }
+
+    func transmissao(_ item: String) -> String? {
+        trava.lock(); defer { trava.unlock() }
+        return transmissoes[item]
+    }
 
     /// Uma sessão nova para o item; a anterior, se havia, já acabou.
     func comecar(_ item: String) -> String {
@@ -54,6 +75,8 @@ final class Conversoes: @unchecked Sendable {
     func encerrar(_ item: String) {
         trava.lock(); defer { trava.unlock() }
         sessoes[item] = nil
+        aoVivo[item] = nil
+        transmissoes[item] = nil
     }
 
     /// Na conversão vai uma faixa de áudio só: a escolhida na página, pelo

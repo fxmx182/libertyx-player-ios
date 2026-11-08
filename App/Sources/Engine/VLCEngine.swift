@@ -325,6 +325,10 @@ final class VLCEngine: NSObject, PlaybackEngine {
                 throw PlaybackError.loadFailed(String(localized: "servidor não encontrado"))
             }
             let servidor = ServidorDeMidia(conta: conta, token: ContasDeRede.shared.segredo(conta))
+            // Canal de TV ao vivo: o servidor já abriu e mandou a lista HLS.
+            if let canal = Conversoes.shared.canal(item) {
+                return try await PonteHTTP.shared.endereco(paraLista: canal, cabecalhos: servidor.cabecalhoDoToken)
+            }
             // A qualidade escolhida para a conta: abaixo do original, o
             // servidor converte e manda uma lista HLS (ver Qualidade).
             let kbps = Qualidade.da(conta.id)

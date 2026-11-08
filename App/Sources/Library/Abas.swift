@@ -419,7 +419,7 @@ struct AjustesView: View {
                                             titulo: conta.nome, sub: conta.tipo.nome, item: .conta(conta.id))
                             }
                         }
-                        Text("Início e Ajustes ficam sempre na dock. Ligue o que quiser a um toque — um servidor abre direto nele.")
+                        Text("Cabem 5 ícones: Início, Ajustes e mais 3 à sua escolha. Um servidor na dock abre direto nele.")
                             .font(LabFont.swiftUI(11.5, .medium))
                             .foregroundStyle(LabTheme.faint)
                             .padding(.top, -6)
@@ -713,6 +713,8 @@ private struct LinhaDeDock: View {
     let item: Dock.Item
 
     var body: some View {
+        let cheio = dock.validos(ContasDeRede.shared.contas, smb: SMBServerStore.shared.servers).count
+            >= Dock.maximoDeEscolhidos
         Toggle(isOn: Binding(get: { dock.contem(item) }, set: { _ in dock.alternar(item) })) {
             HStack(spacing: 16) {
                 Group {
@@ -737,6 +739,9 @@ private struct LinhaDeDock: View {
             }
         }
         .tint(LabTheme.accent)
+        // Lotada, só dá para tirar: o que está fora espera uma vaga.
+        .disabled(cheio && !dock.contem(item))
+        .opacity(cheio && !dock.contem(item) ? 0.45 : 1)
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
     }

@@ -77,8 +77,12 @@ final class AvisoAoServidor {
         sessao = nil
         avisar(atual, "Stopped", segundos)
         if atual.convertendo {
+            let transmissao = Conversoes.shared.transmissao(atual.item)
             Conversoes.shared.encerrar(atual.item)
-            enfileirar { await atual.servidor.pararConversao(atual.id) }
+            enfileirar {
+                await atual.servidor.pararConversao(atual.id)
+                if let transmissao { await atual.servidor.fecharCanal(transmissao) }
+            }
         }
         guard visto else { return }
         enfileirar {

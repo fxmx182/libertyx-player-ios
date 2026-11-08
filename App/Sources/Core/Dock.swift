@@ -21,6 +21,10 @@ final class Dock: ObservableObject {
 
     @Published private(set) var itens: [Item] = []
 
+    /// A dock do iPhone mostra cinco ícones; do sexto em diante o iOS
+    /// esconde tudo num "Mais". Início e Ajustes são dois — sobram três.
+    static let maximoDeEscolhidos = 3
+
     private let chave = "libertyx.dock.v1"
 
     init() {
@@ -45,12 +49,12 @@ final class Dock: ObservableObject {
 
     /// Sem as contas e os servidores que já foram apagados.
     func validos(_ contas: [ContaDeRede], smb: [SMBServer]) -> [Item] {
-        itens.filter { item in
+        Array(itens.filter { item in
             switch item {
             case .conta(let id): return contas.contains { $0.id == id }
             case .smb(let id):   return smb.contains { $0.id == id }
             default:             return true
             }
-        }
+        }.prefix(Self.maximoDeEscolhidos))
     }
 }

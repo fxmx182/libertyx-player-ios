@@ -11,6 +11,10 @@ struct InicioDoServidorView: View {
 
     @State private var inicio: Inicio?
     @State private var falha: String?
+    /// Canal de TV ao vivo aberto: toca daqui mesmo, sem página.
+    @State private var canalTocando: MediaItem?
+    @State private var abrindoCanal = false
+    @State private var falhaDoCanal: String?
     /// Conta as voltas da página do vídeo: o filme que acabou de ser visto
     /// sai do "Continuar", e o episódio seguinte entra no "A seguir".
     @State private var volta = 0
@@ -26,6 +30,15 @@ struct InicioDoServidorView: View {
             // A tela antiga fica enquanto a nova carrega, sem piscar.
             .task(id: volta) { await carregar() }
             .refreshable { await carregar() }
+            .fullScreenCover(item: $canalTocando) { item in
+                PlayerScreen(item: item, playlist: [item]).ignoresSafeArea()
+            }
+            .alert("Não conectou", isPresented: Binding(get: { falhaDoCanal != nil },
+                                                        set: { if !$0 { falhaDoCanal = nil } })) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(falhaDoCanal ?? "")
+            }
     }
 
     @ViewBuilder
@@ -63,6 +76,16 @@ struct InicioDoServidorView: View {
                             NavigationLink { detalhes(item) } label: { CartaoDeitado(servidor: servidor, item: item) }
                                 .buttonStyle(.plain)
                                 .menuDoVisto(servidor, item) { volta += 1 }
+                        }
+                    }
+                }
+                // Só quando o servidor tem TV ao vivo configurada.
+                if !inicio.canais.isEmpty {
+                    FaixaDoServidor(titulo: String(localized: "TV ao vivo"),
+                                    destino: AnyView(TvAoVivoView(servidor: servidor))) {
+                        ForEach(inicio.canais) { canal in
+                            Button { tocar(canal) } label: { CartaoDeCanal(servidor: servidor, canal: canal) }
+                                .buttonStyle(.plain)
                         }
                     }
                 }
@@ -120,6 +143,21 @@ struct InicioDoServidorView: View {
             .onDisappear { volta += 1 }
     }
 
+    private func tocar(_ canal: ServidorDeMidia.Canal) {
+        guard !abrindoCanal else { return }
+        abrindoCanal = true
+        Task { @MainActor in
+            defer { abrindoCanal = false }
+            do {
+                canalTocando = try await prepararCanal(servidor, canal)
+            } catch where error.foiCancelado {
+                return
+            } catch {
+                falhaDoCanal = error.localizedDescription
+            }
+        }
+    }
+
     /// Série abre a página dela; o resto, a pasta.
     private func pagina(_ item: Item) -> some View {
         paginaDoServidor(servidor, item)
@@ -132,6 +170,7 @@ struct InicioDoServidorView: View {
         let continuar: [Item]
         let aSeguir: [Item]
         let favoritos: [Item]
+        let canais: [ServidorDeMidia.Canal]
         let bibliotecas: [Item]
         let recentes: [Recentes]
     }
@@ -154,6 +193,7 @@ struct InicioDoServidorView: View {
             async let continuar = (try? await servidor.continuar()) ?? []
             async let aSeguir = (try? await servidor.aSeguir()) ?? []
             async let favoritos = (try? await servidor.favoritos()) ?? []
+            async let canais = (try? await servidor.canais(limite: 30)) ?? []
             let bibliotecas = try await servidor.bibliotecas()
             // Coleções só repetem filmes que já aparecem na biblioteca deles.
             let comRecentes = bibliotecas.filter { $0.tipoDeColecao != "boxsets" }
@@ -172,6 +212,7 @@ struct InicioDoServidorView: View {
                 // O servidor põe no "A seguir" o episódio que já está no "Continuar".
                 aSeguir: await aSeguir.filter { !comecadosIDs.contains($0.id) },
                 favoritos: await favoritos,
+                canais: await canais,
                 bibliotecas: bibliotecas,
                 recentes: comRecentes.enumerated().compactMap { indice, biblioteca in
                     guard let itens = recentes[indice], !itens.isEmpty else { return nil }
