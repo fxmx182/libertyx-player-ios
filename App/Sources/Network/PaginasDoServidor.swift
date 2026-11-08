@@ -18,15 +18,22 @@ func paginaDoServidor(_ servidor: ServidorDeMidia, _ item: ServidorDeMidia.Item)
 
 /// O fundo apagando para o preto da página, com o logotipo por cima — é a
 /// cara que o app do servidor dá às páginas de filme, episódio e série.
+///
+/// Em pé, a imagem 16:9 vai de ponta a ponta. Deitado, isso tomaria mais que
+/// a tela inteira: a altura para na metade da tela, e a imagem vai inteira no
+/// centro — sem esticar nem cortar —, com ela mesma desfocada dos lados.
 struct CabecaDoServidor: View {
     var escala = Escala()
     let servidor: ServidorDeMidia
     let fundoDe: String
     let logoDe: String?
+    /// O tamanho da área da página (da rolagem); zero enquanto não foi medido.
+    var tela: CGSize = .zero
+
+    private let tipos = ["Backdrop", "Thumb", "Primary"]
 
     var body: some View {
-        ImagemDoServidor(servidor: servidor, id: fundoDe, tipos: ["Backdrop", "Thumb", "Primary"], largura: 1280)
-            .aspectRatio(16 / 9, contentMode: .fit)
+        fundo
             .overlay {
                 LinearGradient(colors: [.clear, LabTheme.background.opacity(0.55), LabTheme.background],
                                startPoint: .center, endPoint: .bottom)
@@ -38,6 +45,41 @@ struct CabecaDoServidor: View {
                         .padding(.bottom, 6)
                 }
             }
+    }
+
+    @ViewBuilder private var fundo: some View {
+        let cheia = tela.width * 9 / 16
+        let altura = min(cheia, tela.height * 0.5)
+        if tela.width == 0 || altura >= cheia - 1 {
+            ImagemDoServidor(servidor: servidor, id: fundoDe, tipos: tipos, largura: 1280)
+                .aspectRatio(16 / 9, contentMode: .fit)
+        } else {
+            ZStack {
+                ImagemDoServidor(servidor: servidor, id: fundoDe, tipos: tipos, largura: 1280)
+                    .blur(radius: 28)
+                    .opacity(0.45)
+                ImagemDoServidor(servidor: servidor, id: fundoDe, tipos: tipos, largura: 1280)
+                    .frame(width: altura * 16 / 9, height: altura)
+                    .mask {
+                        LinearGradient(stops: [.init(color: .clear, location: 0),
+                                               .init(color: .black, location: 0.12),
+                                               .init(color: .black, location: 0.88),
+                                               .init(color: .clear, location: 1)],
+                                       startPoint: .leading, endPoint: .trailing)
+                    }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: altura)
+            .background(LabTheme.background)
+            .clipped()
+        }
+    }
+}
+
+extension View {
+    /// Mede a área da página para a [CabecaDoServidor] saber se está deitada.
+    func medindoATela(_ tela: Binding<CGSize>) -> some View {
+        onGeometryChange(for: CGSize.self) { $0.size } action: { tela.wrappedValue = $0 }
     }
 }
 
@@ -124,13 +166,15 @@ struct SerieDoServidorView: View {
     @State private var tocando: MediaItem?
     @State private var fila: [MediaItem] = []
     @State private var volta = 0
+    @State private var tela: CGSize = .zero
 
     private typealias Item = ServidorDeMidia.Item
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                CabecaDoServidor(servidor: servidor, fundoDe: detalhes?.fundoDe ?? serieID, logoDe: detalhes?.logoDe)
+                CabecaDoServidor(servidor: servidor, fundoDe: detalhes?.fundoDe ?? serieID, logoDe: detalhes?.logoDe,
+                                 tela: tela)
                 VStack(alignment: .leading, spacing: 18) {
                     titulos
                     botoes
@@ -161,6 +205,7 @@ struct SerieDoServidorView: View {
             }
             .padding(.bottom, 32)
         }
+        .medindoATela($tela)
         .background(LabTheme.background.ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
         .task(id: volta) { await carregar() }

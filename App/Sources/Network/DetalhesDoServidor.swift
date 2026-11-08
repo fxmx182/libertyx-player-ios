@@ -31,6 +31,7 @@ struct DetalhesDoServidorView: View {
     @State private var abrindoSerie = false
     /// Conta as voltas do player e as marcas: onde parou e o "visto" mudam.
     @State private var volta = 0
+    @State private var tela: CGSize = .zero
 
     private typealias Item = ServidorDeMidia.Item
 
@@ -63,6 +64,7 @@ struct DetalhesDoServidorView: View {
             }
             .padding(.bottom, 32)
         }
+        .medindoATela($tela)
         .background(LabTheme.background.ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
         .task(id: volta) { await carregar() }
@@ -87,7 +89,7 @@ struct DetalhesDoServidorView: View {
 
     private var cabeca: some View {
         CabecaDoServidor(servidor: servidor, fundoDe: detalhes?.fundoDe ?? atual.serieID ?? atual.id,
-                         logoDe: detalhes?.logoDe)
+                         logoDe: detalhes?.logoDe, tela: tela)
     }
 
     private var titulos: some View {
