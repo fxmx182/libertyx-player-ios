@@ -73,7 +73,7 @@ struct InicioDoServidorView: View {
                 if !inicio.aSeguir.isEmpty {
                     FaixaDoServidor(titulo: String(localized: "A seguir")) {
                         ForEach(inicio.aSeguir) { item in
-                            NavigationLink { detalhes(item) } label: { CartaoDeitado(servidor: servidor, item: item) }
+                            NavigationLink { detalhes(item) } label: { CartaoDeitado(servidor: servidor, item: item, capaDaSerie: true) }
                                 .buttonStyle(.plain)
                                 .menuDoVisto(servidor, item) { volta += 1 }
                         }
@@ -272,12 +272,14 @@ struct CartaoDeitado: View {
     var escala = Escala()
     let servidor: ServidorDeMidia
     let item: ServidorDeMidia.Item
+    /// "A seguir": a capa deitada da série (ou do filme), e não a cena do episódio — como no app do Jellyfin.
+    var capaDaSerie = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // O "Primary" do episódio já é uma cena; o do filme é o cartaz em pé.
-            ImagemDoServidor(servidor: servidor, id: item.id,
-                             tipos: item.tipo == "Episode" ? ["Primary", "Thumb"] : ["Thumb", "Backdrop", "Primary"],
+            ImagemDoServidor(servidor: servidor, id: capaDaSerie ? (item.serieID ?? item.id) : item.id,
+                             tipos: capaDaSerie || item.tipo != "Episode" ? ["Thumb", "Backdrop", "Primary"] : ["Primary", "Thumb"],
                              largura: 480)
                 .aspectRatio(16 / 9, contentMode: .fit)
                 .overlay(alignment: .bottom) { BarraDeProgresso(progresso: item.progresso) }
