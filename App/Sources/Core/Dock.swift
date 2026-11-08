@@ -15,6 +15,8 @@ final class Dock: ObservableObject {
         case procurar
         /// Uma conta WebDAV, Jellyfin ou Emby, aberta direto no começo dela.
         case conta(UUID)
+        /// Um servidor SMB, aberto nos compartilhamentos dele.
+        case smb(UUID)
     }
 
     @Published private(set) var itens: [Item] = []
@@ -41,11 +43,14 @@ final class Dock: ObservableObject {
         UserDefaults.standard.set(dados, forKey: chave)
     }
 
-    /// Sem as contas que já foram apagadas.
-    func validos(_ contas: [ContaDeRede]) -> [Item] {
+    /// Sem as contas e os servidores que já foram apagados.
+    func validos(_ contas: [ContaDeRede], smb: [SMBServer]) -> [Item] {
         itens.filter { item in
-            guard case .conta(let id) = item else { return true }
-            return contas.contains { $0.id == id }
+            switch item {
+            case .conta(let id): return contas.contains { $0.id == id }
+            case .smb(let id):   return smb.contains { $0.id == id }
+            default:             return true
+            }
         }
     }
 }

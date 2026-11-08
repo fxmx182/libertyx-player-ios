@@ -196,7 +196,7 @@ struct LibraryView: View {
                     HStack(spacing: 10) {
                         ForEach(servidoresSMB.servers) { servidor in
                             NavigationLink { SMBShareListView(server: servidor) } label: {
-                                AtalhoDeServidor(nome: servidor.name, tipo: "SMB", simbolo: "server.rack")
+                                AtalhoDeServidor(nome: servidor.name, tipo: "SMB", simbolo: "server.rack", imagem: "LogoSMB")
                             }
                             .buttonStyle(.plain)
                         }

@@ -20,13 +20,14 @@ struct Abas: View {
 
     @ObservedObject private var dock = Dock.shared
     @ObservedObject private var contas = ContasDeRede.shared
+    @ObservedObject private var servidoresSMB = SMBServerStore.shared
 
     @State private var aba: Aba = .inicio
     /// Muda o `id` da aba, e a pilha dela nasce de novo na raiz.
     @State private var geracao: [Aba: Int] = [:]
 
     var body: some View {
-        let extras = dock.validos(contas.contas)
+        let extras = dock.validos(contas.contas, smb: servidoresSMB.servers)
         TabView(selection: Binding(get: { aba }, set: { nova in
             if nova != aba { geracao[aba, default: 0] += 1 }
             aba = nova
@@ -65,6 +66,12 @@ struct Abas: View {
                     PastaRemotaView(titulo: conta.nome, destino: .inicio(conta))
                 }
             }
+        case .smb(let id):
+            if let servidor = servidoresSMB.servers.first(where: { $0.id == id }) {
+                NavigationStack {
+                    SMBShareListView(server: servidor)
+                }
+            }
         }
     }
 
@@ -82,6 +89,10 @@ struct Abas: View {
                 } else {
                     Label(conta.nome, systemImage: conta.tipo.simbolo)
                 }
+            }
+        case .smb(let id):
+            if let servidor = servidoresSMB.servers.first(where: { $0.id == id }) {
+                Label(servidor.name, image: "LogoSMB")
             }
         }
     }
@@ -136,7 +147,7 @@ struct ArquivosView: View {
                             .padding(.top, 14)
                         ForEach(servidoresSMB.servers) { servidor in
                             NavigationLink { SMBShareListView(server: servidor) } label: {
-                                LinhaDeLugar(simbolo: "server.rack", titulo: servidor.name, subtitulo: "SMB")
+                                LinhaDeLugar(simbolo: "server.rack", imagem: "LogoSMB", titulo: servidor.name, subtitulo: "SMB")
                             }
                             .buttonStyle(.plain)
                         }
@@ -397,6 +408,11 @@ struct AjustesView: View {
                             LinhaDeDock(simbolo: "folder", titulo: String(localized: "Arquivos"), item: .arquivos)
                             divisoria
                             LinhaDeDock(simbolo: "magnifyingglass", titulo: String(localized: "Procurar"), item: .procurar)
+                            ForEach(SMBServerStore.shared.servers) { servidor in
+                                divisoria
+                                LinhaDeDock(simbolo: "server.rack", imagem: "LogoSMB",
+                                            titulo: servidor.name, sub: "SMB", item: .smb(servidor.id))
+                            }
                             ForEach(ContasDeRede.shared.contas) { conta in
                                 divisoria
                                 LinhaDeDock(simbolo: conta.tipo.simbolo, imagem: conta.tipo.imagem,
