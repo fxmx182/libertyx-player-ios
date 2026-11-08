@@ -498,14 +498,23 @@ struct AtalhoDeServidor: View {
     let nome: String
     let tipo: String
     let simbolo: String
+    /// O símbolo do próprio servidor (o do Jellyfin), no lugar do `simbolo`.
+    var imagem: String? = nil
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: simbolo)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(LabTheme.accent)
-                .frame(width: 34, height: 34)
-                .background(LabTheme.accent.opacity(0.14), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            Group {
+                if let imagem {
+                    Image(imagem).resizable().scaledToFit().frame(width: 20, height: 20)
+                } else {
+                    Image(systemName: simbolo)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(LabTheme.accent)
+                }
+            }
+            .frame(width: 34, height: 34)
+            .background((imagem == nil ? LabTheme.accent.opacity(0.14) : Color.white.opacity(0.08)),
+                        in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             VStack(alignment: .leading, spacing: 1) {
                 Text(nome)
                     .font(LabFont.swiftUI(14, .bold))

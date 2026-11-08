@@ -1,11 +1,14 @@
 import SwiftUI
 
-/// A raiz do app: quatro abas na dock de baixo.
+/// A raiz do app: a dock de baixo.
 ///
 /// A dock é a barra de abas do próprio iOS — no iOS 26 ela já é a pílula de
 /// vidro flutuante, a mesma do Infuse, e herda de graça a área segura, o
 /// VoiceOver e o toque duplo que volta ao topo. Desenhar uma à mão seria
 /// refazer tudo isso para chegar no mesmo lugar.
+///
+/// Início e Ajustes estão sempre nela; o resto — Arquivos, Procurar, cada
+/// servidor WebDAV, Jellyfin ou Emby — entra e sai pelos Ajustes (ver `Dock`).
 ///
 /// Uma diferença do padrão do iOS, de propósito, para ser igual ao Android:
 /// cada aba abre sempre do começo. O iOS guarda a última tela de cada aba, e
@@ -13,13 +16,17 @@ import SwiftUI
 /// troca de aba esquece a pilha da aba que deixou — recriada enquanto não
 /// aparece, então ninguém vê o salto.
 struct Abas: View {
-    enum Aba: Hashable { case inicio, arquivos, procurar, ajustes }
+    enum Aba: Hashable { case inicio, ajustes, extra(Dock.Item) }
+
+    @ObservedObject private var dock = Dock.shared
+    @ObservedObject private var contas = ContasDeRede.shared
 
     @State private var aba: Aba = .inicio
     /// Muda o `id` da aba, e a pilha dela nasce de novo na raiz.
     @State private var geracao: [Aba: Int] = [:]
 
     var body: some View {
+        let extras = dock.validos(contas.contas)
         TabView(selection: Binding(get: { aba }, set: { nova in
             if nova != aba { geracao[aba, default: 0] += 1 }
             aba = nova
@@ -28,18 +35,54 @@ struct Abas: View {
                 .id(geracao[.inicio, default: 0])
                 .tabItem { Label("Início", systemImage: "play") }
                 .tag(Aba.inicio)
-            ArquivosView()
-                .id(geracao[.arquivos, default: 0])
-                .tabItem { Label("Arquivos", systemImage: "folder") }
-                .tag(Aba.arquivos)
-            ProcurarView()
-                .id(geracao[.procurar, default: 0])
-                .tabItem { Label("Procurar", systemImage: "magnifyingglass") }
-                .tag(Aba.procurar)
+            ForEach(extras, id: \.self) { item in
+                tela(item)
+                    .id(geracao[.extra(item), default: 0])
+                    .tabItem { rotulo(item) }
+                    .tag(Aba.extra(item))
+            }
             AjustesView()
                 .id(geracao[.ajustes, default: 0])
                 .tabItem { Label("Ajustes", systemImage: "gearshape") }
                 .tag(Aba.ajustes)
+        }
+        // A aba aberta saiu da dock (ou a conta foi apagada): volta ao Início.
+        .onChange(of: extras) { _, novos in
+            if case .extra(let item) = aba, !novos.contains(item) { aba = .inicio }
+        }
+    }
+
+    @ViewBuilder
+    private func tela(_ item: Dock.Item) -> some View {
+        switch item {
+        case .arquivos:
+            ArquivosView()
+        case .procurar:
+            ProcurarView()
+        case .conta(let id):
+            if let conta = contas.conta(id) {
+                NavigationStack {
+                    PastaRemotaView(titulo: conta.nome, destino: .inicio(conta))
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func rotulo(_ item: Dock.Item) -> some View {
+        switch item {
+        case .arquivos:
+            Label("Arquivos", systemImage: "folder")
+        case .procurar:
+            Label("Procurar", systemImage: "magnifyingglass")
+        case .conta(let id):
+            if let conta = contas.conta(id) {
+                if let imagem = conta.tipo.imagem {
+                    Label(conta.nome, image: imagem)
+                } else {
+                    Label(conta.nome, systemImage: conta.tipo.simbolo)
+                }
+            }
         }
     }
 }
@@ -99,7 +142,8 @@ struct ArquivosView: View {
                         }
                         ForEach(contas.contas) { conta in
                             NavigationLink { PastaRemotaView(titulo: conta.nome, destino: .inicio(conta)) } label: {
-                                LinhaDeLugar(simbolo: conta.tipo.simbolo, titulo: conta.nome, subtitulo: conta.tipo.nome)
+                                LinhaDeLugar(simbolo: conta.tipo.simbolo, imagem: conta.tipo.imagem,
+                                             titulo: conta.nome, subtitulo: conta.tipo.nome)
                             }
                             .buttonStyle(.plain)
                         }
@@ -349,6 +393,22 @@ struct AjustesView: View {
                             }
                         }
 
+                        grupo(String(localized: "Dock")) {
+                            LinhaDeDock(simbolo: "folder", titulo: String(localized: "Arquivos"), item: .arquivos)
+                            divisoria
+                            LinhaDeDock(simbolo: "magnifyingglass", titulo: String(localized: "Procurar"), item: .procurar)
+                            ForEach(ContasDeRede.shared.contas) { conta in
+                                divisoria
+                                LinhaDeDock(simbolo: conta.tipo.simbolo, imagem: conta.tipo.imagem,
+                                            titulo: conta.nome, sub: conta.tipo.nome, item: .conta(conta.id))
+                            }
+                        }
+                        Text("Início e Ajustes ficam sempre na dock. Ligue o que quiser a um toque — um servidor abre direto nele.")
+                            .font(LabFont.swiftUI(11.5, .medium))
+                            .foregroundStyle(LabTheme.faint)
+                            .padding(.top, -6)
+                            .padding(.bottom, 12)
+
                         grupo(String(localized: "Preferências")) {
                             Button { visualizacao = true } label: {
                                 LinhaDeAjuste(simbolo: "slider.horizontal.3", titulo: String(localized: "Visualização"),
@@ -582,18 +642,26 @@ private struct CabecalhoDaAba: View {
 /// Uma pasta ou um servidor: o ícone numa caixinha, o nome e o que tem lá.
 private struct LinhaDeLugar: View {
     let simbolo: String
+    /// O símbolo do próprio servidor (o do Jellyfin), no lugar do `simbolo`.
+    var imagem: String? = nil
     let titulo: String
     var subtitulo: String? = nil
     var seta = true
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: simbolo)
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(LabTheme.accent)
-                .frame(width: 40, height: 40)
-                .background(LabTheme.accent.opacity(0.14),
-                            in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+            Group {
+                if let imagem {
+                    Image(imagem).resizable().scaledToFit().frame(width: 22, height: 22)
+                } else {
+                    Image(systemName: simbolo)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(LabTheme.accent)
+                }
+            }
+            .frame(width: 40, height: 40)
+            .background(imagem == nil ? LabTheme.accent.opacity(0.14) : Color.white.opacity(0.08),
+                        in: RoundedRectangle(cornerRadius: 11, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
                 Text(titulo)
                     .font(LabFont.swiftUI(15, .semibold))
@@ -616,5 +684,44 @@ private struct LinhaDeLugar: View {
         .padding(10)
         .labCard()
         .contentShape(Rectangle())
+    }
+}
+
+/// Uma linha do grupo Dock nos Ajustes: o que é, e a chave que põe ou tira.
+private struct LinhaDeDock: View {
+    @ObservedObject private var dock = Dock.shared
+    let simbolo: String
+    var imagem: String? = nil
+    let titulo: String
+    var sub: String? = nil
+    let item: Dock.Item
+
+    var body: some View {
+        Toggle(isOn: Binding(get: { dock.contem(item) }, set: { _ in dock.alternar(item) })) {
+            HStack(spacing: 16) {
+                Group {
+                    if let imagem {
+                        Image(imagem).resizable().scaledToFit().frame(width: 20, height: 20)
+                    } else {
+                        Image(systemName: simbolo).font(.system(size: 19, weight: .regular))
+                            .foregroundStyle(LabTheme.accent)
+                    }
+                }
+                .frame(width: 26)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(verbatim: titulo)
+                        .font(LabFont.swiftUI(15, .semibold))
+                        .foregroundStyle(LabTheme.text)
+                    if let sub {
+                        Text(verbatim: sub)
+                            .font(LabFont.swiftUI(12, .medium))
+                            .foregroundStyle(LabTheme.muted)
+                    }
+                }
+            }
+        }
+        .tint(LabTheme.accent)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 }

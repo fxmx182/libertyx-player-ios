@@ -27,6 +27,10 @@ struct ContaDeRede: Codable, Identifiable, Hashable {
             }
         }
 
+        /// O símbolo do próprio servidor, quando há um no app (o do Jellyfin);
+        /// sem ele, vale o `simbolo` do sistema.
+        var imagem: String? { self == .jellyfin ? "LogoJellyfin" : nil }
+
         /// Jellyfin e Emby são o mesmo servidor por dentro — o Jellyfin nasceu
         /// de uma cópia do Emby — e falam a mesma API.
         var ehServidorDeMidia: Bool { self != .webdav }

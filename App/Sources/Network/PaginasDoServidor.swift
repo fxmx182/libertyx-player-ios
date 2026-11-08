@@ -52,7 +52,7 @@ struct FaixaDoElenco: View {
             Secao(titulo: String(localized: "Elenco"))
                 .padding(.horizontal, 16)
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(alignment: .top, spacing: 12) {
+                HStack(alignment: .top, spacing: 12) {
                     ForEach(elenco) { pessoa in
                         NavigationLink {
                             PessoaDoServidorView(servidor: servidor, pessoa: pessoa)

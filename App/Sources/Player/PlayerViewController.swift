@@ -382,9 +382,16 @@ final class PlayerViewController: UIViewController {
                 // começar a tocar, então a condição nunca passava e a pergunta
                 // nunca aparecia. Quem valida a marca é o próprio ResumeStore,
                 // que guardou a duração junto.
-                let retomada = ResumeStore.shared.position(for: item.origin.resumeKey)
+                let pedido = EscolhaDeFaixas.shared.consumirInicio(item.origin.resumeKey)
+                if pedido == .doComeco { ResumeStore.shared.clear(key: item.origin.resumeKey) }
+                let retomada = pedido == .doComeco ? nil : ResumeStore.shared.position(for: item.origin.resumeKey)
                 aviso.comecou(item, em: retomada ?? 0)
-                if let retomada {
+                if let retomada, pedido == .continuar {
+                    // Já respondido na página do servidor: retoma sem perguntar.
+                    pendingResume = retomada
+                    engine.play()
+                    scheduleControlsHide()
+                } else if let retomada {
                     perguntarRetomada(de: retomada)
                 } else {
                     engine.play()

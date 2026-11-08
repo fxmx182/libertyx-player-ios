@@ -25,7 +25,6 @@ struct LibraryView: View {
     @State private var showingInfo: MediaItem?
     @State private var errorMessage: String?
     @State private var pendingDeletion: MediaItem?
-    @State private var limpandoHistorico = false
     /// Conta as voltas do player. A marca de onde parou muda enquanto o filme
     /// toca; sem reler ao voltar, "continuar" mostraria o ponto de antes.
     @State private var volta = 0
@@ -48,12 +47,6 @@ struct LibraryView: View {
                 Button("Cancelar", role: .cancel) {}
             } message: { item in
                 Text("“\(item.title)” será apagado do aparelho. Não dá para desfazer.")
-            }
-            .alert("Limpar o histórico?", isPresented: $limpandoHistorico) {
-                Button("Limpar", role: .destructive) { withAnimation { historico.limpar() } }
-                Button("Cancelar", role: .cancel) {}
-            } message: {
-                Text("Os vídeos saem desta lista. Os arquivos e o ponto onde você parou continuam.")
             }
             // Uma vez: voltar de outra aba não varre de novo — puxar a tela
             // para baixo é o jeito de pedir.
@@ -141,7 +134,6 @@ struct LibraryView: View {
                         if library.groups.isEmpty {
                             TituloDeTela(titulo: String(localized: "Biblioteca"),
                                          subtitulo: String(localized: "Nenhuma pasta autorizada ainda"))
-                            faixaDeContinuar(continuando)
                             secaoDeServidores
                             Button { showingFolderPicker = true } label: {
                                 LinhaDePastaDeRede(nome: String(localized: "Adicionar pasta"),
@@ -153,16 +145,14 @@ struct LibraryView: View {
                             // vídeos dela já são a biblioteca, e entrar nela
                             // seria um toque a mais para nada.
                             TituloDeTela(titulo: String(localized: "Biblioteca"), subtitulo: resumoDa(pastaUnica))
-                            faixaDeContinuar(continuando)
                             secaoDeServidores
-                            if !continuando.isEmpty { Secao(titulo: pastaUnica.name) }
+                            Secao(titulo: pastaUnica.name)
                             ListaDeVideos(itens: options.sorted(pastaUnica.items), layout: options.layout,
                                           onTocar: tocar, menu: menuDoItem)
                         } else {
                             let total = library.groups.reduce(0) { $0 + $1.items.count }
                             TituloDeTela(titulo: String(localized: "Biblioteca"),
                                          subtitulo: Plural.videos(total) + "  ·  " + Plural.pastas(library.groups.count))
-                            faixaDeContinuar(continuando)
                             secaoDeServidores
                             Secao(titulo: String(localized: "Pastas"), extra: "\(library.groups.count)")
                             LazyVGrid(columns: [GridItem(.adaptive(minimum: escala.capa), spacing: 14, alignment: .top)], spacing: 18) {
@@ -212,7 +202,8 @@ struct LibraryView: View {
                         }
                         ForEach(contas.contas) { conta in
                             NavigationLink { PastaRemotaView(titulo: conta.nome, destino: .inicio(conta)) } label: {
-                                AtalhoDeServidor(nome: conta.nome, tipo: conta.tipo.nome, simbolo: conta.tipo.simbolo)
+                                AtalhoDeServidor(nome: conta.nome, tipo: conta.tipo.nome, simbolo: conta.tipo.simbolo,
+                                                 imagem: conta.tipo.imagem)
                             }
                             .buttonStyle(.plain)
                         }
@@ -245,42 +236,6 @@ struct LibraryView: View {
             } label: { BotaoRedondo(simbolo: "plus") }
         }
         .frame(height: 52)
-    }
-
-    @ViewBuilder
-    private func faixaDeContinuar(_ itens: [MediaItem]) -> some View {
-        if !itens.isEmpty {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Secao(titulo: String(localized: "Histórico"))
-                    // Remover um a um continua no toque longo do cartão; isto
-                    // é para quando a lista inteira já não interessa.
-                    Button { limpandoHistorico = true } label: {
-                        Text("Limpar")
-                            .font(LabFont.swiftUI(13, .semibold))
-                            .foregroundStyle(LabTheme.accent)
-                    }
-                    .buttonStyle(.plain)
-                }
-                ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(spacing: 12) {
-                        ForEach(itens) { item in
-                            Button { tocar(item, itens) } label: { CartaoDeContinuar(item: item) }
-                                .buttonStyle(.plain)
-                                .contextMenu {
-                                    Button(role: .destructive) {
-                                        withAnimation { historico.remover(item) }
-                                    } label: {
-                                        Label("Remover do histórico", systemImage: "clock.badge.xmark")
-                                    }
-                                    menuDoItem(item)
-                                }
-                        }
-                    }
-                }
-                .scrollClipDisabled()
-            }
-        }
     }
 
     private func resumoDa(_ grupo: VideoGroup) -> String {

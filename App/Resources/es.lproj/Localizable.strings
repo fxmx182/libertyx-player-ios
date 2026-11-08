@@ -348,3 +348,6 @@
 "Entrar com Quick Connect" = "Entrar con Quick Connect";
 "Sem digitar a senha: o app mostra um código, e você aprova num aparelho que já está conectado." = "Sin escribir la contraseña: la app muestra un código y lo apruebas en un dispositivo ya conectado.";
 "Este servidor não tem o Quick Connect ligado." = "Este servidor no tiene Quick Connect activado.";
+"Do início" = "Desde el inicio";
+"Dock" = "Dock";
+"Início e Ajustes ficam sempre na dock. Ligue o que quiser a um toque — um servidor abre direto nele." = "Inicio y Ajustes siempre están en el dock. Activa lo que quieras a un toque: un servidor se abre directamente.";

@@ -216,7 +216,10 @@ private struct FaixaDoServidor<Conteudo: View>: View {
             .padding(.horizontal, 16)
 
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(alignment: .top, spacing: 12) { conteudo() }
+                // HStack, e não LazyHStack: a preguiçosa, dentro da lista
+                // vertical, nascia com altura zero e a faixa aparecia
+                // encolhida até puxar para atualizar.
+                HStack(alignment: .top, spacing: 12) { conteudo() }
                     .padding(.horizontal, 16)
             }
         }
@@ -237,6 +240,16 @@ struct CartaoDeitado: View {
                              largura: 480)
                 .aspectRatio(16 / 9, contentMode: .fit)
                 .overlay(alignment: .bottom) { BarraDeProgresso(progresso: item.progresso) }
+                .overlay(alignment: .topTrailing) {
+                    if item.visto {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 10, weight: .heavy))
+                            .foregroundStyle(.black)
+                            .frame(width: 20, height: 20)
+                            .background(LabTheme.accent, in: Circle())
+                            .padding(6)
+                    }
+                }
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .strokeBorder(LabTheme.glassBorder, lineWidth: 0.5))
@@ -553,11 +566,19 @@ struct ImagemDoServidor: View {
             return
         }
         guard !CapasDoServidor.falharam.contains(chave) else { return }
-        if let baixada = await servidor.imagem(id, tipos: tipos, largura: largura) {
+        switch await servidor.baixarImagem(id, tipos: tipos, largura: largura) {
+        case .imagem(let baixada):
             CapasDoServidor.guardar(baixada, chave)
             imagem = baixada
-        } else {
+        case .naoTem:
             CapasDoServidor.falharam.insert(chave)
+        case .falhou:
+            // Caiu no caminho — ou a capa saiu da tela no meio, o que cancela
+            // o pedido. Antes isto também marcava "sem imagem" para sempre, e
+            // os episódios anteriores da temporada (que somem quando a faixa
+            // rola até o atual) ficavam sem cena. Na próxima vez que
+            // aparecer, tenta de novo.
+            break
         }
     }
 }

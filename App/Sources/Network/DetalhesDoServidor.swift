@@ -155,17 +155,43 @@ struct DetalhesDoServidorView: View {
     private var botoes: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                Button(action: tocar) {
-                    Label(atual.posicao == nil ? String(localized: "Assistir") : String(localized: "Continuar"),
-                          systemImage: "play.fill")
-                        .font(LabFont.swiftUI(16, .bold))
-                        .foregroundStyle(.black)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 48)
-                        .background(LabTheme.accent, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                Button { tocar(atual.posicao == nil ? nil : .continuar) } label: {
+                    VStack(spacing: 1) {
+                        Label(atual.posicao == nil ? String(localized: "Assistir") : String(localized: "Continuar"),
+                              systemImage: "play.fill")
+                            .font(LabFont.swiftUI(16, .bold))
+                        if let posicao = atual.posicao {
+                            Text(verbatim: TimeFormat.clock(posicao))
+                                .font(LabFont.swiftUI(11, .semibold))
+                                .opacity(0.75)
+                        }
+                    }
+                    .foregroundStyle(.black)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 48)
+                    .background(LabTheme.accent, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 }
                 .buttonStyle(.plain)
 
+                // Com o vídeo começado, as duas saídas lado a lado, como no
+                // app do Jellyfin: seguir de onde parou ou rever do começo.
+                if atual.posicao != nil {
+                    Button { tocar(.doComeco) } label: {
+                        Label(String(localized: "Do início"), systemImage: "backward.end.fill")
+                            .font(LabFont.swiftUI(14, .bold))
+                            .foregroundStyle(LabTheme.text)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 48)
+                            .background(LabTheme.glass, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .strokeBorder(LabTheme.glassBorder, lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            // As marcas numa fileira própria: com "Continuar" e "Do início"
+            // lado a lado, cinco botões numa linha só não cabiam no iPhone.
+            HStack(spacing: 10) {
                 BotaoDeMarca(simbolo: "checkmark", aceso: atual.visto, cor: LabTheme.accent,
                              rotulo: String(localized: "Já reproduzido")) { mudarVisto() }
                 BotaoDeMarca(simbolo: atual.favorito ? "heart.fill" : "heart", aceso: atual.favorito,
@@ -174,6 +200,7 @@ struct DetalhesDoServidorView: View {
                     BotaoDeMarca(simbolo: "film", aceso: false, cor: LabTheme.accent,
                                  rotulo: String(localized: "Trailer")) { tocarTrailer(detalhes) }
                 }
+                Spacer(minLength: 0)
             }
             if let progresso = atual.progresso, let posicao = atual.posicao, let duracao = atual.duracao {
                 VStack(alignment: .leading, spacing: 5) {
@@ -349,7 +376,7 @@ struct DetalhesDoServidorView: View {
                 .padding(.horizontal, 16)
             ScrollViewReader { rolagem in
                 ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(alignment: .top, spacing: 12) {
+                    HStack(alignment: .top, spacing: 12) {
                         ForEach(temporada) { episodio in
                             NavigationLink {
                                 DetalhesDoServidorView(servidor: servidor, inicial: episodio)
@@ -381,7 +408,7 @@ struct DetalhesDoServidorView: View {
             Secao(titulo: String(localized: "Extras"))
                 .padding(.horizontal, 16)
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(alignment: .top, spacing: 12) {
+                HStack(alignment: .top, spacing: 12) {
                     ForEach(extras) { extra in
                         Button { tocarSozinho(extra) } label: {
                             VStack(alignment: .leading, spacing: 0) {
@@ -409,12 +436,13 @@ struct DetalhesDoServidorView: View {
 
     /// Episódio toca com a temporada em volta, para o "próximo" do player ir
     /// ao episódio seguinte. O "Você parou em…" é o próprio player que oferece.
-    private func tocar() {
+    private func tocar(_ inicio: EscolhaDeFaixas.Inicio? = nil) {
         let lista = atual.tipo == "Episode" && temporada.contains(where: { $0.id == atual.id })
             ? temporada : [atual]
         let itens = lista.map(servidor.paraTocar)
         let alvo = servidor.paraTocar(atual).origin
         pedirFaixas(chave: alvo.resumeKey)
+        if let inicio { EscolhaDeFaixas.shared.pedirInicio(inicio, para: alvo.resumeKey) }
         fila = itens
         tocando = itens.first { $0.origin == alvo }
     }

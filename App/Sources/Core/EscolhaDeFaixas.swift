@@ -43,4 +43,19 @@ final class EscolhaDeFaixas {
         defer { pedidos[chave] = nil }
         return pedidos[chave]
     }
+
+    // MARK: - De onde começar
+
+    /// "Continuar" ou "Do início", escolhido na página: o player não
+    /// pergunta de novo o que já foi respondido lá.
+    enum Inicio { case continuar, doComeco }
+
+    private var inicios: [String: Inicio] = [:]
+
+    func pedirInicio(_ inicio: Inicio, para chave: String) { inicios[chave] = inicio }
+
+    func consumirInicio(_ chave: String) -> Inicio? {
+        defer { inicios[chave] = nil }
+        return inicios[chave]
+    }
 }

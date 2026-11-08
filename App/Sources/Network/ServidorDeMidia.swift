@@ -728,6 +728,29 @@ struct ServidorDeMidia {
         ] + chaveNaConsulta)
     }
 
+    /// A imagem, ou por que não veio: o servidor não tem nenhuma das pedidas
+    /// (não adianta pedir de novo) ou o pedido caiu no caminho (adianta).
+    enum ImagemBaixada {
+        case imagem(UIImage)
+        case naoTem
+        case falhou
+    }
+
+    func baixarImagem(_ id: String, tipos: [String], largura: Int) async -> ImagemBaixada {
+        var caiu = false
+        for tipo in tipos {
+            guard let url = urlDaImagem(id, tipo: tipo, largura: largura) else { continue }
+            await LimiteDeImagens.shared.entrar()
+            let resposta = try? await URLSession.shared.data(from: url)
+            await LimiteDeImagens.shared.sair()
+            guard let resposta else { caiu = true; continue }
+            let codigo = (resposta.1 as? HTTPURLResponse)?.statusCode ?? 0
+            if codigo == 200, let imagem = UIImage(data: resposta.0) { return .imagem(imagem) }
+            if codigo != 404 { caiu = true }
+        }
+        return caiu ? .falhou : .naoTem
+    }
+
     func imagem(_ id: String, tipos: [String] = ["Thumb", "Backdrop", "Primary"],
                 largura: Int = 480) async -> UIImage? {
         for tipo in tipos {
@@ -827,5 +850,33 @@ struct ServidorDeMidia {
                 : ErroDeServidor.http(codigo)
         }
         return dados
+    }
+}
+
+/// Quantas imagens descem ao mesmo tempo. Uma tela de faixas pede dezenas de
+/// capas de uma vez, e despejar todas juntas num servidor atrás do Cloudflare
+/// fazia uma parte cair por tempo esgotado — e a capa ficava vazia.
+actor LimiteDeImagens {
+    static let shared = LimiteDeImagens()
+
+    private let maximo = 6
+    private var emCurso = 0
+    private var fila: [CheckedContinuation<Void, Never>] = []
+
+    func entrar() async {
+        if emCurso < maximo {
+            emCurso += 1
+            return
+        }
+        await withCheckedContinuation { fila.append($0) }
+    }
+
+    func sair() {
+        if fila.isEmpty {
+            emCurso -= 1
+        } else {
+            // A vaga passa direto para o próximo da fila.
+            fila.removeFirst().resume()
+        }
     }
 }
