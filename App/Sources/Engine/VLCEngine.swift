@@ -16,7 +16,13 @@ import MobileVLCKit
 @MainActor
 final class VLCEngine: NSObject, PlaybackEngine {
 
-    private let player = VLCMediaPlayer()
+    /// `var`: mudar o tamanho da legenda é refazer o reprodutor (ver `TamanhoDaLegenda`).
+    private var player = VLCMediaPlayer(library: TamanhoDaLegenda.biblioteca())
+    /// O vídeo aberto agora — para refazer o reprodutor no mesmo ponto.
+    private var itemAtual: MediaItem?
+    /// Depois de refeito: o ponto e as faixas de antes, aplicados ao tocar.
+    private var alvoAoTocar: Double?
+    private var faixasARestaurar: (audio: Int32?, legenda: Int32?)?
     private let container = VLCRenderView()
     private var savedVolume: Float = 1.0
 
@@ -219,6 +225,7 @@ final class VLCEngine: NSObject, PlaybackEngine {
             legendaDoUsuario = false
             origemDaLegenda = item.origin
         }
+        itemAtual = item
         pedidoDeFaixas = EscolhaDeFaixas.shared.consumir(item.origin.resumeKey)
         idsInternos = nil
         legendasDeFora = []
@@ -631,6 +638,52 @@ final class VLCEngine: NSObject, PlaybackEngine {
         pedidoDeFaixas = pedido.audio == nil && pedido.legenda == nil ? nil : pedido
     }
 
+    /// Refaz o reprodutor com o tamanho de legenda escolhido, no mesmo ponto,
+    /// com o mesmo áudio, a mesma legenda e o mesmo atraso. O filme pisca e
+    /// volta — o VLC 3 não muda o tamanho do texto de outro jeito.
+    func refazerComTamanhoDaLegenda() async {
+        guard let item = itemAtual else { return }
+        let instante = currentTime
+        let audio = currentAudioTrack
+        let legenda = currentSubtitleTrack
+        let atraso = player.currentVideoSubTitleDelay
+        player.delegate = nil
+        player.stop()
+        player = VLCMediaPlayer(library: TamanhoDaLegenda.biblioteca())
+        player.delegate = self
+        player.drawable = container
+        container.attach(player)
+        faixasARestaurar = (audio, legenda)
+        legendaDoUsuario = true
+        alvoAoTocar = instante
+        do {
+            try await load(item)
+        } catch {
+            state = .failed(error.localizedDescription)
+            return
+        }
+        player.currentVideoSubTitleDelay = atraso
+        play()
+    }
+
+    /// O ponto e as faixas de antes de refazer, assim que existirem de novo.
+    fileprivate func aplicarRestauracao() {
+        if let alvo = alvoAoTocar, player.isPlaying {
+            alvoAoTocar = nil
+            player.time = VLCTime(int: Int32(alvo * 1000))
+        }
+        guard let restaurar = faixasARestaurar else { return }
+        let legenda = restaurar.legenda
+        if let audio = restaurar.audio, audioTracks.contains(where: { $0.id == audio }), player.currentAudioTrackIndex != audio {
+            player.currentAudioTrackIndex = audio
+        }
+        let alvo = legenda ?? -1
+        if alvo == -1 || subtitleTracks.contains(where: { $0.id == alvo }) {
+            if player.currentVideoSubTitleIndex != alvo { player.currentVideoSubTitleIndex = alvo }
+            faixasARestaurar = nil
+        }
+    }
+
     /// "Forced", "Forçada(s)", "Forzado(s)", "Forcée(s)" — palavra inteira.
     private static let forcada = #"(^|[^\p{L}])(forced|for[çcz]ad[oa]s?|forcée?s?)([^\p{L}]|$)"#
 
@@ -693,6 +746,7 @@ extension VLCEngine: VLCMediaPlayerDelegate {
             // reaplicar aqui garante que o ganho interno fique em 100% e o
             // volume que vale seja o do aparelho.
             player.audio?.volume = Int32(savedVolume * 100)
+            aplicarRestauracao()
             aplicarPedidoDeFaixas()
             aplicarRegraDaLegenda()
             state = .playing
@@ -704,6 +758,7 @@ extension VLCEngine: VLCMediaPlayerDelegate {
         // As faixas chegam aos poucos (a legenda ao lado do arquivo, por
         // último), e o VLC liga a padrão por conta própria: a regra vale de novo.
         case .esAdded:
+            aplicarRestauracao()
             aplicarPedidoDeFaixas()
             aplicarRegraDaLegenda()
         default:         break
@@ -787,6 +842,8 @@ final class VLCRenderView: UIView, VideoGravityAdjustable {
         }
     }
 }
+
+extension VLCEngine: MudaTamanhoDaLegenda {}
 
 extension VLCEngine: AceitaLegendaDeFora {
     func adicionarLegenda(_ arquivo: URL) {

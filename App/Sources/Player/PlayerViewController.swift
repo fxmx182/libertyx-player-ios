@@ -1227,6 +1227,12 @@ final class PlayerViewController: UIViewController {
                                valor: ligado ? AtrasoDaLegendaView.texto(atraso) : nil,
                                aceso: ligado) { [weak self] in self?.showSubtitleDelay(atrasa) })
         }
+        if engine is MudaTamanhoDaLegenda {
+            let tamanho = TamanhoDaLegenda.atual
+            itens.append(.init(rotulo: String(localized: "Tamanho da legenda"), simbolo: "textformat.size",
+                               valor: tamanho != 100 ? "\(tamanho)%" : nil,
+                               aceso: tamanho != 100) { [weak self] in self?.mostrarTamanhoDaLegenda() })
+        }
         itens += [
             .init(rotulo: String(localized: "Proporção"), simbolo: "aspectratio") { [weak self] in self?.cycleAspect() },
             .init(rotulo: String(localized: "Velocidade"), simbolo: "speedometer", aceso: playbackSpeed != 1,
@@ -1303,6 +1309,37 @@ final class PlayerViewController: UIViewController {
         painelAberto = true
         let barra = AtrasoDaLegendaView(atraso: atrasa.atrasoDaLegenda)
         barra.onChange = { atrasa.atrasoDaLegenda = $0 }
+        barra.onClose = { [weak self] in
+            self?.painelAberto = false
+            self?.controls.setVisible(true, animated: true)
+            self?.scheduleControlsHide()
+        }
+        view.addSubview(barra)
+        NSLayoutConstraint.activate([
+            barra.topAnchor.constraint(equalTo: view.topAnchor),
+            barra.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            barra.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            barra.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        ])
+    }
+
+    /// O tamanho da legenda numa barra no alto (ver `TamanhoDaLegendaView`).
+    /// Cada mudança refaz o reprodutor no mesmo ponto; as legendas ao lado do
+    /// arquivo voltam depois, como ao abrir.
+    private func mostrarTamanhoDaLegenda() {
+        guard let muda = engine as? MudaTamanhoDaLegenda else { return }
+        controlsHideWorkItem?.cancel()
+        controls.setVisible(false, animated: true)
+        painelAberto = true
+        let barra = TamanhoDaLegendaView()
+        barra.onChange = { [weak self] in
+            Task { @MainActor in
+                await muda.refazerComTamanhoDaLegenda()
+                guard let self else { return }
+                self.buscarLegendasAoLado(self.item)
+                self.applyGravity()
+            }
+        }
         barra.onClose = { [weak self] in
             self?.painelAberto = false
             self?.controls.setVisible(true, animated: true)

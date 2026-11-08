@@ -362,3 +362,6 @@
 "O servidor não conseguiu abrir este canal." = "The server could not open this channel.";
 "Cabem 5 ícones: Início, Ajustes e mais 3 à sua escolha. Um servidor na dock abre direto nele." = "The dock fits 5 icons: Home, Settings and 3 of your choice. A server in the dock opens straight into it.";
 "Local" = "Local";
+"Tamanho da legenda" = "Subtitle size";
+"Legenda em %lld%%" = "Subtitles at %lld%%";
+"Olhe a legenda embaixo. A cada mudança o vídeo recomeça do mesmo ponto." = "Look at the subtitle below. Each change restarts the video at the same point.";
