@@ -351,3 +351,8 @@
 "Do início" = "Desde el inicio";
 "Dock" = "Dock";
 "Início e Ajustes ficam sempre na dock. Ligue o que quiser a um toque — um servidor abre direto nele." = "Inicio y Ajustes siempre están en el dock. Activa lo que quieras a un toque: un servidor se abre directamente.";
+"Parou em %@ · faltam %@" = "Quedó en %@ · faltan %@";
+"Ir para a série" = "Ir a la serie";
+"Abrir no IMDb" = "Abrir en IMDb";
+"Abrir no TMDB" = "Abrir en TMDB";
+"Mais" = "Más";

@@ -203,33 +203,30 @@ struct SerieDoServidorView: View {
         .padding(.top, detalhes?.logoDe == nil ? 0 : 8)
     }
 
+    /// A mesma linha de ícones da página do episódio. O ▶ toca o próximo a
+    /// ver, dito embaixo ("T1:E4").
     private var botoes: some View {
-        HStack(spacing: 10) {
-            Button { if let proximo { tocar(proximo) } } label: {
-                VStack(spacing: 1) {
-                    Label(proximo?.posicao == nil ? String(localized: "Assistir") : String(localized: "Continuar"),
-                          systemImage: "play.fill")
-                        .font(LabFont.swiftUI(16, .bold))
-                    if let proximo, let numero = numeroDoEpisodio(proximo) {
-                        Text(verbatim: numero)
-                            .font(LabFont.swiftUI(11, .semibold))
-                            .opacity(0.75)
-                    }
+        VStack(spacing: 2) {
+            HStack(spacing: 6) {
+                BotaoDeIcone(simbolo: "play.fill", cor: LabTheme.accent, destaque: true,
+                             rotulo: proximo?.posicao == nil ? String(localized: "Assistir") : String(localized: "Continuar")) {
+                    if let proximo { tocar(proximo) }
                 }
-                .foregroundStyle(.black)
-                .frame(maxWidth: .infinity)
-                .frame(height: 48)
-                .background(LabTheme.accent, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .opacity(proximo == nil ? 0.4 : 1)
+                .disabled(proximo == nil)
+                BotaoDeIcone(simbolo: "checkmark", cor: LabTheme.accent, aceso: serie?.visto == true,
+                             rotulo: String(localized: "Já reproduzido")) { mudar(visto: !(serie?.visto ?? false)) }
+                BotaoDeIcone(simbolo: serie?.favorito == true ? "heart.fill" : "heart", cor: LabTheme.red,
+                             aceso: serie?.favorito == true, rotulo: String(localized: "Favorito")) { mudarFavorito() }
             }
-            .buttonStyle(.plain)
-            .disabled(proximo == nil)
-
-            BotaoDeMarca(simbolo: "checkmark", aceso: serie?.visto == true, cor: LabTheme.accent,
-                         rotulo: String(localized: "Já reproduzido")) { mudar(visto: !(serie?.visto ?? false)) }
-            BotaoDeMarca(simbolo: serie?.favorito == true ? "heart.fill" : "heart", aceso: serie?.favorito == true,
-                         cor: LabTheme.red, rotulo: String(localized: "Favorito")) { mudarFavorito() }
+            if let proximo, let numero = numeroDoEpisodio(proximo) {
+                Text(verbatim: [numero, proximo.nome].joined(separator: " · "))
+                    .font(LabFont.swiftUI(11.5, .medium))
+                    .foregroundStyle(LabTheme.faint)
+                    .lineLimit(1)
+            }
         }
+        .frame(maxWidth: .infinity)
     }
 
     private var abasDeTemporada: some View {

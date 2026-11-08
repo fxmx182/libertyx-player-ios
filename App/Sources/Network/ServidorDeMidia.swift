@@ -261,6 +261,8 @@ struct ServidorDeMidia {
         let trailersDaInternet: [URL]
         let trailersNoDisco: Int
         let extras: Int
+        /// "Imdb", "Tmdb", "Tvdb"… — os números do item nos sites de onde vieram os dados.
+        let idsExternos: [String: String]
         /// O logotipo e o fundo são do próprio item ou, num episódio, da série.
         let logoDe: String?
         let fundoDe: String?
@@ -317,7 +319,7 @@ struct ServidorDeMidia {
             case id = "Id", imagens = "ImageTags", fundos = "BackdropImageTags"
             case logoDoPai = "ParentLogoItemId", fundoDoPai = "ParentBackdropItemId"
             case trailersDaInternet = "RemoteTrailers", trailersNoDisco = "LocalTrailerCount"
-            case extras = "SpecialFeatureCount"
+            case extras = "SpecialFeatureCount", idsExternos = "ProviderIds"
         }
 
         private struct Fonte: Decodable { let MediaStreams: [Fluxo]? }
@@ -342,6 +344,7 @@ struct ServidorDeMidia {
                 .compactMap { $0.Url.flatMap(URL.init(string:)) }
             trailersNoDisco = (try? c.decode(Int.self, forKey: .trailersNoDisco)) ?? 0
             extras = (try? c.decode(Int.self, forKey: .extras)) ?? 0
+            idsExternos = (try? c.decode([String: String].self, forKey: .idsExternos)) ?? [:]
             let imagens = (try? c.decode([String: String].self, forKey: .imagens)) ?? [:]
             let logoDoPai = try? c.decode(String.self, forKey: .logoDoPai)
             logoDe = imagens["Logo"] != nil ? id : logoDoPai
@@ -362,7 +365,7 @@ struct ServidorDeMidia {
     /// O item de novo (o "visto" e onde parou podem ter mudado) e os detalhes dele.
     func detalhes(_ id: String) async throws -> (item: Item, detalhes: Detalhes) {
         let dados = try await pedirDados("/Users/\(usuarioID)/Items/\(id)", consulta: [
-            URLQueryItem(name: "Fields", value: "Overview,People,Genres,MediaSources,MediaStreams,PremiereDate,DateCreated,RemoteTrailers"),
+            URLQueryItem(name: "Fields", value: "Overview,People,Genres,MediaSources,MediaStreams,PremiereDate,DateCreated,RemoteTrailers,ProviderIds"),
         ])
         do {
             let decodificador = JSONDecoder()

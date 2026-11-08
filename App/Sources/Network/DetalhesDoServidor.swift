@@ -28,6 +28,7 @@ struct DetalhesDoServidorView: View {
     @State private var qualidade = 0
     @State private var extras: [ServidorDeMidia.Item] = []
     @Environment(\.openURL) private var abrirEndereco
+    @State private var abrindoSerie = false
     /// Conta as voltas do player e as marcas: onde parou e o "visto" mudam.
     @State private var volta = 0
 
@@ -66,6 +67,11 @@ struct DetalhesDoServidorView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task(id: volta) { await carregar() }
         .onAppear { qualidade = Qualidade.da(servidor.conta.id) }
+        .navigationDestination(isPresented: $abrindoSerie) {
+            if let serieID = atual.serieID {
+                SerieDoServidorView(servidor: servidor, serieID: serieID, nome: atual.serie ?? "")
+            }
+        }
         .fullScreenCover(item: $tocando, onDismiss: { volta += 1 }) { item in
             PlayerScreen(item: item, playlist: fila).ignoresSafeArea()
         }
@@ -152,66 +158,63 @@ struct DetalhesDoServidorView: View {
         return partes
     }
 
+    /// Os botões do app do Jellyfin, em ícones numa linha só: tocar (de onde
+    /// parou, se parou), do começo, visto, favorito e o ⋯ com o resto.
     private var botoes: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                Button { tocar(atual.posicao == nil ? nil : .continuar) } label: {
-                    VStack(spacing: 1) {
-                        Label(atual.posicao == nil ? String(localized: "Assistir") : String(localized: "Continuar"),
-                              systemImage: "play.fill")
-                            .font(LabFont.swiftUI(16, .bold))
-                        if let posicao = atual.posicao {
-                            Text(verbatim: TimeFormat.clock(posicao))
-                                .font(LabFont.swiftUI(11, .semibold))
-                                .opacity(0.75)
-                        }
-                    }
-                    .foregroundStyle(.black)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 48)
-                    .background(LabTheme.accent, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 6) {
+                BotaoDeIcone(simbolo: "play.fill", cor: LabTheme.accent, destaque: true,
+                             rotulo: atual.posicao == nil ? String(localized: "Assistir") : String(localized: "Continuar")) {
+                    tocar(atual.posicao == nil ? nil : .continuar)
                 }
-                .buttonStyle(.plain)
-
-                // Com o vídeo começado, as duas saídas lado a lado, como no
-                // app do Jellyfin: seguir de onde parou ou rever do começo.
                 if atual.posicao != nil {
-                    Button { tocar(.doComeco) } label: {
-                        Label(String(localized: "Do início"), systemImage: "backward.end.fill")
-                            .font(LabFont.swiftUI(14, .bold))
-                            .foregroundStyle(LabTheme.text)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 48)
-                            .background(LabTheme.glass, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .strokeBorder(LabTheme.glassBorder, lineWidth: 1))
+                    BotaoDeIcone(simbolo: "arrow.counterclockwise", rotulo: String(localized: "Do início")) {
+                        tocar(.doComeco)
                     }
-                    .buttonStyle(.plain)
                 }
-            }
-            // As marcas numa fileira própria: com "Continuar" e "Do início"
-            // lado a lado, cinco botões numa linha só não cabiam no iPhone.
-            HStack(spacing: 10) {
-                BotaoDeMarca(simbolo: "checkmark", aceso: atual.visto, cor: LabTheme.accent,
+                BotaoDeIcone(simbolo: "checkmark", cor: LabTheme.accent, aceso: atual.visto,
                              rotulo: String(localized: "Já reproduzido")) { mudarVisto() }
-                BotaoDeMarca(simbolo: atual.favorito ? "heart.fill" : "heart", aceso: atual.favorito,
-                             cor: LabTheme.red, rotulo: String(localized: "Favorito")) { mudarFavorito() }
-                if let detalhes, detalhes.trailersNoDisco > 0 || !detalhes.trailersDaInternet.isEmpty {
-                    BotaoDeMarca(simbolo: "film", aceso: false, cor: LabTheme.accent,
-                                 rotulo: String(localized: "Trailer")) { tocarTrailer(detalhes) }
-                }
-                Spacer(minLength: 0)
+                BotaoDeIcone(simbolo: atual.favorito ? "heart.fill" : "heart", cor: LabTheme.red, aceso: atual.favorito,
+                             rotulo: String(localized: "Favorito")) { mudarFavorito() }
+                menuDeMais
             }
+            .frame(maxWidth: .infinity)
             if let progresso = atual.progresso, let posicao = atual.posicao, let duracao = atual.duracao {
                 VStack(alignment: .leading, spacing: 5) {
                     BarraDeProgresso(progresso: progresso)
                         .clipShape(Capsule())
-                    Text("faltam \(TimeFormat.spoken(max(0, duracao - posicao)))")
+                    Text("Parou em \(TimeFormat.clock(posicao)) · faltam \(TimeFormat.spoken(max(0, duracao - posicao)))")
                         .font(LabFont.swiftUI(11.5, .medium))
                         .foregroundStyle(LabTheme.faint)
                 }
             }
         }
+    }
+
+    /// O ⋯ do app do Jellyfin: o que não precisa de botão próprio.
+    private var menuDeMais: some View {
+        Menu {
+            if let detalhes, detalhes.trailersNoDisco > 0 || !detalhes.trailersDaInternet.isEmpty {
+                Button { tocarTrailer(detalhes) } label: { Label("Trailer", systemImage: "film") }
+            }
+            if atual.tipo == "Episode", atual.serieID != nil {
+                Button { abrindoSerie = true } label: { Label("Ir para a série", systemImage: "tv") }
+            }
+            if let imdb = detalhes?.idsExternos["Imdb"], let url = URL(string: "https://www.imdb.com/title/\(imdb)") {
+                Button { abrirEndereco(url) } label: { Label("Abrir no IMDb", systemImage: "arrow.up.right.square") }
+            }
+            if atual.tipo == "Movie", let tmdb = detalhes?.idsExternos["Tmdb"],
+               let url = URL(string: "https://www.themoviedb.org/movie/\(tmdb)") {
+                Button { abrirEndereco(url) } label: { Label("Abrir no TMDB", systemImage: "arrow.up.right.square") }
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 21, weight: .semibold))
+                .foregroundStyle(LabTheme.text)
+                .frame(width: 52, height: 52)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel(Text("Mais"))
     }
 
     /// Vídeo, áudio e legendas como o servidor leu o arquivo, com os
@@ -223,36 +226,37 @@ struct DetalhesDoServidorView: View {
         return VStack(alignment: .leading, spacing: 11) {
             linha("Vídeo", detalhes.faixasDo("Video"))
             if !audios.isEmpty {
+                // Picker, e não botões com ✓: no menu do sistema o texto de
+                // todas as opções começa no mesmo lugar, marcada ou não.
                 seletor("Áudio", titulo: audios.first { $0.indice == audioEscolhido }?.titulo ?? audios[0].titulo) {
-                    ForEach(audios, id: \.indice) { faixa in
-                        Button { audioEscolhido = faixa.indice } label: {
-                            marcado(faixa.titulo, audioEscolhido == faixa.indice)
+                    Picker(selection: $audioEscolhido) {
+                        ForEach(audios, id: \.indice) { faixa in
+                            Text(verbatim: faixa.titulo).tag(Int?.some(faixa.indice))
                         }
-                    }
+                    } label: { EmptyView() }
+                    .pickerStyle(.inline)
                 }
             }
             seletor("Legendas", titulo: tituloDaLegenda(legendas)) {
-                Button { legendaEscolhida = .automatica } label: {
-                    marcado(String(localized: "Automática (só as forçadas)"), legendaEscolhida == .automatica)
-                }
-                Button { legendaEscolhida = .desligada } label: {
-                    marcado(String(localized: "Desligada"), legendaEscolhida == .desligada)
-                }
-                ForEach(legendas, id: \.indice) { faixa in
-                    Button { legendaEscolhida = .faixa(faixa.indice) } label: {
-                        marcado(faixa.titulo, legendaEscolhida == .faixa(faixa.indice))
+                Picker(selection: $legendaEscolhida) {
+                    Text("Automática (só as forçadas)").tag(LegendaEscolhida.automatica)
+                    Text("Desligada").tag(LegendaEscolhida.desligada)
+                    ForEach(legendas, id: \.indice) { faixa in
+                        Text(verbatim: faixa.titulo).tag(LegendaEscolhida.faixa(faixa.indice))
                     }
-                }
+                } label: { EmptyView() }
+                .pickerStyle(.inline)
             }
             seletor("Qualidade", titulo: Qualidade.nome(qualidade)) {
-                ForEach(Qualidade.opcoes, id: \.self) { kbps in
-                    Button {
-                        qualidade = kbps
-                        Qualidade.definir(kbps, para: servidor.conta.id)
-                    } label: {
-                        marcado(Qualidade.nome(kbps), qualidade == kbps)
+                Picker(selection: Binding(get: { qualidade }, set: { kbps in
+                    qualidade = kbps
+                    Qualidade.definir(kbps, para: servidor.conta.id)
+                })) {
+                    ForEach(Qualidade.opcoes, id: \.self) { kbps in
+                        Text(verbatim: Qualidade.nome(kbps)).tag(kbps)
                     }
-                }
+                } label: { EmptyView() }
+                .pickerStyle(.inline)
             }
             if qualidade > 0 {
                 Text("O servidor converte o vídeo para esta qualidade. Legendas de dentro do arquivo não vêm junto.")
@@ -319,15 +323,6 @@ struct DetalhesDoServidorView: View {
                 .padding(.vertical, 7)
                 .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
-        }
-    }
-
-    @ViewBuilder
-    private func marcado(_ titulo: String, _ escolhido: Bool) -> some View {
-        if escolhido {
-            Label(titulo, systemImage: "checkmark")
-        } else {
-            Text(verbatim: titulo)
         }
     }
 
@@ -556,22 +551,34 @@ struct DetalhesDoServidorView: View {
     }
 }
 
-/// O botão redondo do "visto" e do favorito, aceso na cor da marca.
-struct BotaoDeMarca: View {
+/// Um botão da linha de ícones, como no app do Jellyfin: só o símbolo, sem
+/// moldura, aceso na cor dele quando marcado. O de tocar vem num círculo
+/// dourado — é a ação da página, e tem de se achar sem procurar.
+struct BotaoDeIcone: View {
     let simbolo: String
-    let aceso: Bool
-    let cor: Color
+    var cor: Color = LabTheme.text
+    var aceso = false
+    var destaque = false
     let rotulo: String
     let acao: () -> Void
 
     var body: some View {
         Button(action: acao) {
-            Image(systemName: simbolo)
-                .font(.system(size: 17, weight: .bold))
-                .foregroundStyle(aceso ? cor : LabTheme.text)
-                .frame(width: 48, height: 48)
-                .background(LabTheme.glass, in: Circle())
-                .overlay(Circle().strokeBorder(aceso ? cor.opacity(0.7) : LabTheme.glassBorder, lineWidth: 1))
+            Group {
+                if destaque {
+                    Image(systemName: simbolo)
+                        .font(.system(size: 21, weight: .bold))
+                        .foregroundStyle(.black)
+                        .frame(width: 52, height: 52)
+                        .background(cor, in: Circle())
+                } else {
+                    Image(systemName: simbolo)
+                        .font(.system(size: 21, weight: .semibold))
+                        .foregroundStyle(aceso ? cor : LabTheme.text)
+                        .frame(width: 52, height: 52)
+                }
+            }
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Text(verbatim: rotulo))
