@@ -29,7 +29,14 @@ struct Abas: View {
     var body: some View {
         let extras = dock.validos(contas.contas, smb: servidoresSMB.servers)
         TabView(selection: Binding(get: { aba }, set: { nova in
-            if nova != aba { geracao[aba, default: 0] += 1 }
+            // Trocar de aba esquece a pilha da que ficou; tocar na aba que já
+            // está aberta volta ao começo dela — de dentro de uma pasta, de um
+            // servidor ou de uma página, Início leva sempre ao Início.
+            if nova != aba {
+                geracao[aba, default: 0] += 1
+            } else {
+                geracao[nova, default: 0] += 1
+            }
             aba = nova
         })) {
             LibraryView()
