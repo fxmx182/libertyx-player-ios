@@ -134,7 +134,6 @@ struct LibraryView: View {
                         if library.groups.isEmpty {
                             TituloDeTela(titulo: String(localized: "Biblioteca"),
                                          subtitulo: String(localized: "Nenhuma pasta autorizada ainda"))
-                            secaoDeServidores
                             Button { showingFolderPicker = true } label: {
                                 LinhaDePastaDeRede(nome: String(localized: "Adicionar pasta"),
                                                    simbolo: "folder.badge.plus")
@@ -145,7 +144,6 @@ struct LibraryView: View {
                             // vídeos dela já são a biblioteca, e entrar nela
                             // seria um toque a mais para nada.
                             TituloDeTela(titulo: String(localized: "Biblioteca"), subtitulo: resumoDa(pastaUnica))
-                            secaoDeServidores
                             Secao(titulo: pastaUnica.name)
                             ListaDeVideos(itens: options.sorted(pastaUnica.items), layout: options.layout,
                                           onTocar: tocar, menu: menuDoItem)
@@ -153,8 +151,7 @@ struct LibraryView: View {
                             let total = library.groups.reduce(0) { $0 + $1.items.count }
                             TituloDeTela(titulo: String(localized: "Biblioteca"),
                                          subtitulo: Plural.videos(total) + "  ·  " + Plural.pastas(library.groups.count))
-                            secaoDeServidores
-                            Secao(titulo: String(localized: "Pastas"), extra: "\(library.groups.count)")
+                            Secao(titulo: String(localized: "Local"), extra: "\(library.groups.count)")
                             LazyVGrid(columns: [GridItem(.adaptive(minimum: escala.capa), spacing: 14, alignment: .top)], spacing: 18) {
                                 ForEach(library.groups) { grupo in
                                     NavigationLink(value: grupo) { CapaDePasta(grupo: grupo) }
@@ -180,36 +177,6 @@ struct LibraryView: View {
                 .background(Color(white: 0.09).opacity(0.92), in: Capsule())
                 .overlay(Capsule().strokeBorder(LabTheme.glassBorder, lineWidth: 0.5))
                 .padding(.bottom, 18)
-            }
-        }
-    }
-
-    /// Os servidores salvos como atalhos na estante: cada um entra direto no
-    /// servidor. Cadastrar fica nos Ajustes; aqui só aparece o que já existe.
-    @ViewBuilder
-    private var secaoDeServidores: some View {
-        if temServidores {
-            VStack(alignment: .leading, spacing: 12) {
-                Secao(titulo: String(localized: "Servidores"),
-                      extra: "\(servidoresSMB.servers.count + contas.contas.count)")
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
-                        ForEach(servidoresSMB.servers) { servidor in
-                            NavigationLink { SMBShareListView(server: servidor) } label: {
-                                AtalhoDeServidor(nome: servidor.name, tipo: "SMB", simbolo: "server.rack", imagem: "LogoSMB")
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        ForEach(contas.contas) { conta in
-                            NavigationLink { PastaRemotaView(titulo: conta.nome, destino: .inicio(conta)) } label: {
-                                AtalhoDeServidor(nome: conta.nome, tipo: conta.tipo.nome, simbolo: conta.tipo.simbolo,
-                                                 imagem: conta.tipo.imagem)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
-                .scrollClipDisabled()
             }
         }
     }
