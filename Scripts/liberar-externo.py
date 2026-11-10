@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Libera um build do TestFlight para o grupo externo (Família e amigos).
+"""Libera um build do TestFlight para os grupos externos (Família e amigos e
+Público, o do link público https://testflight.apple.com/join/vhrP1E9j).
 
 O grupo interno recebe todo build sozinho; o externo não: cada build novo
 precisa entrar no grupo, ganhar o texto do "O que testar" e ir para a revisão
@@ -16,7 +17,10 @@ import time
 from asc import chamar
 
 APP = "6826934911"
-GRUPO_EXTERNO = "7ea05856-66ba-413b-961a-384e2096787f"
+GRUPOS_EXTERNOS = (
+    "7ea05856-66ba-413b-961a-384e2096787f",  # Família e amigos
+    "cc2bca21-91de-445c-a10a-8653c3b3d123",  # Público (link, limite de 1000)
+)
 
 
 def esperar_build(numero: str) -> str:
@@ -53,12 +57,13 @@ def main() -> None:
             "attributes": {"locale": "pt-BR", "whatsNew": novidades},
             "relationships": {"build": {"data": {"type": "builds", "id": build}}}}})
 
-    chamar("POST", f"/v1/betaGroups/{GRUPO_EXTERNO}/relationships/builds",
-           {"data": [{"type": "builds", "id": build}]})
+    for grupo in GRUPOS_EXTERNOS:
+        chamar("POST", f"/v1/betaGroups/{grupo}/relationships/builds",
+               {"data": [{"type": "builds", "id": build}]})
     r = chamar("POST", "/v1/betaAppReviewSubmissions", {"data": {
         "type": "betaAppReviewSubmissions",
         "relationships": {"build": {"data": {"type": "builds", "id": build}}}}})
-    print(f"build {numero} no grupo externo, revisão: {r['data']['attributes']['betaReviewState']}")
+    print(f"build {numero} nos grupos externos, revisão: {r['data']['attributes']['betaReviewState']}")
 
 
 if __name__ == "__main__":
