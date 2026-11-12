@@ -1,0 +1,89 @@
+name: VLCKit 4 (build próprio)
+
+# Separado do build do app, como o do FFmpeg: compilar o VLC leva horas e uma
+# falha aqui não pode derrubar o pipeline do .ipa. O resultado vira um release
+# deste repositório (vlckit4-<tag>), de onde Scripts/baixar-vlckit.sh o baixa.
+on:
+  push:
+    branches: [main, vlckit4-proprio]
+    paths:
+      - 'Scripts/compilar-vlckit4.sh'
+      - '.github/workflows/vlckit4.yml'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag do VLCKit
+        default: 4.0.0-a26
+
+concurrency:
+  group: vlckit4
+  cancel-in-progress: false
+
+jobs:
+  vlckit:
+    name: Compilar VLCKit 4 (Release, sem assert)
+    runs-on: macos-15
+    timeout-minutes: 360
+    permissions:
+      contents: write   # para publicar o release com o xcframework
+
+    env:
+      VLCKIT_TAG: ${{ github.event.inputs.tag || '4.0.0-a26' }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Já compilado com este script?
+        id: feito
+        run: |
+          RELEASE="vlckit4-$VLCKIT_TAG"
+          SCRIPT=$(shasum -a 256 Scripts/compilar-vlckit4.sh | cut -c1-12)
+          echo "release=$RELEASE" >> "$GITHUB_OUTPUT"
+          echo "script=$SCRIPT" >> "$GITHUB_OUTPUT"
+          if gh release view "$RELEASE" --json body -q .body 2>/dev/null | grep -q "script $SCRIPT"; then
+            echo "pronto=1" >> "$GITHUB_OUTPUT"
+            echo "O release $RELEASE já foi feito com este script ($SCRIPT)."
+          fi
+
+      - name: Compilar
+        if: steps.feito.outputs.pronto != '1'
+        run: |
+          xcodebuild -version
+          chmod +x Scripts/compilar-vlckit4.sh
+          # O log inteiro tem centenas de milhares de linhas: na tela, só as
+          # etapas; o resto vai para o artefato vlckit4-log.
+          set +e
+          Scripts/compilar-vlckit4.sh > compilar.log 2>&1 &
+          PID=$!
+          while kill -0 $PID 2>/dev/null; do
+            sleep 300
+            echo "--- $(date +%H:%M) · $(wc -l < compilar.log) linhas · $(grep -E '^\[|^==' compilar.log | tail -1)"
+          done
+          wait $PID
+          STATUS=$?
+          set -e
+          grep -E "^\[|^==|::" compilar.log || true
+          [ $STATUS -eq 0 ] || { echo "== fim do log"; tail -120 compilar.log; exit 1; }
+
+      - name: Guardar o log
+        if: always() && steps.feito.outputs.pronto != '1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: vlckit4-log
+          path: compilar.log
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Publicar release
+        if: steps.feito.outputs.pronto != '1'
+        run: |
+          RELEASE="${{ steps.feito.outputs.release }}"
+          gh release delete "$RELEASE" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$RELEASE" saida/VLCKit.xcframework.zip saida/VLCKit.xcframework.zip.sha256 \
+            --title "VLCKit $VLCKIT_TAG (Release, sem assert)" \
+            --notes "$(cat saida/LEIA.txt)
+
+          Licença LGPL 2.1+. Código: https://code.videolan.org/videolan/VLCKit e https://code.videolan.org/videolan/vlc
+          script ${{ steps.feito.outputs.script }}" \
+            --prerelease
