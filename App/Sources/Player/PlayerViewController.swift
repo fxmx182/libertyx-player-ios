@@ -1324,22 +1324,14 @@ final class PlayerViewController: UIViewController {
     }
 
     /// O tamanho da legenda numa barra no alto (ver `TamanhoDaLegendaView`).
-    /// Cada mudança refaz o reprodutor no mesmo ponto; as legendas ao lado do
-    /// arquivo voltam depois, como ao abrir.
+    /// O VLC 4 muda o texto na hora, sem refazer o reprodutor.
     private func mostrarTamanhoDaLegenda() {
         guard let muda = engine as? MudaTamanhoDaLegenda else { return }
         controlsHideWorkItem?.cancel()
         controls.setVisible(false, animated: true)
         painelAberto = true
         let barra = TamanhoDaLegendaView()
-        barra.onChange = { [weak self] in
-            Task { @MainActor in
-                await muda.refazerComTamanhoDaLegenda()
-                guard let self else { return }
-                self.buscarLegendasAoLado(self.item)
-                self.applyGravity()
-            }
-        }
+        barra.onChange = { muda.aplicarTamanhoDaLegenda() }
         barra.onClose = { [weak self] in
             self?.painelAberto = false
             self?.controls.setVisible(true, animated: true)

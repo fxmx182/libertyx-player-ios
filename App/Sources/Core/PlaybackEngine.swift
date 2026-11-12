@@ -158,7 +158,8 @@ protocol ComJanelaFlutuante: AnyObject {
 /// O motor que muda o tamanho da legenda (ver `TamanhoDaLegenda`).
 @MainActor
 protocol MudaTamanhoDaLegenda: AnyObject {
-    func refazerComTamanhoDaLegenda() async
+    /// Aplica `TamanhoDaLegenda.atual` na hora, com o filme tocando.
+    func aplicarTamanhoDaLegenda()
 }
 
 /// Motor que atrasa ou adianta a legenda — para o arquivo cuja legenda veio

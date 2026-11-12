@@ -1,6 +1,6 @@
 import UIKit
 import AVFoundation
-import MobileVLCKit
+import VLCKit
 
 /// Motor de reprodução sobre o VLCKit.
 ///
@@ -16,13 +16,11 @@ import MobileVLCKit
 @MainActor
 final class VLCEngine: NSObject, PlaybackEngine {
 
-    /// `var`: mudar o tamanho da legenda é refazer o reprodutor (ver `TamanhoDaLegenda`).
-    private var player = VLCMediaPlayer(library: TamanhoDaLegenda.biblioteca())
-    /// O vídeo aberto agora — para refazer o reprodutor no mesmo ponto.
-    private var itemAtual: MediaItem?
-    /// Depois de refeito: o ponto e as faixas de antes, aplicados ao tocar.
-    private var alvoAoTocar: Double?
-    private var faixasARestaurar: (audio: Int32?, legenda: Int32?)?
+    /// Criado depois de `prepararEventos`, que o VLC lê aqui, ao nascer.
+    private let player: VLCMediaPlayer = {
+        VLCEngine.prepararEventos()
+        return VLCMediaPlayer()
+    }()
     private let container = VLCRenderView()
     private var savedVolume: Float = 1.0
 
@@ -115,6 +113,16 @@ final class VLCEngine: NSObject, PlaybackEngine {
     private var idsInternos: Set<Int32>?
     private var legendasDeFora: [String] = []
 
+    /// Se o vídeo chegou a tocar: o VLC 4 anuncia o fim como "parou", e só
+    /// parar depois de ter tocado é o fim de verdade.
+    private var tocou = false
+
+    /// A janela flutuante, quando o VLC a deixa pronta para abrir.
+    fileprivate var janela: VLCPictureInPictureWindowControlling?
+    fileprivate(set) var janelaAberta = false
+    var onJanelaPronta: ((Bool) -> Void)?
+    var onJanela: ((Bool) -> Void)?
+
     private(set) var state: PlaybackState = .idle {
         didSet {
             guard state != oldValue else { return }
@@ -145,9 +153,19 @@ final class VLCEngine: NSObject, PlaybackEngine {
         alvoPendente = (alvo, CACurrentMediaTime(), 0)
     }
 
+    /// A duração, só depois de o vídeo começar a tocar.
+    ///
+    /// Lida antes de o VLC abrir o arquivo, ela vem zero — e o VLCKit 4 até a
+    /// 4.0.0a25 guardava esse zero para sempre: a barra não andava e a busca
+    /// se recusava a sair do lugar. Antes de tocar não há o que dizer; e se
+    /// ainda assim vier zero, a conta pelo tempo e pela fração já andada serve.
     var duration: Double {
+        guard tocou else { return 0 }
         let ms = player.media?.length.intValue ?? 0
-        return ms > 0 ? Double(ms) / 1000 : 0
+        if ms > 0 { return Double(ms) / 1000 }
+        let fracao = player.position
+        let tempo = tempoDoVLC
+        return fracao > 0.0005 && tempo > 0 ? tempo / fracao : 0
     }
 
     var rate: Float {
@@ -172,11 +190,25 @@ final class VLCEngine: NSObject, PlaybackEngine {
         set { player.audio?.isMuted = newValue }
     }
 
+    /// Os avisos do VLC (tocando, pausado, o tempo andando) na fila principal.
+    ///
+    /// O VLC 3 já os entregava ali; o 4, por padrão, os entrega na linha
+    /// interna dele. Cada aviso mexe na tela — o botão de play, a barra do
+    /// tempo —, e mexer na tela fora da fila principal fecha o app. Era o que
+    /// acontecia ao voltar da janela flutuante e pausar. O VLC lê esta
+    /// escolha ao criar cada player, então ela vem antes do primeiro.
+    static func prepararEventos() {
+        VLCLibrary.sharedEventsConfiguration = VLCEventsLegacyConfiguration()
+    }
+
     override init() {
         super.init()
         player.delegate = self
-        player.drawable = container
+        // O próprio motor é a "tela" do VLC: ele repassa a imagem à view e,
+        // sendo também quem toca e pausa, é o que a janela flutuante comanda.
+        player.drawable = self
         container.attach(player)
+        aplicarTamanhoDaLegenda()
 
         let centro = NotificationCenter.default
         centro.addObserver(self, selector: #selector(foiParaSegundoPlano),
@@ -194,10 +226,22 @@ final class VLCEngine: NSObject, PlaybackEngine {
     /// — a sessão de áudio e os controles da tela bloqueada já cuidam disso —,
     /// mas a imagem para de ser decodificada. Decodificar vídeo para uma tela
     /// que ninguém vê só gastaria bateria. É o que o próprio VLC do iPhone faz.
+    ///
+    /// Com a janela flutuante a imagem continua sendo vista, e é o caso comum:
+    /// o VLC 4 abre a janela sozinho quando se sai do app com o filme tocando.
+    /// Só que o iOS avisa "foi para o segundo plano" **antes** de a janela
+    /// terminar de abrir — desligar a imagem ali mataria a janela no nascer.
+    /// Por isso a decisão espera um instante e olha de novo.
     @objc private func foiParaSegundoPlano() {
-        guard player.isPlaying, player.currentVideoTrackIndex >= 0 else { return }
-        player.currentVideoTrackIndex = -1
-        imagemDesligada = true
+        guard player.isPlaying else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            guard let self, UIApplication.shared.applicationState == .background,
+                  self.player.isPlaying, !self.janelaAberta,
+                  self.player.videoTracks.contains(where: \.isSelected) else { return }
+            LabLog.passo("segundo plano sem janela flutuante: imagem desligada")
+            self.player.deselectAllVideoTracks()
+            self.imagemDesligada = true
+        }
     }
 
     @objc private func voltouDoSegundoPlano() {
@@ -205,10 +249,8 @@ final class VLCEngine: NSObject, PlaybackEngine {
         imagemDesligada = false
         // Se na tela bloqueada o filme trocou pelo "próximo", o novo já abriu
         // com imagem: religar por cima reiniciaria o decodificador à toa.
-        guard player.currentVideoTrackIndex < 0 else { return }
-        let faixas = (player.videoTrackIndexes as? [NSNumber])?.map(\.int32Value) ?? []
-        guard let faixa = faixas.first(where: { $0 >= 0 }) else { return }
-        player.currentVideoTrackIndex = faixa
+        guard !player.videoTracks.contains(where: \.isSelected), !player.videoTracks.isEmpty else { return }
+        player.selectTrack(at: 0, type: .video)
         // Pausado na tela bloqueada, nenhum quadro novo viria até o play, e a
         // tela ficaria preta: buscar o ponto onde está faz o VLC desenhar um.
         if !player.isPlaying {
@@ -225,7 +267,6 @@ final class VLCEngine: NSObject, PlaybackEngine {
             legendaDoUsuario = false
             origemDaLegenda = item.origin
         }
-        itemAtual = item
         pedidoDeFaixas = EscolhaDeFaixas.shared.consumir(item.origin.resumeKey)
         idsInternos = nil
         legendasDeFora = []
@@ -243,57 +284,39 @@ final class VLCEngine: NSObject, PlaybackEngine {
             throw PlaybackError.unsupportedOrigin
         }
 
-        let media = VLCMedia(url: url)
+        // No VLC 4 a mídia pode não nascer (URL que ele não aceita).
+        guard let media = VLCMedia(url: url) else { throw PlaybackError.unsupportedOrigin }
         Self.credenciais(para: item.origin).forEach(media.addOption)
         Self.configurarBuffer(media, origem: item.origin)
         tamanhoDoArquivo = item.fileSize
         bytesNaBusca = nil
         origemAtual = item.origin
 
+        // Trocar de mídia para a anterior, e esse "parou" não é o fim do vídeo.
+        tocou = false
         LabLog.passo("carregar: \(Self.tipo(item.origin)) · \(item.title)")
         player.media = media
         state = .ready
         LabLog.open("VLC pronto: \(item.title)")
     }
 
-    /// Quanto o VLC guarda adiantado antes de precisar.
-    ///
-    /// Dois mecanismos diferentes, e é preciso os dois no servidor:
-    ///
-    /// - **`network-caching`** é o fôlego do reprodutor: quantos milissegundos
-    ///   de vídeo já decodificado ele mantém à frente. É o que absorve uma
-    ///   engasgada da rede sem a imagem parar.
-    /// - **`prefetch`** é o fôlego da leitura: um bloco grande em memória lido
-    ///   adiantado, para que o pedido seguinte não vire uma ida ao servidor.
-    ///   Sem ele, cada leitura é uma viagem de rede feita no exato momento em
-    ///   que os bytes fazem falta.
-    ///
-    /// O que faz diferença ao arrastar a barra é o segundo: depois de uma
-    /// busca, o bloco novo chega de uma vez em vez de gota a gota. Em troca,
-    /// o vídeo demora um pouco mais para começar — é o preço de nunca engasgar
-    /// no meio, e num filme inteiro esse preço se paga logo nos primeiros
-    /// segundos.
+    /// Quanto o VLC guarda adiantado antes de precisar: a folga que absorve
+    /// uma engasgada da rede sem a imagem parar. Maior engasga menos, mas
+    /// atrasa a imagem depois de cada busca e a troca de velocidade.
     private static func configurarBuffer(_ media: VLCMedia, origem: MediaOrigin) {
         switch origem {
         case .smb, .remote, .webdav, .midia:
-            // Um segundo e meio, e não cinco.
+            // 0,7 s — perto do meio segundo do arquivo no aparelho.
             //
-            // Este número é quanto o VLC espera acumular antes de mostrar
-            // imagem — no começo do vídeo e **depois de cada busca**. Em cinco
-            // segundos, cada soltada do dedo na barra virava cinco segundos de
-            // tela parada, e a troca de faixa de áudio, que também busca,
-            // pagava o mesmo. Quem mantém a reprodução contínua sem engasgar é
-            // o prefetch logo abaixo, que lê adiantado; este aqui só atrasava a
-            // volta da imagem.
-            media.addOption(":network-caching=1500")
-            // 32 MB adiantados: uns 20 segundos de um filme 1080p comum.
-            media.addOption(":prefetch-buffer-size=32768")
-            // Blocos de 256 KB em vez dos 16 KB padrão — menos idas ao
-            // servidor, cada uma trazendo muito mais.
-            media.addOption(":prefetch-read-size=262144")
-            // Busca curta aproveita o que já está em memória em vez de jogar
-            // fora e ler tudo de novo; é o caso de ajustar a posição no fino.
-            media.addOption(":prefetch-seek-threshold=1048576")
+            // É quanto o VLC junta antes de mostrar imagem, no começo e depois
+            // de cada busca, e no VLC 4 é também quanto de som fica entregue à
+            // saída do iPhone. A velocidade nova só vale depois que esse som
+            // toca: com 1,5 s (o número do VLC 3), segurar para acelerar
+            // atrasava — e um toque curto nem acelerava — só na rede.
+            //
+            // O prefetch do VLC 3 não entra: no VLC 4 ele só é carregado quando
+            // pedido pelo nome, e uma das opções saiu da versão.
+            media.addOption(":network-caching=700")
 
         case .file:
             media.addOption(":file-caching=500")
@@ -532,25 +555,38 @@ final class VLCEngine: NSObject, PlaybackEngine {
 
     // MARK: - Faixas
 
-    var audioTracks: [MediaTrack] {
-        tracks(indexes: player.audioTrackIndexes, names: player.audioTrackNames)
-    }
+    // No VLC 4 cada faixa é um objeto, e a lista não traz mais a entrada
+    // "Desativado": o número da faixa aqui é a posição dela na lista.
 
-    var subtitleTracks: [MediaTrack] {
-        tracks(indexes: player.videoSubTitlesIndexes, names: player.videoSubTitlesNames)
-    }
+    var audioTracks: [MediaTrack] { Self.faixas(player.audioTracks) }
+
+    var subtitleTracks: [MediaTrack] { Self.faixas(player.textTracks) }
 
     var currentAudioTrack: Int32? {
-        player.currentAudioTrackIndex >= 0 ? player.currentAudioTrackIndex : nil
+        player.audioTracks.firstIndex(where: \.isSelected).map(Int32.init)
     }
 
     var currentSubtitleTrack: Int32? {
-        player.currentVideoSubTitleIndex >= 0 ? player.currentVideoSubTitleIndex : nil
+        player.textTracks.firstIndex(where: \.isSelected).map(Int32.init)
     }
 
     func selectAudioTrack(_ id: Int32) async {
-        player.currentAudioTrackIndex = id
+        escolherAudio(id)
         await recomecarDoPonto()
+    }
+
+    private func escolherAudio(_ id: Int32) {
+        guard id >= 0, Int(id) < player.audioTracks.count else { return }
+        player.selectTrack(at: Int(id), type: .audio)
+    }
+
+    /// `nil` ou -1: sem legenda.
+    private func escolherLegenda(_ id: Int32?) {
+        if let id, id >= 0, Int(id) < player.textTracks.count {
+            player.selectTrack(at: Int(id), type: .text)
+        } else {
+            player.deselectAllTextTracks()
+        }
     }
 
     /// Descarta o que já estava no buffer e recomeça do ponto atual.
@@ -578,8 +614,7 @@ final class VLCEngine: NSObject, PlaybackEngine {
 
     func selectSubtitleTrack(_ id: Int32?) async {
         legendaDoUsuario = true
-        // -1 é como o VLC representa "sem legenda".
-        player.currentVideoSubTitleIndex = id ?? -1
+        escolherLegenda(id)
     }
 
     /// Ao abrir, só a legenda **forçada** fica ligada — a que traduz a placa,
@@ -587,7 +622,7 @@ final class VLCEngine: NSObject, PlaybackEngine {
     /// desligada: o VLC liga a que o arquivo marca como padrão, e quase sempre
     /// ela está no mesmo idioma do áudio, repetindo o que já se ouve.
     ///
-    /// O VLCKit 3 não diz se a faixa é forçada; o nome diz — é como os
+    /// O VLCKit não diz se a faixa é forçada; o nome diz — é como os
     /// arquivos a marcam ("Forced", "Forçada", "Forzados"). Quem escolhe no
     /// menu manda até o vídeo trocar.
     fileprivate func aplicarRegraDaLegenda() {
@@ -595,8 +630,8 @@ final class VLCEngine: NSObject, PlaybackEngine {
         let forcada = subtitleTracks.first { faixa in
             (faixa.title ?? "").range(of: Self.forcada, options: [.regularExpression, .caseInsensitive]) != nil
         }
-        let alvo = forcada?.id ?? -1
-        if player.currentVideoSubTitleIndex != alvo { player.currentVideoSubTitleIndex = alvo }
+        let alvo = forcada?.id
+        if currentSubtitleTrack != alvo { escolherLegenda(alvo) }
     }
 
     /// Aplica o que foi escolhido na página do servidor assim que a faixa
@@ -607,8 +642,8 @@ final class VLCEngine: NSObject, PlaybackEngine {
         if let posicao = pedido.audio {
             let faixas = audioTracks
             if posicao < faixas.count {
-                if player.currentAudioTrackIndex != faixas[posicao].id {
-                    player.currentAudioTrackIndex = faixas[posicao].id
+                if currentAudioTrack != faixas[posicao].id {
+                    escolherAudio(faixas[posicao].id)
                     if state == .playing { Task { await recomecarDoPonto() } }
                 }
                 pedido.audio = nil
@@ -631,75 +666,29 @@ final class VLCEngine: NSObject, PlaybackEngine {
             }
             if let alvo {
                 legendaDoUsuario = true
-                if player.currentVideoSubTitleIndex != alvo { player.currentVideoSubTitleIndex = alvo }
+                if (currentSubtitleTrack ?? -1) != alvo { escolherLegenda(alvo) }
                 pedido.legenda = nil
             }
         }
         pedidoDeFaixas = pedido.audio == nil && pedido.legenda == nil ? nil : pedido
     }
 
-    /// Refaz o reprodutor com o tamanho de legenda escolhido, no mesmo ponto,
-    /// com o mesmo áudio, a mesma legenda e o mesmo atraso. O filme pisca e
-    /// volta — o VLC 3 não muda o tamanho do texto de outro jeito.
-    func refazerComTamanhoDaLegenda() async {
-        guard let item = itemAtual else { return }
-        let instante = currentTime
-        let audio = currentAudioTrack
-        let legenda = currentSubtitleTrack
-        let atraso = player.currentVideoSubTitleDelay
-        player.delegate = nil
-        player.stop()
-        player = VLCMediaPlayer(library: TamanhoDaLegenda.biblioteca())
-        player.delegate = self
-        player.drawable = container
-        container.attach(player)
-        faixasARestaurar = (audio, legenda)
-        legendaDoUsuario = true
-        alvoAoTocar = instante
-        do {
-            try await load(item)
-        } catch {
-            state = .failed(error.localizedDescription)
-            return
-        }
-        player.currentVideoSubTitleDelay = atraso
-        play()
-    }
-
-    /// O ponto e as faixas de antes de refazer, assim que existirem de novo.
-    fileprivate func aplicarRestauracao() {
-        if let alvo = alvoAoTocar, player.isPlaying {
-            alvoAoTocar = nil
-            player.time = VLCTime(int: Int32(alvo * 1000))
-        }
-        guard let restaurar = faixasARestaurar else { return }
-        let legenda = restaurar.legenda
-        if let audio = restaurar.audio, audioTracks.contains(where: { $0.id == audio }), player.currentAudioTrackIndex != audio {
-            player.currentAudioTrackIndex = audio
-        }
-        let alvo = legenda ?? -1
-        if alvo == -1 || subtitleTracks.contains(where: { $0.id == alvo }) {
-            if player.currentVideoSubTitleIndex != alvo { player.currentVideoSubTitleIndex = alvo }
-            faixasARestaurar = nil
-        }
+    /// O tamanho do texto da legenda, na hora, com o filme tocando.
+    ///
+    /// No VLC 3 isso só era lido quando o motor nascia, e mudar o tamanho era
+    /// refazer o reprodutor no mesmo ponto — o filme piscava e as legendas de
+    /// fora voltavam a ser baixadas. O VLC 4 muda o texto já na tela.
+    func aplicarTamanhoDaLegenda() {
+        player.currentSubTitleFontScale = TamanhoDaLegenda.escala
     }
 
     /// "Forced", "Forçada(s)", "Forzado(s)", "Forcée(s)" — palavra inteira.
     private static let forcada = #"(^|[^\p{L}])(forced|for[çcz]ad[oa]s?|forcée?s?)([^\p{L}]|$)"#
 
-    private func tracks(indexes: [Any]?, names: [Any]?) -> [MediaTrack] {
-        guard let indexes, let names, indexes.count == names.count else { return [] }
-        var resultado: [MediaTrack] = []
-
-        for (indice, nome) in zip(indexes, names) {
-            guard let numero = (indice as? NSNumber)?.int32Value,
-                  let titulo = nome as? String else { continue }
-            // O índice -1 é a entrada "Desativado" que o VLC inclui; a
-            // interface já oferece essa opção por conta própria.
-            guard numero >= 0 else { continue }
-            resultado.append(MediaTrack(id: numero, codec: "", language: nil, title: titulo))
+    private static func faixas(_ lista: [VLCMediaPlayer.Track]) -> [MediaTrack] {
+        lista.enumerated().map { indice, faixa in
+            MediaTrack(id: Int32(indice), codec: "", language: nil, title: faixa.trackName)
         }
-        return resultado
     }
 
     // MARK: - Captura
@@ -718,8 +707,12 @@ final class VLCEngine: NSObject, PlaybackEngine {
     func makeRenderView() -> UIView { container }
 
     func teardown() {
+        janela?.stopPictureInPicture()
+        janela = nil
         player.stop()
         player.delegate = nil
+        // O VLC guarda a "tela" com referência forte, e a tela é este motor.
+        player.drawable = nil
         // Solta a permissão só depois de parar: fechar antes deixaria o VLC
         // lendo um arquivo que ele já não pode mais acessar.
         access = nil
@@ -731,38 +724,51 @@ final class VLCEngine: NSObject, PlaybackEngine {
 
 extension VLCEngine: VLCMediaPlayerDelegate {
 
-    func mediaPlayerStateChanged(_ notification: Notification) {
-        // "Carregando" vem a todo instante durante a reprodução: no registro
-        // só o resto, que é o que conta a história.
-        if player.state != .buffering {
-            LabLog.passo("VLC estado: \(Self.nome(player.state)) (tempo \(String(format: "%.1f", tempoDoVLC)) s)")
-        }
-        switch player.state {
+    func mediaPlayerStateChanged(_ novo: VLCMediaPlayerState) {
+        LabLog.passo("VLC estado: \(Self.nome(novo)) (tempo \(String(format: "%.1f", tempoDoVLC)) s)")
+        // A janela flutuante mostra play ou pausa conforme o estado.
+        janela?.invalidatePlaybackState()
+        switch novo {
         case .opening:   state = .loading
-        case .buffering: buffering = true
         case .playing:
+            tocou = true
             buffering = false
             // O objeto de áudio do VLC só existe depois que a saída sobe;
             // reaplicar aqui garante que o ganho interno fique em 100% e o
             // volume que vale seja o do aparelho.
             player.audio?.volume = Int32(savedVolume * 100)
-            aplicarRestauracao()
+            aplicarTamanhoDaLegenda()
             aplicarPedidoDeFaixas()
             aplicarRegraDaLegenda()
             state = .playing
         case .paused:    state = .paused
-        case .stopped:   state = .idle
-        case .ended:
-            if emRolagem { terminouNaRolagem = true } else { state = .ended }
+        // O VLC 4 não tem mais o estado "terminou": ao chegar ao fim ele
+        // para. Parar depois de ter tocado, sem ninguém ter mandado, é o fim.
+        case .stopped:
+            if tocou {
+                tocou = false
+                if emRolagem { terminouNaRolagem = true } else { state = .ended }
+            } else {
+                state = .idle
+            }
         case .error:     state = .failed(String(localized: "o VLC não conseguiu abrir este arquivo"))
-        // As faixas chegam aos poucos (a legenda ao lado do arquivo, por
-        // último), e o VLC liga a padrão por conta própria: a regra vale de novo.
-        case .esAdded:
-            aplicarRestauracao()
-            aplicarPedidoDeFaixas()
-            aplicarRegraDaLegenda()
         default:         break
         }
+    }
+
+    func mediaPlayerBufferingChanged(_ progresso: Float) {
+        buffering = progresso < 1
+    }
+
+    func mediaPlayerLengthChanged(_ length: Int64) {
+        janela?.invalidatePlaybackState()
+    }
+
+    /// As faixas chegam aos poucos (a legenda ao lado do arquivo, por
+    /// último), e o VLC liga a padrão por conta própria: a regra vale de novo.
+    func mediaPlayerTrackAdded(_ trackId: String, with trackType: VLCMedia.TrackType) {
+        aplicarPedidoDeFaixas()
+        if trackType == .text { aplicarRegraDaLegenda() }
     }
 
     func mediaPlayerTimeChanged(_ notification: Notification) {
@@ -829,21 +835,85 @@ final class VLCRenderView: UIView, VideoGravityAdjustable {
         case .resizeAspectFill:
             // Preencher cortando: o VLC faz isso ampliando a imagem.
             player.scaleFactor = 0
-            player.videoCropGeometry = nil
             player.videoAspectRatio = nil
             player.scaleFactor = 1.4
         case .resize:
             player.scaleFactor = 0
-            player.videoAspectRatio = UnsafeMutablePointer<Int8>(mutating: ("16:9" as NSString).utf8String)
+            player.videoAspectRatio = "16:9"
         default:
             player.scaleFactor = 0
             player.videoAspectRatio = nil
-            player.videoCropGeometry = nil
         }
     }
 }
 
 extension VLCEngine: MudaTamanhoDaLegenda {}
+
+// MARK: - Janela flutuante
+
+/// O VLC 4 desenha dentro de quem for o `drawable` e, quando esse alguém
+/// também sabe tocar e pausar, monta sozinho a janela flutuante do iOS sobre
+/// a mesma imagem — é como o app do VLC para iPhone faz. O motor faz os dois
+/// papéis: repassa a imagem à view e responde aos botões da janela.
+///
+/// Sair do app com o filme tocando abre a janela sozinho (o VLC liga o
+/// "começar automaticamente" do iOS); o botão abre e fecha à mão.
+extension VLCEngine: VLCDrawable, VLCPictureInPictureDrawable, VLCPictureInPictureMediaControlling,
+                     ComJanelaFlutuante {
+
+    func addSubview(_ view: UIView!) {
+        // A imagem volta da janela flutuante para cá; mexer na tela, só na
+        // fila principal.
+        naFilaPrincipal { [container] in
+            view.frame = container.bounds
+            view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            container.addSubview(view)
+        }
+    }
+
+    func bounds() -> CGRect { container.bounds }
+
+    func mediaController() -> VLCPictureInPictureMediaControlling! { self }
+
+    func pictureInPictureReady() -> ((VLCPictureInPictureWindowControlling?) -> Void)! {
+        { [weak self] janela in
+            guard let self else { return }
+            naFilaPrincipal {
+                self.janela = janela
+                janela?.stateChangeEventHandler = { [weak self] aberta in
+                    naFilaPrincipal {
+                        guard let self else { return }
+                        LabLog.passo("janela flutuante: \(aberta ? "aberta" : "fechada")")
+                        self.janelaAberta = aberta
+                        self.onJanela?(aberta)
+                    }
+                }
+                self.onJanelaPronta?(janela != nil)
+            }
+        }
+    }
+
+    func seek(by offset: Int64, completion: (() -> Void)!) {
+        _ = player.jump(withOffset: Int32(offset), completion: completion)
+    }
+
+    func mediaLength() -> Int64 { Int64(player.media?.length.intValue ?? 0) }
+
+    func mediaTime() -> Int64 { Int64(player.time.intValue) }
+
+    func isMediaSeekable() -> Bool { player.isSeekable }
+
+    func isMediaPlaying() -> Bool { player.isPlaying }
+
+    func alternarJanela() {
+        if janelaAberta { janela?.stopPictureInPicture() } else { janela?.startPictureInPicture() }
+    }
+}
+
+/// Roda já, se estiver na fila principal; senão, manda para ela.
+private func naFilaPrincipal(_ trabalho: @escaping () -> Void) {
+    if Thread.isMainThread { trabalho() } else { DispatchQueue.main.async(execute: trabalho) }
+}
 
 extension VLCEngine: AceitaLegendaDeFora {
     func adicionarLegenda(_ arquivo: URL) {
@@ -874,15 +944,14 @@ extension VLCEngine {
 
     fileprivate static func nome(_ estado: VLCMediaPlayerState) -> String {
         switch estado {
-        case .opening:   return "abrindo"
-        case .buffering: return "carregando"
-        case .playing:   return "tocando"
-        case .paused:    return "pausado"
-        case .stopped:   return "parado"
-        case .ended:     return "terminou"
-        case .error:     return "erro"
-        case .esAdded:   return "faixa nova"
-        @unknown default: return "\(estado.rawValue)"
+        case .nothingSpecial: return "nada"
+        case .opening:        return "abrindo"
+        case .playing:        return "tocando"
+        case .paused:         return "pausado"
+        case .stopped:        return "parado"
+        case .stopping:       return "parando"
+        case .error:          return "erro"
+        @unknown default:     return "\(estado.rawValue)"
         }
     }
 }

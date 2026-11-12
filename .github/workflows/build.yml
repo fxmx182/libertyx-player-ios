@@ -2,7 +2,7 @@ name: Build IPA
 
 on:
   push:
-    branches: [main]
+    branches: [main, vlckit4-proprio]
     paths-ignore:
       - "**.md"
       - "imagens/**"
@@ -56,13 +56,11 @@ jobs:
           /usr/libexec/PlistBuddy -c "Set :LabPlayerBuild ${GITHUB_SHA:0:7}" App/Info.plist
           /usr/libexec/PlistBuddy -c "Print :LabPlayerBuild" App/Info.plist
 
-      - name: Restaurar MobileVLCKit do cache
-        uses: actions/cache@v4
-        with:
-          path: Packages/VLCKit/MobileVLCKit.xcframework
-          key: mobilevlckit-3.7.5-a213fd11
-
-      - name: Baixar MobileVLCKit (só se o cache falhar)
+      # O nosso VLCKit 4 (release vlckit4-<tag>, ver vlckit4.yml). Enquanto
+      # ele não existe, este job ainda confere o código com a prévia.
+      - name: Baixar VLCKit 4
+        env:
+          VLCKIT_ACEITA_PREVIA: "1"
         run: Scripts/baixar-vlckit.sh
 
       - name: Gerar projeto
@@ -219,7 +217,9 @@ jobs:
   # Store Connect (Scripts/asc.py), sem Mac, e moram nos segredos do repo.
   testflight:
     name: Enviar ao TestFlight
-    if: github.ref == 'refs/heads/main'
+    # O branch vlckit4-proprio também: os builds dele vão só para o grupo
+    # interno (o liberar-externo.py é que leva um build aos testadores).
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/vlckit4-proprio'
     runs-on: xcode-27
     timeout-minutes: 40
 
@@ -250,14 +250,11 @@ jobs:
       - name: Carimbar o build com o commit
         run: /usr/libexec/PlistBuddy -c "Set :LabPlayerBuild ${GITHUB_SHA:0:7}" App/Info.plist
 
-      - name: Restaurar MobileVLCKit do cache
-        uses: actions/cache@v4
-        with:
-          path: Packages/VLCKit/MobileVLCKit.xcframework
-          key: mobilevlckit-3.7.5-a213fd11
-
-      - name: Baixar MobileVLCKit (só se o cache falhar)
-        run: Scripts/baixar-vlckit.sh
+      # Só o nosso VLCKit 4, nunca a prévia (a que fechava o app).
+      - name: Baixar VLCKit 4
+        run: |
+          Scripts/baixar-vlckit.sh
+          grep -q '^nosso ' Packages/VLCKit/ORIGEM.txt
 
       - name: Gerar projeto
         run: xcodegen generate
@@ -310,7 +307,7 @@ jobs:
             -archivePath "$RUNNER_TEMP/LibertyXPlayer.xcarchive" \
             CURRENT_PROJECT_VERSION=${{ github.run_number }} \
             OTHER_CODE_SIGN_FLAGS="--keychain $KEYCHAIN" \
-            archive 2>&1 | tee archive.log | grep -E "error:|warning: .*sign|ARCHIVE|MobileVLCKit:" || true
+            archive 2>&1 | tee archive.log | grep -E "error:|warning: .*sign|ARCHIVE" || true
           test -d "$RUNNER_TEMP/LibertyXPlayer.xcarchive" || { tail -60 archive.log; exit 1; }
 
       - name: Exportar e enviar

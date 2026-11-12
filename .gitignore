@@ -23,4 +23,8 @@ Vendor/
 /imagens/
 
 # Baixado pelo CI (Scripts/baixar-vlckit.sh): grande demais para versionar.
-Packages/VLCKit/MobileVLCKit.xcframework/
+Packages/VLCKit/VLCKit.xcframework/
+Packages/VLCKit/ORIGEM.txt
+# Saída de Scripts/compilar-vlckit4.sh.
+/build-vlckit4/
+/saida/

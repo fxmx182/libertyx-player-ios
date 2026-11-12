@@ -1,7 +1,7 @@
 import Foundation
 import MetricKit
 import UIKit
-import MobileVLCKit
+import VLCKit
 
 /// O registro que a pessoa copia nos Ajustes e cola na conversa de suporte.
 ///

@@ -18,7 +18,7 @@ struct LicencasView: View {
     }
 
     private let componentes = [
-        Componente(nome: "VLCKit 3.7", autor: "VideoLAN", licenca: "LGPL 2.1+",
+        Componente(nome: "VLCKit 4.0", autor: "VideoLAN", licenca: "LGPL 2.1+",
                    arquivo: "LGPL-2.1", fonte: "https://code.videolan.org/videolan/VLCKit"),
         Componente(nome: "FFmpeg 7.1", autor: "FFmpeg", licenca: "LGPL 2.1+",
                    arquivo: "LGPL-2.1", fonte: "https://ffmpeg.org"),
