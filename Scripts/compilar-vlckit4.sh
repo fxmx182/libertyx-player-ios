@@ -23,6 +23,18 @@ RAIZ="$(cd "$(dirname "$0")/.." && pwd)"
 TRABALHO="${TRABALHO:-$RAIZ/build-vlckit4}"
 SAIDA="$RAIZ/saida"
 
+# GNU make 4.4, e não o 3.81 do macOS. O make antigo divide as tarefas por
+# um par de descritores herdados; o meson abre o ninja fechando-os, e o ninja
+# do VLC (o da Kitware, que fala com o make) para com "Could not initialize
+# jobserver: Invalid file descriptors" — foi onde a primeira tentativa caiu,
+# no dav1d. O 4.4 usa uma fila com nome (fifo), que sobrevive a isso. O
+# script do VLCKit monta o PATH do zero, mas mantém $VLC_PATH nele.
+command -v brew >/dev/null && { brew list make >/dev/null 2>&1 || brew install make; }
+export VLC_PATH="$(brew --prefix make)/libexec/gnubin"
+PATH="$VLC_PATH:$PATH" make --version | head -1
+PATH="$VLC_PATH:$PATH" make --version | head -1 | grep -qE "GNU Make 4\.([4-9]|[1-9][0-9])" ||
+    { echo "::error::precisa do GNU make 4.4 ou mais novo"; exit 1; }
+
 rm -rf "$TRABALHO" "$SAIDA"
 mkdir -p "$TRABALHO" "$SAIDA"
 cd "$TRABALHO"
