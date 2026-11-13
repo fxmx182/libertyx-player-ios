@@ -310,9 +310,11 @@ final class VLCEngine: NSObject, PlaybackEngine {
             //
             // É quanto o VLC junta antes de mostrar imagem, no começo e depois
             // de cada busca, e no VLC 4 é também quanto de som fica entregue à
-            // saída do iPhone. A velocidade nova só vale depois que esse som
-            // toca: com 1,5 s (o número do VLC 3), segurar para acelerar
-            // atrasava — e um toque curto nem acelerava — só na rede.
+            // saída do iPhone. Sem o nosso remendo 0101 no libVLC
+            // (Scripts/vlckit4-remendos), a velocidade nova só valia depois
+            // que esse som tocava; com ele o som antigo é descartado na troca,
+            // e o que sobra deste número é a pausa curta no áudio ao segurar
+            // e ao soltar.
             //
             // O prefetch do VLC 3 não entra: no VLC 4 ele só é carregado quando
             // pedido pelo nome, e uma das opções saiu da versão.

@@ -1,0 +1,34 @@
+From f2dbe8f5bc1f5f6afbbcffc4c2e33cd402d49c0e Mon Sep 17 00:00:00 2001
+From: LibertyX <libertyx@localhost>
+Date: Fri, 13 Nov 2026 18:21:45 +0900
+Subject: [PATCH] decoder: flush the audio output on rate change
+
+Since VLC 4 keeps playing out, at the old rate, all the audio already
+handed to the output (about the whole input caching), and audio drives
+the clock, a rate change is only heard and seen after that delay. VLC 3
+dropped that audio and the change was immediate; do the same.
+---
+ src/input/decoder.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/src/input/decoder.c b/src/input/decoder.c
+index 0988eb6..0348f3e 100644
+--- a/src/input/decoder.c
++++ b/src/input/decoder.c
+@@ -459,7 +459,16 @@ static void Decoder_ChangeOutputRate( vlc_input_decoder_t *p_owner, float rate )
+             break;
+         case AUDIO_ES:
+             if( p_owner->audio.stream != NULL )
++            {
+                 vlc_aout_stream_ChangeRate( p_owner->audio.stream, rate );
++                /* LibertyX: drop the audio already handed to the output at
++                 * the old rate, as VLC 3 did. Otherwise the new rate is only
++                 * heard (and seen: audio drives the clock) once that queued
++                 * audio has played out, which is about the whole input
++                 * caching. Hold-to-speed-up felt laggy on press and release. */
++                if( p_owner->output_rate != rate && !p_owner->output_paused )
++                    vlc_aout_stream_Flush( p_owner->audio.stream );
++            }
+             break;
+         case SPU_ES:
+             if( p_owner->spu.vout != NULL )

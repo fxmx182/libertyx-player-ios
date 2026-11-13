@@ -215,11 +215,35 @@ jobs:
   #
   # O certificado, o perfil e a chave da API foram criados pela API da App
   # Store Connect (Scripts/asc.py), sem Mac, e moram nos segredos do repo.
+  # O release do VLCKit é feito com a receita deste commit? Se o push mexeu
+  # no script ou nos remendos do VLCKit, o vlckit4.yml ainda está compilando
+  # o novo (quase uma hora) e chama este build de novo quando terminar; até
+  # lá, nada vai ao TestFlight com o motor de antes.
+  vlckit-atual:
+    name: VLCKit desta receita
+    runs-on: ubuntu-latest
+    outputs:
+      atual: ${{ steps.ver.outputs.atual }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: ver
+        run: |
+          LOCAL=$(Scripts/receita-vlckit4.sh)
+          URL="https://github.com/$GITHUB_REPOSITORY/releases/download/vlckit4-4.0.0-a26/RECEITA"
+          REMOTA=$(curl -fsSL --retry 3 "$URL" 2>/dev/null || echo nenhuma)
+          echo "receita do commit: $LOCAL · do release: $REMOTA"
+          if [ "$LOCAL" = "$REMOTA" ]; then
+            echo "atual=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice title=TestFlight adiado::o VLCKit da receita $LOCAL ainda está sendo compilado; o vlckit4.yml chama o build do app quando terminar"
+          fi
+
   testflight:
     name: Enviar ao TestFlight
+    needs: vlckit-atual
     # O branch vlckit4-proprio também: os builds dele vão só para o grupo
     # interno (o liberar-externo.py é que leva um build aos testadores).
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/vlckit4-proprio'
+    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/vlckit4-proprio') && needs.vlckit-atual.outputs.atual == '1'
     runs-on: xcode-27
     timeout-minutes: 40
 

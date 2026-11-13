@@ -54,7 +54,12 @@ git clone --quiet --filter=blob:none https://github.com/videolan/vlc.git libvlc/
     cd libvlc/vlc
     git -c advice.detachedHead=false checkout --quiet -B localBranch "$HASH_VLC"
     git -c user.name=ci -c user.email=ci@localhost am --quiet ../patches/*.patch
-    git log --oneline -1
+    # Depois dos do VLCKit, os nossos (Scripts/vlckit4-remendos). O 0101 faz
+    # a troca de velocidade valer na hora, como no VLC 3: sem ele, segurar
+    # para acelerar e soltar só respondiam depois de tocar o áudio já
+    # entregue ao iPhone na velocidade antiga.
+    git -c user.name=ci -c user.email=ci@localhost am --quiet "$RAIZ"/Scripts/vlckit4-remendos/*.patch
+    git log --oneline -3
 )
 
 # Só o aparelho. Com `-a aarch64` o script ainda passa pela etapa do
@@ -92,5 +97,7 @@ ditto -c -k --sequesterRsrc --keepParent "$FW" "$SAIDA/VLCKit.xcframework.zip"
     echo "VLCKit $VLCKIT_TAG ($(git rev-parse --short HEAD))"
     echo "libVLC $HASH_VLC + $(ls libvlc/patches | wc -l | tr -d ' ') remendos do VLCKit"
     echo "compileAndBuildVLCKit.sh -r -n -a aarch64 (Release, --disable-debug), só iphoneos arm64"
+    echo "Nossos remendos: $(cd "$RAIZ/Scripts/vlckit4-remendos" && ls *.patch | tr '\n' ' ')"
     echo "Xcode: $(xcodebuild -version | head -1)"
 } | tee "$SAIDA/LEIA.txt"
+"$RAIZ/Scripts/receita-vlckit4.sh" | tee "$SAIDA/RECEITA"

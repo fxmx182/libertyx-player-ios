@@ -32,7 +32,16 @@ if curl -fsSL --retry 3 -o "$TMP/vlckit.zip" "$BASE/VLCKit.xcframework.zip" &&
     (cd "$TMP" && sed 's/  .*/  vlckit.zip/' soma | shasum -a 256 -c -)
     ditto -x -k "$TMP/vlckit.zip" "$TMP/x"
     mv "$TMP/x/VLCKit.xcframework" "$DESTINO"
-    echo "nosso $RELEASE (Release, sem assert)" > "$MARCA"
+    # A receita (script + nossos remendos) tem de ser a deste commit; senão
+    # é o motor de antes, que serve para conferir o código e mais nada.
+    LOCAL=$(Scripts/receita-vlckit4.sh)
+    REMOTA=$(curl -fsSL --retry 3 "$BASE/RECEITA" 2>/dev/null || echo nenhuma)
+    if [ "$LOCAL" = "$REMOTA" ]; then
+        echo "nosso $RELEASE (Release, sem assert, receita $LOCAL)" > "$MARCA"
+    else
+        echo "::warning title=VLCKit::o release $RELEASE é da receita $REMOTA, e este commit pede $LOCAL"
+        echo "antigo $RELEASE (receita $REMOTA, não $LOCAL — nunca para o TestFlight)" > "$MARCA"
+    fi
 elif [ "${VLCKIT_ACEITA_PREVIA:-0}" = 1 ]; then
     echo "::warning title=VLCKit::release $RELEASE ainda não existe; compilando com a prévia da VideoLAN (só para conferir o código)"
     URL=https://download.videolan.org/cocoapods/unstable/VLCKit-4.0-20261109-1916.zip

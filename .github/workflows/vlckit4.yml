@@ -8,6 +8,8 @@ on:
     branches: [main, vlckit4-proprio]
     paths:
       - 'Scripts/compilar-vlckit4.sh'
+      - 'Scripts/receita-vlckit4.sh'
+      - 'Scripts/vlckit4-remendos/**'
       - '.github/workflows/vlckit4.yml'
   workflow_dispatch:
     inputs:
@@ -26,6 +28,7 @@ jobs:
     timeout-minutes: 360
     permissions:
       contents: write   # para publicar o release com o xcframework
+      actions: write    # para chamar o build do app quando terminar
 
     env:
       VLCKIT_TAG: ${{ github.event.inputs.tag || '4.0.0-a26' }}
@@ -34,16 +37,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Já compilado com este script?
+      - name: Já compilado com esta receita?
         id: feito
         run: |
           RELEASE="vlckit4-$VLCKIT_TAG"
-          SCRIPT=$(shasum -a 256 Scripts/compilar-vlckit4.sh | cut -c1-12)
+          SCRIPT=$(Scripts/receita-vlckit4.sh)
           echo "release=$RELEASE" >> "$GITHUB_OUTPUT"
           echo "script=$SCRIPT" >> "$GITHUB_OUTPUT"
           if gh release view "$RELEASE" --json body -q .body 2>/dev/null | grep -q "script $SCRIPT"; then
             echo "pronto=1" >> "$GITHUB_OUTPUT"
-            echo "O release $RELEASE já foi feito com este script ($SCRIPT)."
+            echo "O release $RELEASE já foi feito com esta receita ($SCRIPT)."
           fi
 
       - name: Compilar
@@ -80,10 +83,16 @@ jobs:
         run: |
           RELEASE="${{ steps.feito.outputs.release }}"
           gh release delete "$RELEASE" --yes --cleanup-tag 2>/dev/null || true
-          gh release create "$RELEASE" saida/VLCKit.xcframework.zip saida/VLCKit.xcframework.zip.sha256 \
+          gh release create "$RELEASE" saida/VLCKit.xcframework.zip saida/VLCKit.xcframework.zip.sha256 saida/RECEITA \
             --title "VLCKit $VLCKIT_TAG (Release, sem assert)" \
             --notes "$(cat saida/LEIA.txt)
 
           Licença LGPL 2.1+. Código: https://code.videolan.org/videolan/VLCKit e https://code.videolan.org/videolan/vlc
           script ${{ steps.feito.outputs.script }}" \
             --prerelease
+
+      # O build do app que veio com o mesmo push não foi ao TestFlight: a
+      # receita do release ainda era a antiga. Agora é a do commit.
+      - name: Chamar o build do app
+        if: steps.feito.outputs.pronto != '1' && github.event_name == 'push'
+        run: gh workflow run build.yml --ref "$GITHUB_REF_NAME"
