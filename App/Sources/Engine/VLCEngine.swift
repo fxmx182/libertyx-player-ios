@@ -304,6 +304,17 @@ final class VLCEngine: NSObject, PlaybackEngine {
     /// uma engasgada da rede sem a imagem parar. Maior engasga menos, mas
     /// atrasa a imagem depois de cada busca e a troca de velocidade.
     private static func configurarBuffer(_ media: VLCMedia, origem: MediaOrigin) {
+        // O relógio do VLC 3: quem marca o tempo é o arquivo, não o áudio.
+        //
+        // No VLC 4 o padrão é o áudio mandar no relógio, e o vídeo só muda de
+        // velocidade quando o som entregue ao iPhone na velocidade antiga
+        // acaba de tocar — segurar para acelerar e soltar atrasavam. Com o
+        // arquivo no comando, a imagem muda na hora e o próprio VLC joga fora
+        // o som que ficou para trás ("playback way too late: flushing"), que
+        // era o que o VLC 3 fazia. A VideoLAN descreve "input" exatamente
+        // assim: o comportamento de relógio do 3.0.
+        media.addOption(":clock-master=input")
+
         switch origem {
         case .smb, .remote, .webdav, .midia:
             // 0,7 s — perto do meio segundo do arquivo no aparelho.
