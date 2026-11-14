@@ -832,9 +832,12 @@ struct ServidorDeMidia {
         ], apagar: true)
     }
 
-    /// O token num cabeçalho, para a ponte repassar a cada pedaço da conversão.
+    /// O token nos cabeçalhos, para a ponte repassar a cada pedaço da conversão.
+    /// O Jellyfin 12 só aceita o `Authorization` (desligou o `X-Emby-Token`
+    /// junto com o "login antigo"); o Emby lê o `X-Emby-Token`. Vão os dois.
     var cabecalhoDoToken: [String: String] {
-        token.map { ["X-Emby-Token": $0] } ?? [:]
+        guard let token else { return [:] }
+        return ["Authorization": cabecalho, "X-Emby-Authorization": cabecalho, "X-Emby-Token": token]
     }
 
     /// Imagem do item: `Thumb` e `Backdrop` são deitadas, como as capas do
