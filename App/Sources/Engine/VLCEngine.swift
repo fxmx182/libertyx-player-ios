@@ -19,7 +19,16 @@ final class VLCEngine: NSObject, PlaybackEngine {
     /// Criado depois de `prepararEventos`, que o VLC lê aqui, ao nascer.
     private let player: VLCMediaPlayer = {
         VLCEngine.prepararEventos()
-        return VLCMediaPlayer()
+        // A saída de som do VLC 3 (AudioUnit), não a nova do VLC 4
+        // (AVSampleBufferAudioRenderer). Com o relógio pelo arquivo (ver
+        // `configurarBuffer`), o VLC compara a toda hora onde o som deveria
+        // estar com onde a saída diz que está, e quando a diferença passa de
+        // 0,18 s ele joga o som fora — o corte. A saída nova mede isso por um
+        // aviso de fila, com folga; a AudioUnit mede no próprio instante em
+        // que o iPhone pede som, que era o que o VLC 3 usava.
+        let player = VLCMediaPlayer(options: ["--aout=audiounit_ios"])
+        player.libraryInstance.loggers = [AvisosDoSom()]
+        return player
     }()
     private let container = VLCRenderView()
     private var savedVolume: Float = 1.0
@@ -966,5 +975,21 @@ extension VLCEngine {
         case .error:          return "erro"
         @unknown default:     return "\(estado.rawValue)"
         }
+    }
+}
+
+/// Leva ao registro de erros os avisos do VLC sobre o som se perder do tempo
+/// (corte, silêncio, reamostragem): se voltar a cortar, o registro diz por quê.
+private final class AvisosDoSom: NSObject, VLCLogging {
+    var level: VLCLogLevel = VLCLogLevel(rawValue: 1)!   // erros e avisos
+
+    private static let interessa = ["playback", "resampl", "timing screwed",
+                                    "flushedAutomatically", "outputConfigurationChanged",
+                                    "audio output", "aout"]
+
+    func handleMessage(_ message: String, logLevel: VLCLogLevel, context: VLCLogContext?) {
+        let texto = message.lowercased()
+        guard Self.interessa.contains(where: { texto.contains($0.lowercased()) }) else { return }
+        RegistroDeErros.shared.anotar("som: \(message)")
     }
 }
