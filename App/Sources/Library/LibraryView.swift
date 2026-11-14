@@ -311,9 +311,6 @@ struct LibraryView: View {
                 NavigationLink { SMBServersView() } label: { CartaoDaRede() }
                     .buttonStyle(.plain)
                     .padding(.top, 24)
-                Button { tocar(Demonstracao.item, []) } label: { CartaoDeDemonstracao() }
-                    .buttonStyle(.plain)
-                    .padding(.top, 12)
             }
             .padding(.horizontal, 32)
         }
