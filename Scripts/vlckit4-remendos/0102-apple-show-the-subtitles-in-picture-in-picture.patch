@@ -1,0 +1,378 @@
+From 99ff7a418e5e698ab5bc0115b6e101862c996db6 Mon Sep 17 00:00:00 2001
+From: LibertyX <libertyx@localhost>
+Date: Sat, 14 Nov 2026 19:08:44 +0900
+Subject: [PATCH] apple: show the subtitles in picture in picture
+
+The floating window only shows the sample buffer display layer, while the
+subtitles are drawn by a separate view laid over it, so they were missing
+from picture in picture.
+
+Let the picture in picture controller announce its state and render size
+to the display showing its layer. While the window is up, the display
+draws the current subpicture regions into a scaled copy of each picture
+(Core Image, on the GPU) and hides the subtitle view. The subtitles follow
+the window size, growing a little relative to the picture when the window
+is small so that they stay readable.
+---
+ .../apple/VLCPictureInPictureController.m     |  35 ++-
+ .../apple/VLCSampleBufferDisplay.m            | 221 +++++++++++++++++-
+ 2 files changed, 253 insertions(+), 3 deletions(-)
+
+diff --git a/modules/video_output/apple/VLCPictureInPictureController.m b/modules/video_output/apple/VLCPictureInPictureController.m
+index ff3b7f9..201707b 100644
+--- a/modules/video_output/apple/VLCPictureInPictureController.m
++++ b/modules/video_output/apple/VLCPictureInPictureController.m
+@@ -48,6 +48,9 @@ API_AVAILABLE(ios(15.0), tvos(15.0), macosx(12.0))
+ @property (nonatomic, readonly) pip_controller_t *pipcontroller;
+ @property (nonatomic, readonly, weak) id<VLCPictureInPictureDrawable> drawable;
+ @property (nonatomic) void(^stateChangeEventHandler)(BOOL isStarted);
++@property (nonatomic, weak) AVSampleBufferDisplayLayer *displayLayer;
++@property (nonatomic) BOOL pipActive;
++@property (nonatomic) CMVideoDimensions renderSize;
+ 
+ - (instancetype)initWithPipController:(pip_controller_t *)pipcontroller;
+ - (void)invalidatePlaybackState;
+@@ -79,6 +82,7 @@ API_AVAILABLE(ios(15.0), tvos(15.0), macosx(12.0))
+     }
+         
+     assert(layer);
++    _displayLayer = layer;
+     AVPictureInPictureControllerContentSource *avPipSource;
+     avPipSource = [
+         [AVPictureInPictureControllerContentSource alloc]
+@@ -138,11 +142,30 @@ API_AVAILABLE(ios(15.0), tvos(15.0), macosx(12.0))
+     }
+ }
+ 
++/* Tell the display showing this layer whether the floating window is up,
++ * and how big it is, so it can draw the subtitles into the pictures
++ * themselves: the window only shows the layer, not the subtitle view laid
++ * over it. */
++- (void)postPictureInPictureState {
++    AVSampleBufferDisplayLayer *layer = _displayLayer;
++    if (layer == nil)
++        return;
++    [[NSNotificationCenter defaultCenter]
++        postNotificationName:@"VLCPictureInPictureStateDidChange"
++                      object:layer
++                    userInfo:@{
++                        @"active": @(_pipActive),
++                        @"width": @(_renderSize.width),
++                        @"height": @(_renderSize.height),
++                    }];
++}
++
+ #pragma mark - AVPictureInPictureSampleBufferPlaybackDelegate
+ 
+ - (void)pictureInPictureController:(AVPictureInPictureController *)pictureInPictureController
+          didTransitionToRenderSize:(CMVideoDimensions)newRenderSize {
+-
++    _renderSize = newRenderSize;
++    [self postPictureInPictureState];
+ }
+ 
+ - (void)pictureInPictureController:(AVPictureInPictureController *)pictureInPictureController
+@@ -205,6 +228,14 @@ API_AVAILABLE(ios(15.0), tvos(15.0), macosx(12.0))
+      * called each time PiP is activated
+      */
+     [self invalidatePlaybackState];
++    _pipActive = YES;
++    [self postPictureInPictureState];
++}
++
++- (void)pictureInPictureController:(AVPictureInPictureController *)pictureInPictureController
++    failedToStartPictureInPictureWithError:(NSError *)error {
++    _pipActive = NO;
++    [self postPictureInPictureState];
+ }
+ 
+ - (void)pictureInPictureControllerDidStartPictureInPicture:(AVPictureInPictureController *)pictureInPictureController {
+@@ -213,6 +244,8 @@ API_AVAILABLE(ios(15.0), tvos(15.0), macosx(12.0))
+ }
+ 
+ - (void)pictureInPictureControllerDidStopPictureInPicture:(AVPictureInPictureController *)pictureInPictureController {
++    _pipActive = NO;
++    [self postPictureInPictureState];
+     if(_stateChangeEventHandler)
+         _stateChangeEventHandler(NO);
+ }
+diff --git a/modules/video_output/apple/VLCSampleBufferDisplay.m b/modules/video_output/apple/VLCSampleBufferDisplay.m
+index 40001c6..a9a5036 100644
+--- a/modules/video_output/apple/VLCSampleBufferDisplay.m
++++ b/modules/video_output/apple/VLCSampleBufferDisplay.m
+@@ -41,6 +41,7 @@
+ #include "vlc_pip_controller.h"
+ 
+ #import <VideoToolbox/VideoToolbox.h>
++#include <math.h>
+ 
+ #if __is_target_os(ios)
+ #define IS_VT_ROTATION_API_AVAILABLE __IPHONE_OS_VERSION_MAX_ALLOWED >= 160000
+@@ -872,6 +873,12 @@ API_AVAILABLE(tvos(17.0), visionos(1.0))
+ {
+     @public
+     filter_t *converter;
++    @private
++    /* Only touched from the vout thread (RenderPicture) */
++    CIContext *_pipContext;
++    CVPixelBufferPoolRef _pipPool;
++    size_t _pipPoolWidth;
++    size_t _pipPoolHeight;
+ }
+     @property (nonatomic, readonly, weak) VLCView *window;
+     @property (nonatomic, readonly) vout_display_t *vd;
+@@ -883,6 +890,9 @@ API_AVAILABLE(tvos(17.0), visionos(1.0))
+     @property (nonatomic) VLCDisplayCriteriaMatcher *displayModeMatcher;
+ 
+     @property (nonatomic, readonly) pip_controller_t *pipcontroller;
++    /* Set on the main thread, read on the vout thread */
++    @property (atomic) BOOL pipActive;
++    @property (atomic) CGSize pipRenderSize;
+ 
+     - (instancetype)init NS_UNAVAILABLE;
+     + (instancetype)new NS_UNAVAILABLE;
+@@ -943,6 +953,12 @@ API_AVAILABLE(tvos(17.0), visionos(1.0))
+     if ( !_pipcontroller)
+         return;
+ 
++    [[NSNotificationCenter defaultCenter]
++        addObserver:self
++           selector:@selector(pictureInPictureStateDidChange:)
++               name:@"VLCPictureInPictureStateDidChange"
++             object:_displayView.displayLayer];
++
+     if ( _pipcontroller->ops->set_display_layer ) {
+         _pipcontroller->ops->set_display_layer(
+             _pipcontroller,
+@@ -951,6 +967,193 @@ API_AVAILABLE(tvos(17.0), visionos(1.0))
+     }
+ }
+ 
++- (void)pictureInPictureStateDidChange:(NSNotification *)notification {
++    NSDictionary *info = notification.userInfo;
++    BOOL active = [info[@"active"] boolValue];
++    self.pipRenderSize = CGSizeMake([info[@"width"] doubleValue],
++                                    [info[@"height"] doubleValue]);
++    self.pipActive = active;
++    /* While the floating window is up the subtitles travel inside the
++     * pictures; the view over the inline layer would only double them. */
++    self.spuView.hidden = active;
++}
++
++/* The floating window only shows the display layer, so while it is up the
++ * subtitles are drawn into a copy of each picture (on the GPU, through
++ * Core Image). They follow the window: they shrink and grow with it, a bit
++ * less than the picture does, so they stay readable when it is small.
++ * Returns a retained buffer, or NULL to keep showing the original. */
++- (CVPixelBufferRef)makePictureInPictureBuffer:(CVPixelBufferRef)source
++{
++    const size_t srcWidth = CVPixelBufferGetWidth(source);
++    const size_t srcHeight = CVPixelBufferGetHeight(source);
++    if (srcWidth < 2 || srcHeight < 2)
++        return NULL;
++
++    /* Square pixels, never above 1080p: the window is never that big */
++    double sar = 1.0;
++    if (_vd->source->i_sar_num && _vd->source->i_sar_den)
++        sar = (double)_vd->source->i_sar_num / _vd->source->i_sar_den;
++    const double width = srcWidth * sar, height = srcHeight;
++    const double fit = MIN(1.0, MIN(1920.0 / MAX(width, height),
++                                    1080.0 / MIN(width, height)));
++    const size_t outWidth = ((size_t)lround(width * fit)) & ~(size_t)1;
++    const size_t outHeight = ((size_t)lround(height * fit)) & ~(size_t)1;
++    if (outWidth < 2 || outHeight < 2)
++        return NULL;
++
++    if (_pipContext == nil)
++        _pipContext = [CIContext contextWithOptions:@{
++            kCIContextCacheIntermediates: @NO,
++        }];
++
++    if (_pipPool == NULL || _pipPoolWidth != outWidth || _pipPoolHeight != outHeight) {
++        CVPixelBufferPoolRelease(_pipPool);
++        _pipPool = NULL;
++        NSDictionary *attributes = @{
++            (__bridge NSString *)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA),
++            (__bridge NSString *)kCVPixelBufferWidthKey: @(outWidth),
++            (__bridge NSString *)kCVPixelBufferHeightKey: @(outHeight),
++            (__bridge NSString *)kCVPixelBufferIOSurfacePropertiesKey: @{},
++            (__bridge NSString *)kCVPixelBufferMetalCompatibilityKey: @YES,
++        };
++        if (CVPixelBufferPoolCreate(kCFAllocatorDefault, NULL,
++                                    (__bridge CFDictionaryRef)attributes,
++                                    &_pipPool) != kCVReturnSuccess) {
++            _pipPool = NULL;
++            return NULL;
++        }
++        _pipPoolWidth = outWidth;
++        _pipPoolHeight = outHeight;
++    }
++
++    CVPixelBufferRef output = NULL;
++    if (CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, _pipPool,
++                                           &output) != kCVReturnSuccess)
++        return NULL;
++
++    CIImage *image = [CIImage imageWithCVPixelBuffer:source];
++    image = [image imageByApplyingTransform:
++        CGAffineTransformMakeScale((double)outWidth / srcWidth,
++                                   (double)outHeight / srcHeight)];
++
++    image = [self compositeSubpictureOver:image
++                                    width:outWidth
++                                   height:outHeight];
++
++    const CGRect bounds = CGRectMake(0, 0, outWidth, outHeight);
++    CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceITUR_709);
++    [_pipContext render:[image imageByCroppingToRect:bounds]
++        toCVPixelBuffer:output
++                 bounds:bounds
++             colorSpace:space];
++    CGColorSpaceRelease(space);
++
++    CVBufferSetAttachment(output, kCVImageBufferColorPrimariesKey,
++                          kCVImageBufferColorPrimaries_ITU_R_709_2,
++                          kCVAttachmentMode_ShouldPropagate);
++    CVBufferSetAttachment(output, kCVImageBufferTransferFunctionKey,
++                          kCVImageBufferTransferFunction_ITU_R_709_2,
++                          kCVAttachmentMode_ShouldPropagate);
++    CVBufferSetAttachment(output, kCVImageBufferYCbCrMatrixKey,
++                          kCVImageBufferYCbCrMatrix_ITU_R_709_2,
++                          kCVAttachmentMode_ShouldPropagate);
++    return output;
++}
++
++- (CIImage *)compositeSubpictureOver:(CIImage *)image
++                               width:(size_t)outWidth
++                              height:(size_t)outHeight
++{
++    NSArray<VLCSampleBufferSubpictureRegion *> *regions = self.subpicture.regions;
++    if (regions.count == 0)
++        return image;
++
++    /* Regions are laid out in the inline display, flipped for CoreGraphics
++     * (see RegionBackingFrame): bring them into the picture's own space. */
++    const vout_display_place_t place = *_vd->place;
++    if (place.width == 0 || place.height == 0)
++        return image;
++    const double placeX = place.x;
++    const double placeY = (double)_vd->cfg->display.height - place.y - place.height;
++    const double sx = (double)outWidth / place.width;
++    const double sy = (double)outHeight / place.height;
++
++    NSMutableArray<CIImage *> *images = [NSMutableArray new];
++    CGRect bounding = CGRectNull;
++    for (VLCSampleBufferSubpictureRegion *region in regions) {
++        if (region.image == NULL)
++            continue;
++        const CGRect frame = region.backingFrame;
++        const size_t w = CGImageGetWidth(region.image);
++        const size_t h = CGImageGetHeight(region.image);
++        if (w == 0 || h == 0 || frame.size.width <= 0 || frame.size.height <= 0)
++            continue;
++
++        const CGRect target = CGRectMake((frame.origin.x - placeX) * sx,
++                                         (frame.origin.y - placeY) * sy,
++                                         frame.size.width * sx,
++                                         frame.size.height * sy);
++        CIImage *regionImage = [CIImage imageWithCGImage:region.image];
++        CGAffineTransform t = CGAffineTransformMakeTranslation(target.origin.x,
++                                                               target.origin.y);
++        t = CGAffineTransformScale(t, target.size.width / w, target.size.height / h);
++        regionImage = [regionImage imageByApplyingTransform:t];
++        if (region.alpha < 1.0) {
++            regionImage = [regionImage imageByApplyingFilter:@"CIColorMatrix"
++                                         withInputParameters:@{
++                @"inputAVector": [CIVector vectorWithX:0 Y:0 Z:0 W:region.alpha],
++            }];
++        }
++        [images addObject:regionImage];
++        bounding = CGRectUnion(bounding, target);
++    }
++    if (images.count == 0 || CGRectIsNull(bounding))
++        return image;
++
++    /* Smaller window, relatively bigger text: sqrt of how much the picture
++     * shrank from the inline view, between 1x and 1.8x, and never wider or
++     * taller than the picture can hold. */
++    double boost = 1.0;
++    const CGSize window = self.pipRenderSize;
++    if (window.height > 0)
++        boost = MIN(MAX(sqrt(place.height / window.height), 1.0), 1.8);
++    boost = MIN(boost, 0.96 * outWidth / bounding.size.width);
++    boost = MIN(boost, 0.45 * outHeight / bounding.size.height);
++
++    /* Grow from the edge the subtitles sit on (bottom, or top for signs) */
++    const BOOL atBottom = CGRectGetMidY(bounding) < outHeight / 2.0;
++    const CGPoint pivot = CGPointMake(CGRectGetMidX(bounding),
++                                      atBottom ? CGRectGetMinY(bounding)
++                                               : CGRectGetMaxY(bounding));
++    CGAffineTransform grow = CGAffineTransformMakeTranslation(pivot.x, pivot.y);
++    grow = CGAffineTransformScale(grow, boost, boost);
++    grow = CGAffineTransformTranslate(grow, -pivot.x, -pivot.y);
++
++    /* Then keep the whole block inside the picture */
++    const CGRect grown = CGRectApplyAffineTransform(bounding, grow);
++    double dx = 0, dy = 0;
++    if (CGRectGetMinX(grown) < 0)
++        dx = -CGRectGetMinX(grown);
++    else if (CGRectGetMaxX(grown) > outWidth)
++        dx = outWidth - CGRectGetMaxX(grown);
++    if (CGRectGetMinY(grown) < 0)
++        dy = -CGRectGetMinY(grown);
++    else if (CGRectGetMaxY(grown) > outHeight)
++        dy = outHeight - CGRectGetMaxY(grown);
++    grow = CGAffineTransformConcat(grow, CGAffineTransformMakeTranslation(dx, dy));
++
++    for (CIImage *regionImage in images)
++        image = [[regionImage imageByApplyingTransform:grow]
++                    imageByCompositingOverImage:image];
++    return image;
++}
++
++- (void)dealloc
++{
++    CVPixelBufferPoolRelease(_pipPool);
++}
++
+ - (CGRect)frameForPlace:(const vout_display_place_t *)place
+ {
+     VLCView *window = self.window;
+@@ -1213,6 +1416,19 @@ static void RenderPicture(vout_display_t *vd, picture_t *pic, vlc_tick_t date) {
+     if (@available(iOS 11.0, *))
+         [sys attachHDRMetadataFromFormat:&pic->format toPixelBuffer:pixelBuffer];
+ 
++    if (sys.pipActive) {
++        CVPixelBufferRef withSubtitles;
++        /* the vout thread has no pool of its own: drain the Core Image
++         * objects every picture */
++        @autoreleasepool {
++            withSubtitles = [sys makePictureInPictureBuffer:pixelBuffer];
++        }
++        if (withSubtitles) {
++            CVPixelBufferRelease(pixelBuffer);
++            pixelBuffer = withSubtitles;
++        }
++    }
++
+     CMSampleBufferRef sampleBuffer = NULL;
+     CMVideoFormatDescriptionRef formatDesc = NULL;
+     OSStatus err = CMVideoFormatDescriptionCreateForImageBuffer(kCFAllocatorDefault, pixelBuffer, &formatDesc);
+@@ -1396,11 +1612,12 @@ static void Prepare (vout_display_t *vd, picture_t *pic,
+                      const vlc_render_subpicture *subpicture, vlc_tick_t date)
+ {
+     PrepareDisplay(vd);
++    /* Subpicture first: the picture-in-picture copy of the picture needs
++     * the current one. */
++    RenderSubpicture(vd, subpicture);
+     if (pic) {
+         RenderPicture(vd, pic, date);
+     }
+-
+-    RenderSubpicture(vd, subpicture);
+ }
+ 
+ static void Display(vout_display_t *vd, picture_t *pic)
+-- 
+2.47.3
+
