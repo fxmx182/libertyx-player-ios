@@ -466,33 +466,6 @@ struct CartaoDaRede: View {
     }
 }
 
-/// O filme aberto que toca da internet, para o app não começar sem nada.
-struct CartaoDeDemonstracao: View {
-    var body: some View {
-        HStack(spacing: 14) {
-            Image("DemoSintel")
-                .resizable()
-                .scaledToFill()
-                .frame(width: 78, height: 44)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Tocar um vídeo de demonstração")
-                    .font(LabFont.swiftUI(15, .bold))
-                    .foregroundStyle(LabTheme.text)
-                Text(verbatim: "Sintel · \(Demonstracao.credito)")
-                    .font(LabFont.swiftUI(12, .medium))
-                    .foregroundStyle(LabTheme.muted)
-            }
-            Spacer(minLength: 0)
-            Image(systemName: "chevron.right")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(LabTheme.faint)
-        }
-        .padding(14)
-        .labCard()
-    }
-}
-
 /// Um servidor salvo, como atalho na estante: ícone, nome e tipo.
 struct AtalhoDeServidor: View {
     let nome: String
