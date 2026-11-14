@@ -1029,10 +1029,10 @@ final class PlayerViewController: UIViewController {
             controlsHideWorkItem?.cancel()
 
         case .ended, .cancelled, .failed:
-            // Perto do tamanho original a pinça encaixa em 1×: acertar
-            // exatamente 100% com dois dedos é impossível, e ficar em 1,03×
-            // deixa a imagem tremida sem nenhum motivo.
-            if abs(videoZoom - 1) < 0.08 {
+            // O zoom fica onde a pinça soltou. Só quando o número na tela já
+            // diz 100% ele vira 1× exato, para não sobrar 1,004× invisível.
+            // (Antes encaixava de 92% a 108% e roubava o zoom escolhido.)
+            if abs(videoZoom - 1) < 0.005 {
                 videoZoom = 1
                 videoOffset = .zero
                 applyZoom(animated: true)
