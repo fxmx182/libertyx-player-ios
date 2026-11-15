@@ -57,6 +57,14 @@ final class PlayerViewController: UIViewController {
     private var panSeekTarget: Double = 0
     private var panUltimoX: CGFloat = 0
     private var panStartBrightness: CGFloat = 0
+    /// O brilho do aparelho antes do primeiro gesto neste vídeo, e o que a
+    /// pessoa escolheu para o vídeo. O iOS só tem um brilho, o da tela: sem
+    /// isto, clarear o vídeo deixava o iPhone claro depois, até mexerem no
+    /// Controle. Agora o do vídeo só vale com o vídeo na frente (como a janela
+    /// do player no Android), e o do aparelho volta ao sair.
+    private var brilhoDoAparelho: CGFloat?
+    private var brilhoDoVideo: CGFloat?
+    private var avisosDeBrilho: [NSObjectProtocol] = []
     private var panStartVolume: Float = 1
     /// Último valor efetivamente enviado ao sistema no gesto em curso.
     private var ultimoVolumeAplicado: Float = -1
@@ -245,6 +253,7 @@ final class PlayerViewController: UIViewController {
         // resto da sessão.
         ThumbnailStore.isSuspended = true
 
+        observarBrilho()
         installGestures()
         bindEngine()
         bindNowPlaying()
@@ -279,6 +288,44 @@ final class PlayerViewController: UIViewController {
         volumeObservation = nil
         cancelSleepTimer()
         engine.teardown()
+
+        devolverBrilho()
+        brilhoDoVideo = nil
+        brilhoDoAparelho = nil
+        for aviso in avisosDeBrilho { NotificationCenter.default.removeObserver(aviso) }
+        avisosDeBrilho = []
+    }
+
+    // MARK: - Brilho do vídeo
+
+    /// Saindo do app (outro app, bloqueio, Central de Controle, a janela
+    /// flutuante) o aparelho recupera o brilho dele; voltando, o vídeo
+    /// recupera o seu.
+    private func observarBrilho() {
+        let centro = NotificationCenter.default
+        avisosDeBrilho = [
+            centro.addObserver(forName: UIApplication.willResignActiveNotification,
+                               object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.devolverBrilho() }
+            },
+            centro.addObserver(forName: UIApplication.didBecomeActiveNotification,
+                               object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.reaplicarBrilho() }
+            },
+        ]
+    }
+
+    private func devolverBrilho() {
+        guard let aparelho = brilhoDoAparelho else { return }
+        telaAtual.brightness = aparelho
+    }
+
+    private func reaplicarBrilho() {
+        guard let video = brilhoDoVideo, view.window != nil else { return }
+        // Lá fora a pessoa pode ter mudado o brilho do aparelho: é esse que
+        // volta na próxima saída.
+        brilhoDoAparelho = telaAtual.brightness
+        telaAtual.brightness = video
     }
 
     // MARK: - Integração com o sistema
@@ -1608,6 +1655,8 @@ final class PlayerViewController: UIViewController {
 
         if panIsOnLeftHalf {
             let value = max(0, min(1, panStartBrightness + fraction))
+            if brilhoDoAparelho == nil { brilhoDoAparelho = panStartBrightness }
+            brilhoDoVideo = value
             telaAtual.brightness = value
             hud.show(.brightness(Float(value)))
         } else {
