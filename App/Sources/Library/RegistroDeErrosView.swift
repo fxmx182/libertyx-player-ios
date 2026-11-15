@@ -5,6 +5,12 @@ import SwiftUI
 /// lá, que é onde está o que acabou de acontecer.
 struct RegistroDeErrosView: View {
     @State private var texto = ""
+    /// As linhas mostradas: só as do fim (ver `tetoDeLinhas`).
+    @State private var linhas: [String] = []
+
+    /// Quantas linhas a tela mostra. O resto continua no registro e vai junto
+    /// na cópia; na tela, o que importa é o que veio por último.
+    private static let tetoDeLinhas = 3000
     @State private var copiado = false
 
     /// O que vai para a área de transferência: o fim do registro. Colar meio
@@ -19,19 +25,32 @@ struct RegistroDeErrosView: View {
                     Text("Se algo deu errado, toque em Copiar e cole a mensagem na conversa de suporte. As senhas não aparecem aqui.")
                         .font(LabFont.swiftUI(13, .medium))
                         .foregroundStyle(LabTheme.muted)
-                    Text(verbatim: texto.isEmpty ? String(localized: "Nada registrado ainda.") : texto)
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(LabTheme.text)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(12)
-                        .labCard(radius: 12)
+                    // Linha a linha e preguiçoso: o registro chega a 512 KB, e
+                    // num Text só o iPhone levava segundos montando o texto com
+                    // a tela travada — fechar o app nessa hora virava falha
+                    // (0x8BADF00D, build 80). Só as linhas visíveis são montadas.
+                    LazyVStack(alignment: .leading, spacing: 1) {
+                        if linhas.isEmpty {
+                            Text("Nada registrado ainda.")
+                        }
+                        ForEach(linhas.indices, id: \.self) { i in
+                            Text(verbatim: linhas[i])
+                        }
+                    }
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(LabTheme.text)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                    .labCard(radius: 12)
                     Color.clear.frame(height: 1).id("fim")
                 }
                 .padding(16)
             }
             .onAppear {
                 texto = RegistroDeErros.shared.texto()
+                linhas = Array(texto.split(separator: "\n", omittingEmptySubsequences: false)
+                    .suffix(Self.tetoDeLinhas).map(String.init))
+                if linhas.last?.isEmpty == true { linhas.removeLast() }
                 DispatchQueue.main.async { rolagem.scrollTo("fim", anchor: .bottom) }
             }
         }
@@ -49,6 +68,7 @@ struct RegistroDeErrosView: View {
                 Button("Limpar", role: .destructive) {
                     RegistroDeErros.shared.limpar()
                     texto = ""
+                    linhas = []
                     copiado = false
                 }
             }
