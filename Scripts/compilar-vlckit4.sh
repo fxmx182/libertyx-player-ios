@@ -42,6 +42,10 @@ cd "$TRABALHO"
 echo "== VLCKit $VLCKIT_TAG"
 git clone --quiet --depth 1 --branch "$VLCKIT_TAG" https://github.com/videolan/vlckit.git VLCKit
 cd VLCKit
+# Nossos remendos no próprio VLCKit (Scripts/vlckit4-remendos/vlckit): o
+# 0001 conserta o travamento ao trocar de vídeo com um aviso de "metadados
+# mudaram" ainda na fila (o VLCKit usava o vídeo já liberado).
+git -c user.name=ci -c user.email=ci@localhost am --quiet "$RAIZ"/Scripts/vlckit4-remendos/vlckit/*.patch
 HASH_VLC=$(sed -n 's/^TESTEDHASH="\([0-9a-f]*\)".*/\1/p' compileAndBuildVLCKit.sh)
 [ -n "$HASH_VLC" ] || { echo "TESTEDHASH não encontrado"; exit 1; }
 echo "== libVLC $HASH_VLC (o que o VLCKit $VLCKIT_TAG pede)"
@@ -97,7 +101,7 @@ ditto -c -k --sequesterRsrc --keepParent "$FW" "$SAIDA/VLCKit.xcframework.zip"
     echo "VLCKit $VLCKIT_TAG ($(git rev-parse --short HEAD))"
     echo "libVLC $HASH_VLC + $(ls libvlc/patches | wc -l | tr -d ' ') remendos do VLCKit"
     echo "compileAndBuildVLCKit.sh -r -n -a aarch64 (Release, --disable-debug), só iphoneos arm64"
-    echo "Nossos remendos: $(cd "$RAIZ/Scripts/vlckit4-remendos" && ls *.patch | tr '\n' ' ')"
+    echo "Nossos remendos: $(cd "$RAIZ/Scripts/vlckit4-remendos" && ls *.patch vlckit/*.patch | tr '\n' ' ')"
     echo "Xcode: $(xcodebuild -version | head -1)"
 } | tee "$SAIDA/LEIA.txt"
 "$RAIZ/Scripts/receita-vlckit4.sh" | tee "$SAIDA/RECEITA"

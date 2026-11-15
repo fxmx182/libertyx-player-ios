@@ -1,0 +1,88 @@
+From 0c8477e8ec21ea92b00059560b204124597caa63 Mon Sep 17 00:00:00 2001
+From: LibertyX <libertyx@localhost>
+Date: Sun, 15 Nov 2026 11:25:05 +0900
+Subject: [PATCH] VLCMediaPlayer: resolve the media before dispatching media
+ events
+
+HandleMediaPlayerMediaChanged, HandleMediaPlayerMediaMetaChanged and
+HandleMediaPlayerMediaAttachmentsAdded used the raw libvlc_media_t inside
+the block handed to the events handler. With asynchronous delivery (the
+legacy configuration dispatches to the main queue), the media can be
+released before the block runs, and libvlc_media_retain() then touches
+freed memory: a crash when switching media while a meta change is pending.
+
+Resolve the VLCMedia (which holds a reference) in the callback, as
+HandleMediaPlayerMediaSubItemsChanged already does.
+---
+ Sources/Playback/VLCMediaPlayer.m | 35 ++++++++++++++++++-------------
+ 1 file changed, 20 insertions(+), 15 deletions(-)
+
+diff --git a/Sources/Playback/VLCMediaPlayer.m b/Sources/Playback/VLCMediaPlayer.m
+index fcab01f..63fc839 100644
+--- a/Sources/Playback/VLCMediaPlayer.m
++++ b/Sources/Playback/VLCMediaPlayer.m
+@@ -368,15 +368,18 @@ static void HandleMediaPlayerTrackSelectionChanged(void *opaque, libvlc_track_ty
+ static void HandleMediaPlayerMediaChanged(void *opaque, libvlc_media_t *libvlc_media)
+ {
+     @autoreleasepool {
++        /* Resolve the media now: when events are delivered asynchronously,
++         * the libvlc media may already be released by the time the block
++         * runs (use after free when switching media quickly). */
++        VLCMedia *newMedia = nil;
++        if (libvlc_media != NULL) {
++            newMedia = (__bridge VLCMedia *)libvlc_media_get_user_data(libvlc_media);
++            if (newMedia == nil) {
++                newMedia = [VLCMedia mediaWithLibVLCMediaDescriptor:libvlc_media];
++            }
++        }
+         VLCEventsHandler *eventsHandler = (__bridge VLCEventsHandler *)opaque;
+         [eventsHandler handleEvent:^(id _Nonnull object) {
+-            VLCMedia *newMedia = nil;
+-            if (libvlc_media != NULL) {
+-                newMedia = (__bridge VLCMedia *)libvlc_media_get_user_data(libvlc_media);
+-                if (newMedia == nil) {
+-                    newMedia = [VLCMedia mediaWithLibVLCMediaDescriptor:libvlc_media];
+-                }
+-            }
+             VLCMediaPlayer *mediaPlayer = (VLCMediaPlayer *)object;
+             [mediaPlayer mediaPlayerMediaChanged: newMedia];
+             if (newMedia != nil)
+@@ -388,13 +391,15 @@ static void HandleMediaPlayerMediaChanged(void *opaque, libvlc_media_t *libvlc_m
+ static void HandleMediaPlayerMediaMetaChanged(void *opaque, libvlc_media_t *libvlc_media)
+ {
+     @autoreleasepool {
++        if (libvlc_media == NULL)
++            return;
++
++        /* Same as above: keep the media alive for asynchronous delivery. */
++        VLCMedia *media = (__bridge VLCMedia *)libvlc_media_get_user_data(libvlc_media);
++        if (media == nil)
++            media = [VLCMedia mediaWithLibVLCMediaDescriptor:libvlc_media];
+         VLCEventsHandler *eventsHandler = (__bridge VLCEventsHandler *)opaque;
+         [eventsHandler handleEvent:^(id _Nonnull object) {
+-            if (libvlc_media == NULL)
+-                return;
+-            VLCMedia *media = (__bridge VLCMedia *)libvlc_media_get_user_data(libvlc_media);
+-            if (media == nil)
+-                media = [VLCMedia mediaWithLibVLCMediaDescriptor:libvlc_media];
+             [media metaChanged];
+         }];
+     }
+@@ -445,11 +450,11 @@ static void HandleMediaPlayerMediaAttachmentsAdded(void *opaque, libvlc_media_t
+         if (artworkData == nil)
+             return;
+ 
++        VLCMedia *media = (__bridge VLCMedia *)libvlc_media_get_user_data(libvlc_media);
++        if (media == nil)
++            media = [VLCMedia mediaWithLibVLCMediaDescriptor:libvlc_media];
+         VLCEventsHandler *eventsHandler = (__bridge VLCEventsHandler *)opaque;
+         [eventsHandler handleEvent:^(id _Nonnull object) {
+-            VLCMedia *media = (__bridge VLCMedia *)libvlc_media_get_user_data(libvlc_media);
+-            if (media == nil)
+-                media = [VLCMedia mediaWithLibVLCMediaDescriptor:libvlc_media];
+             [media artworkAttachmentReceived:artworkData];
+         }];
+     }
+-- 
+2.47.3
+
