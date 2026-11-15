@@ -24,6 +24,8 @@ struct LicencasView: View {
                    arquivo: "LGPL-2.1", fonte: "https://ffmpeg.org"),
         Componente(nome: "SMBClient", autor: "Kishikawa Katsumi", licenca: "MIT",
                    arquivo: "MIT", fonte: "https://github.com/kishikawakatsumi/SMBClient"),
+        Componente(nome: "AMSMB2 e libsmb2", autor: "Amir Abbas Mousavian, Ronnie Sahlberg", licenca: "LGPL 2.1",
+                   arquivo: "LGPL-2.1", fonte: "https://github.com/amosavian/AMSMB2"),
         Componente(nome: "Manrope", autor: "The Manrope Project Authors", licenca: "SIL OFL 1.1",
                    arquivo: "OFL-1.1", fonte: "https://github.com/googlefonts/manrope"),
     ]

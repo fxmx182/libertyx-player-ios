@@ -1,6 +1,5 @@
 import Foundation
 import Network
-import SMBClient
 import UIKit
 
 // MARK: - O que se mede
@@ -304,12 +303,11 @@ final class TesteDeVelocidade: ObservableObject {
         }
 
         let comeco = Self.relogio
-        var inicio: Double?
-        var base: Int64 = 0
+        var inicio: (t: Double, b: Int64)?
         var marco: (t: Double, b: Int64)?
-        var janela: [(t: Double, b: Int64)] = []
-        var fim = comeco
-        var lidoAteOFim: Int64 = 0
+        var depoisDoMarco = 0
+        var chegadas: [(t: Double, b: Int64)] = []
+        var ultima: (t: Double, b: Int64) = (comeco, 0)
 
         while true {
             try? await Task.sleep(nanoseconds: 200_000_000)
@@ -319,14 +317,14 @@ final class TesteDeVelocidade: ObservableObject {
                 return
             }
             let t = Self.relogio
-            let b = contador.bytes
+            let chegada = contador.chegada
             if lendo == nil, let arquivo = contador.arquivo { lendo = arquivo }
 
-            guard let desde = inicio else {
-                if b > 0 {
-                    inicio = t
-                    base = b
-                    janela = [(t, b)]
+            guard let primeira = inicio else {
+                if chegada.b > 0 {
+                    inicio = chegada
+                    ultima = chegada
+                    chegadas = [chegada]
                     fase = .baixando
                 } else if contador.terminou || t - comeco > 30 {
                     break
@@ -334,41 +332,54 @@ final class TesteDeVelocidade: ObservableObject {
                 continue
             }
 
-            janela.append((t, b))
-            // Meio segundo de janela: o bastante para não tremer, curto o
-            // bastante para o ponteiro reagir.
-            while janela.count > 2, t - janela[0].t > 0.6 { janela.removeFirst() }
-            if let primeiro = janela.first, t > primeiro.t {
-                let instante = Double(b - primeiro.b) * 8 / 1_000_000 / (t - primeiro.t)
-                agora = instante
-                amostras.append(instante)
+            if chegada.b > ultima.b {
+                ultima = chegada
+                chegadas.append(chegada)
+                // O primeiro segundo fica de fora da média: é a conexão
+                // acelerando, não a banda do servidor.
+                if marco == nil, chegada.t - primeira.t >= 1 {
+                    marco = chegada
+                } else if marco != nil {
+                    depoisDoMarco += 1
+                }
             }
-            // O primeiro segundo fica de fora da média: é o TCP acelerando,
-            // não a banda do servidor.
-            if marco == nil, t - desde >= 1 { marco = (t, b) }
-            progresso = min(1, (t - desde) / Self.duracao)
-            fim = t
-            lidoAteOFim = b
-            if t - desde >= Self.duracao || contador.terminou { break }
+            // Contado entre chegadas, e não pela hora da amostra: o SMB
+            // entrega em blocos de até 8 MB, e medir pelo relógio fazia o
+            // número pular entre zero e o dobro.
+            let referencia = Self.partida(marco: marco, depoisDoMarco: depoisDoMarco,
+                                          inicio: contador.inicioDaLeitura ?? (primeira.t - 0.2))
+            if ultima.t > referencia.t {
+                agora = Double(ultima.b - referencia.b) * 8 / 1_000_000 / (ultima.t - referencia.t)
+            }
+            // A onda: a banda em janelas de um segundo e meio.
+            while chegadas.count > 2, ultima.t - chegadas[0].t > 1.5 { chegadas.removeFirst() }
+            if let velha = chegadas.first, ultima.t > velha.t {
+                amostras.append(Double(ultima.b - velha.b) * 8 / 1_000_000 / (ultima.t - velha.t))
+            }
+            progresso = min(1, (t - primeira.t) / Self.duracao)
+            if t - primeira.t >= Self.duracao || contador.terminou { break }
         }
         contador.parar = true
         leitura.cancel()
 
-        let partida = marco ?? (inicio ?? 0, base)
+        let partida = Self.partida(marco: marco, depoisDoMarco: depoisDoMarco,
+                                   inicio: contador.inicioDaLeitura ?? ((inicio?.t ?? comeco) - 0.2))
         // Chegou alguma coisa e depois nada: o servidor parou no meio. Mostrar
         // "0 Mb/s" como se fosse a banda enganaria.
-        guard let desde = inicio, lidoAteOFim > partida.b else {
+        guard let primeira = inicio, ultima.b > partida.b, ultima.t > partida.t else {
             let motivo = (contador.erro as? LocalizedError)?.errorDescription
                 ?? contador.erro.map { String(localized: "A leitura falhou: \($0.localizedDescription)") }
-                ?? (inicio == nil ? String(localized: "O servidor não mandou nada a tempo.")
+                ?? (inicio == nil && contador.arquivo != nil
+                    // Achou o arquivo e nenhum bloco chegou em 30 s: a conexão
+                    // está viva, só que lenta demais (um bloco de SMB tem 8 MB).
+                    ? String(localized: "Lenta demais para medir: menos de 4 Mb/s, pouco para vídeo.")
+                    : inicio == nil ? String(localized: "O servidor não mandou nada a tempo.")
                                   : String(localized: "O servidor parou de responder no meio da leitura."))
             falhar(alvo, motivo)
             return
         }
 
-        let total = lidoAteOFim
-        let segundos = max(0.2, fim - partida.t)
-        let mbps = Double(total - partida.b) * 8 / 1_000_000 / segundos
+        let mbps = Double(ultima.b - partida.b) * 8 / 1_000_000 / (ultima.t - partida.t)
         let resultado = ResultadoDeVelocidade(
             mbps: mbps,
             pico: max(mbps, amostras.max() ?? 0),
@@ -376,8 +387,8 @@ final class TesteDeVelocidade: ObservableObject {
             variacao: medida.variacao,
             ip: medida.ip,
             interface: medida.interface,
-            megabytes: Double(total) / 1_000_000,
-            segundos: fim - desde,
+            megabytes: Double(ultima.b) / 1_000_000,
+            segundos: ultima.t - primeira.t,
             quando: Date(),
             amostras: Self.resumir(amostras, em: 48),
             lido: contador.arquivo,
@@ -418,6 +429,20 @@ final class TesteDeVelocidade: ObservableObject {
     }
 
     private static var relogio: Double { ProcessInfo.processInfo.systemUptime }
+
+    /// De onde contar a banda.
+    ///
+    /// Com muitos pedaços chegando (HTTP, que entrega aos poucos), conta-se
+    /// a partir de um segundo depois do primeiro: o começo é a conexão
+    /// acelerando. Com poucos (o SMB entrega blocos de até 8 MB, e numa rede
+    /// lenta chegam cinco ou seis em todo o teste), conta-se desde o pedido:
+    /// o primeiro bloco também estava vindo enquanto ninguém o via chegar,
+    /// e deixá-lo de fora inflava o número em um quarto.
+    private static func partida(marco: (t: Double, b: Int64)?, depoisDoMarco: Int,
+                                inicio: Double) -> (t: Double, b: Int64) {
+        if let marco, depoisDoMarco >= 8 { return marco }
+        return (inicio, 0)
+    }
 
     /// A onda guardada com poucos pontos: é só para o desenho.
     private static func resumir(_ valores: [Double], em pontos: Int) -> [Double] {
@@ -541,6 +566,7 @@ private final class UmaVez: @unchecked Sendable {
 final class Contador: @unchecked Sendable {
     private let trava = NSLock()
     private var _bytes: Int64 = 0
+    private var _chegada: (t: Double, b: Int64) = (0, 0)
     private var _parar = false
     private var _terminou = false
     private var _arquivo: String?
@@ -549,7 +575,25 @@ final class Contador: @unchecked Sendable {
 
     var bytes: Int64 { trava.withLock { _bytes } }
 
-    func somar(_ n: Int) { trava.withLock { _bytes += Int64(n) } }
+    func somar(_ n: Int) {
+        let agora = ProcessInfo.processInfo.systemUptime
+        trava.withLock {
+            _bytes += Int64(n)
+            _chegada = (agora, _bytes)
+        }
+    }
+
+    private var _inicioDaLeitura: Double?
+
+    /// Quando os pedidos de leitura começaram (depois de achar o arquivo).
+    var inicioDaLeitura: Double? { trava.withLock { _inicioDaLeitura } }
+    func marcarInicio() {
+        let agora = ProcessInfo.processInfo.systemUptime
+        trava.withLock { if _inicioDaLeitura == nil { _inicioDaLeitura = agora } }
+    }
+
+    /// Quando chegou o último pedaço, e o total até ali.
+    var chegada: (t: Double, b: Int64) { trava.withLock { _chegada } }
 
     var parar: Bool {
         get { trava.withLock { _parar } }
@@ -609,7 +653,10 @@ enum FonteDeLeitura {
     /// Lê até o contador mandar parar.
     func ler(_ contador: Contador) async throws {
         switch self {
-        case .smb(let servidor, let senha):  try await Self.lerSMB(servidor, senha: senha, contador)
+        case .smb(let servidor, let senha):
+            try await LeituraSMB.ler(LeituraSMB.Destino(host: servidor.host, porta: servidor.port,
+                                                        usuario: servidor.isGuest ? nil : servidor.username,
+                                                        senha: senha), contador)
         case .webdav(let conta, let senha):  try await Self.lerWebDAV(conta, senha: senha, contador)
         case .midia(let conta, let token):   try await Self.lerMidia(conta, token: token, contador)
         }
@@ -619,6 +666,7 @@ enum FonteDeLeitura {
     private static func juntas(_ contador: Contador,
                                _ leitura: @escaping @Sendable (Int) async throws -> Void) async throws {
         var ultimoErro: Error?
+        contador.marcarInicio()
         await withTaskGroup(of: Error?.self) { grupo in
             for k in 0..<leiturasJuntas {
                 grupo.addTask {
@@ -646,119 +694,6 @@ enum FonteDeLeitura {
                 try? await Task.sleep(nanoseconds: 150_000_000)
             }
         }
-    }
-
-    // MARK: SMB
-
-    private static func cliente(_ servidor: SMBServer, senha: String?) async throws -> SMBClient {
-        let cliente = servidor.port == 445
-            ? SMBClient(host: servidor.host)
-            : SMBClient(host: servidor.host, port: servidor.port)
-        try await comPrazo(10, aoEstourar: { cliente.session.disconnect() }) {
-            if servidor.isGuest {
-                try await cliente.login(username: nil, password: nil)
-            } else {
-                try await cliente.login(username: servidor.username, password: senha)
-            }
-        }
-        return cliente
-    }
-
-    /// Cada leitura com a própria conexão, em pedidos de 2 MB, e um prazo
-    /// em cada pedido: a biblioteca de SMB não tem prazo próprio, e um pedido
-    /// sem resposta ficava esperando para sempre — era o "0 Mb/s".
-    private static func lerSMB(_ servidor: SMBServer, senha: String?, _ contador: Contador) async throws {
-        let procura = try await Self.cliente(servidor, senha: senha)
-        let achado: (pasta: String, caminho: String, nome: String, tamanho: UInt64)?
-        do {
-            achado = try await comPrazo(20, aoEstourar: { procura.session.disconnect() }) {
-                try await Self.arquivoNoSMB(procura)
-            }
-        } catch {
-            procura.session.disconnect()
-            throw error
-        }
-        procura.session.disconnect()
-        guard let achado else { throw ErroDoTeste.semArquivo }
-        contador.arquivo = achado.nome
-
-        let bloco: UInt64 = 2 << 20
-        let blocos = max(1, achado.tamanho / bloco)
-        // De um ponto qualquer da primeira metade: o começo de todo arquivo
-        // costuma estar no cache do servidor, e o meio não.
-        let partida = UInt64.random(in: 0...(blocos / 2))
-
-        try await Self.juntas(contador) { k in
-            var conexao: (cliente: SMBClient, leitor: FileReader)?
-            var indice = UInt64(k)
-            defer { conexao?.cliente.session.disconnect() }
-            try await Self.insistindo(contador) {
-                if conexao == nil {
-                    let novo = try await Self.cliente(servidor, senha: senha)
-                    do {
-                        try await comPrazo(8, aoEstourar: { novo.session.disconnect() }) {
-                            _ = try await novo.connectShare(achado.pasta)
-                        }
-                    } catch {
-                        novo.session.disconnect()
-                        throw error
-                    }
-                    conexao = (novo, novo.fileReader(path: achado.caminho))
-                }
-                guard let atual = conexao else { return }
-                let posicao = ((partida + indice) % blocos) * bloco
-                do {
-                    let dados = try await comPrazo(6, aoEstourar: { atual.cliente.session.disconnect() }) {
-                        try await atual.leitor.read(offset: posicao, length: UInt32(bloco))
-                    }
-                    if dados.isEmpty { throw Queda() }
-                    contador.somar(dados.count)
-                    indice += UInt64(Self.leiturasJuntas)
-                } catch {
-                    // Conexão que travou não volta: abre outra.
-                    atual.cliente.session.disconnect()
-                    conexao = nil
-                    throw error
-                }
-            }
-        }
-    }
-
-    /// O maior arquivo que aparecer numa olhada rápida pelas pastas — de
-    /// cima para baixo, até achar um grande ou o tempo acabar.
-    private static func arquivoNoSMB(_ cliente: SMBClient) async throws -> (pasta: String, caminho: String, nome: String, tamanho: UInt64)? {
-        let pastas = try await cliente.listShares()
-            .filter { !$0.type.contains(.ipc) && !$0.name.hasSuffix("$") }
-            .map(\.name)
-        let prazo = Date().addingTimeInterval(10)
-        var melhor: (pasta: String, caminho: String, nome: String, tamanho: UInt64)?
-        var montada: String?
-
-        procura: for pasta in pastas {
-            if montada != nil { _ = try? await cliente.disconnectShare(); montada = nil }
-            do { _ = try await cliente.connectShare(pasta) } catch { continue }
-            montada = pasta
-            var fila = [""]
-            var listadas = 0
-            while !fila.isEmpty, listadas < 40, Date() < prazo {
-                if Task.isCancelled { return nil }
-                let atual = fila.removeFirst()
-                listadas += 1
-                guard let itens = try? await cliente.listDirectory(path: atual) else { continue }
-                for item in itens where item.name != "." && item.name != ".." && !item.isHidden {
-                    let caminho = atual.isEmpty ? item.name : "\(atual)/\(item.name)"
-                    if item.isDirectory {
-                        fila.append(caminho)
-                    } else if item.size > (melhor?.tamanho ?? 0) {
-                        melhor = (pasta, caminho, item.name, item.size)
-                    }
-                }
-                if let m = melhor, m.tamanho >= bastante { break procura }
-            }
-            if Date() >= prazo { break }
-        }
-        guard let m = melhor, m.tamanho >= minimo else { return nil }
-        return m
     }
 
     // MARK: WebDAV
@@ -836,30 +771,6 @@ enum FonteDeLeitura {
                 var pedido = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30)
                 for (campo, valor) in cabecalhos { pedido.setValue(valor, forHTTPHeaderField: campo) }
                 try await LeituraHTTP.baixar(pedido, contador)
-            }
-        }
-    }
-}
-
-/// Espera a operação até o prazo; estourou, chama `aoEstourar` (que desliga
-/// a conexão) e segue com erro, sem ficar preso a quem nunca vai responder.
-func comPrazo<T>(_ segundos: Double, aoEstourar: @escaping @Sendable () -> Void,
-                 _ operacao: @escaping @Sendable () async throws -> T) async throws -> T {
-    try await withCheckedThrowingContinuation { (continuacao: CheckedContinuation<T, Error>) in
-        let uma = UmaVez()
-        let tarefa = Task {
-            do {
-                let valor = try await operacao()
-                uma.fazer { continuacao.resume(returning: valor) }
-            } catch {
-                uma.fazer { continuacao.resume(throwing: error) }
-            }
-        }
-        DispatchQueue.global().asyncAfter(deadline: .now() + segundos) {
-            uma.fazer {
-                aoEstourar()
-                tarefa.cancel()
-                continuacao.resume(throwing: Queda())
             }
         }
     }

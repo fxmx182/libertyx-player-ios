@@ -416,3 +416,5 @@
 "agora" = "ahora";
 "A leitura caiu 1 vez e foi refeita: o vídeo pode engasgar." = "La lectura se cayó 1 vez y se rehízo: el video puede trabarse.";
 "A leitura caiu %lld vezes e foi refeita: o vídeo pode engasgar." = "La lectura se cayó %lld veces y se rehízo: el video puede trabarse.";
+"Lenta demais para medir: menos de 4 Mb/s, pouco para vídeo." = "Demasiado lenta para medir: menos de 4 Mb/s, poco para video.";
+"O teste de velocidade não consegue entrar como convidado neste servidor. Cadastre-o com usuário e senha para medir." = "La prueba de velocidad no puede entrar como invitado en este servidor. Agrégalo con usuario y contraseña para medir.";

@@ -17,6 +17,14 @@ packages:
     url: https://github.com/kishikawakatsumi/SMBClient
     from: "0.3.1"
 
+  # libsmb2 (o SMB do VLC) com uma camada em Swift, LGPL 2.1 e ligada como
+  # biblioteca dinâmica. Só o teste de velocidade usa: o SMBClient travava no
+  # meio das leituras grandes na rede local, e o libsmb2 é o que o player já
+  # usa para tocar — o número medido é o que ele vai ter.
+  AMSMB2:
+    url: https://github.com/amosavian/AMSMB2
+    from: "4.0.3"
+
   # VLCKit 4: vinte anos de correções em sincronia A/V, buffering de rede e
   # recuperação de erro, e fala SMB nativamente — basta uma URL smb://. O 4
   # (e não o 3) porque é o que traz a janela flutuante; compilado por nós em
@@ -74,6 +82,7 @@ targets:
 
     dependencies:
       - package: SMBClient
+      - package: AMSMB2
       - package: VLCKit
       # Estática: nada a embarcar no bundle, só linkar.
       - framework: Vendor/FFmpeg.xcframework
