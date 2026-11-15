@@ -409,6 +409,12 @@ struct AjustesView: View {
                                 LinhaDeAjuste(simbolo: "folder", titulo: String(localized: "Pastas do aparelho"),
                                               sub: Plural.pastas(bookmarks.folders.count))
                             }
+                            divisoria
+                            NavigationLink { TesteDeVelocidadeView() } label: {
+                                LinhaDeAjuste(simbolo: "gauge.with.dots.needle.67percent",
+                                              titulo: String(localized: "Teste de velocidade"),
+                                              sub: String(localized: "A banda até cada servidor"))
+                            }
                         }
 
                         grupo(String(localized: "Dock")) {

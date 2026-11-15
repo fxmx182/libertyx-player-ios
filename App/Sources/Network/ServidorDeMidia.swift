@@ -978,6 +978,37 @@ struct ServidorDeMidia {
     }
 }
 
+// MARK: - Teste de velocidade
+
+extension ServidorDeMidia {
+
+    /// Bytes ao acaso que o próprio servidor manda para medir a banda — o
+    /// mesmo pedido que os apps oficiais fazem para escolher a qualidade.
+    /// O Jellyfin aceita até 100 MB por pedido.
+    func pedidoDoTesteDeBanda(bytes: Int) -> URLRequest? {
+        guard let url = url("/Playback/BitrateTest", consulta: [URLQueryItem(name: "Size", value: "\(bytes)")]) else {
+            return nil
+        }
+        var pedido = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
+        pedido.setValue(cabecalho, forHTTPHeaderField: "Authorization")
+        pedido.setValue(cabecalho, forHTTPHeaderField: "X-Emby-Authorization")
+        if let token { pedido.setValue(token, forHTTPHeaderField: "X-Emby-Token") }
+        return pedido
+    }
+
+    /// Um vídeo qualquer da biblioteca, para ler o arquivo original quando o
+    /// servidor não tem o teste de banda.
+    func videoParaTeste() async throws -> Item? {
+        let lista: Lista = try await pedir("/Users/\(usuarioID)/Items", consulta: [
+            URLQueryItem(name: "Recursive", value: "true"),
+            URLQueryItem(name: "IncludeItemTypes", value: "Movie,Episode"),
+            URLQueryItem(name: "SortBy", value: "Random"),
+            URLQueryItem(name: "Limit", value: "1"),
+        ])
+        return lista.Items.first
+    }
+}
+
 /// Quantas imagens descem ao mesmo tempo. Uma tela de faixas pede dezenas de
 /// capas de uma vez, e despejar todas juntas num servidor atrás do Cloudflare
 /// fazia uma parte cair por tempo esgotado — e a capa ficava vazia.
