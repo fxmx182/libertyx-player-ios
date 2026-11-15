@@ -22,8 +22,14 @@ final class VLCEngine: NSObject, PlaybackEngine {
         // A saída de som fica a padrão do VLC 4 (AVSampleBufferAudioRenderer).
         // A AudioUnit do VLC 3 foi tentada (build 60) e começava muda, e
         // emudecia depois de acelerar, até pausar e voltar.
-        let player = VLCMediaPlayer()
-        player.libraryInstance.loggers = [AvisosDoSom()]
+        //
+        // --no-spu-fill: a legenda fica dentro do vídeo, como no VLC 3. O
+        // padrão do VLC 4 é usar a tela toda, e com o iPhone em pé ela ia
+        // parar lá embaixo, na faixa preta, longe da imagem.
+        let player = VLCMediaPlayer(options: ["--no-spu-fill"])
+        // Com opções próprias o player ganha um VLCLibrary só dele: o registro
+        // de erros precisa ouvir este também, não só o compartilhado.
+        player.libraryInstance.loggers = [RegistroDeErros.shared]
         return player
     }()
     private let container = VLCRenderView()
@@ -971,21 +977,5 @@ extension VLCEngine {
         case .error:          return "erro"
         @unknown default:     return "\(estado.rawValue)"
         }
-    }
-}
-
-/// Leva ao registro de erros os avisos do VLC sobre o som se perder do tempo
-/// (corte, silêncio, reamostragem): se voltar a cortar, o registro diz por quê.
-private final class AvisosDoSom: NSObject, VLCLogging {
-    var level: VLCLogLevel = VLCLogLevel(rawValue: 1)!   // erros e avisos
-
-    private static let interessa = ["playback", "resampl", "timing screwed",
-                                    "flushedAutomatically", "outputConfigurationChanged",
-                                    "audio output", "aout"]
-
-    func handleMessage(_ message: String, logLevel: VLCLogLevel, context: VLCLogContext?) {
-        let texto = message.lowercased()
-        guard Self.interessa.contains(where: { texto.contains($0.lowercased()) }) else { return }
-        RegistroDeErros.shared.anotar("som: \(message)")
     }
 }

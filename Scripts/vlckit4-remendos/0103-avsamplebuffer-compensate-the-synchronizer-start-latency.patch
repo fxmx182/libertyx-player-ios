@@ -1,4 +1,4 @@
-From d75b23ef67b41edc189b313af5e9af45c40d0352 Mon Sep 17 00:00:00 2001
+From 3027bc24b3f4208a94525aefa628189756f54943 Mon Sep 17 00:00:00 2001
 From: LibertyX <libertyx@localhost>
 Date: Sun, 15 Nov 2026 09:26:41 +0900
 Subject: [PATCH] avsamplebuffer: compensate the synchronizer start latency
@@ -13,11 +13,11 @@ cuts every couple of seconds.
 Measure how far the synchronizer time is behind on the first timing point
 after each start, and start that much earlier the next time.
 ---
- modules/audio_output/apple/avsamplebuffer.m | 35 +++++++++++++++++++--
- 1 file changed, 32 insertions(+), 3 deletions(-)
+ modules/audio_output/apple/avsamplebuffer.m | 41 +++++++++++++++++++--
+ 1 file changed, 38 insertions(+), 3 deletions(-)
 
 diff --git a/modules/audio_output/apple/avsamplebuffer.m b/modules/audio_output/apple/avsamplebuffer.m
-index 2ea7409..b9fa625 100644
+index 2ea7409..6abc72f 100644
 --- a/modules/audio_output/apple/avsamplebuffer.m
 +++ b/modules/audio_output/apple/avsamplebuffer.m
 @@ -85,6 +85,11 @@ API_AVAILABLE(macos(MIN_MACOS), ios(MIN_IOS), tvos(MIN_TVOS) VISIONOS_API_AVAILA
@@ -41,7 +41,7 @@ index 2ea7409..b9fa625 100644
  }
  
  - (void)whenTimeObserved:(CMTime) time
-@@ -267,7 +274,26 @@ customBlock_Free(void *refcon, void *doomedMemoryBlock, size_t sizeInBytes)
+@@ -267,7 +274,32 @@ customBlock_Free(void *refcon, void *doomedMemoryBlock, size_t sizeInBytes)
      if (time.value == 0)
          return;
      vlc_tick_t system_now = vlc_tick_now();
@@ -62,14 +62,20 @@ index 2ea7409..b9fa625 100644
 +            latency = 0;
 +        if (latency > VLC_TICK_FROM_SEC(1))
 +            latency = VLC_TICK_FROM_SEC(1);
-+        if (llabs(latency - _startLatency) > VLC_TICK_FROM_MS(5))
++        /* A start with plenty of audio already queued (right after a rate
++         * change or a seek) barely waits: that says nothing about the next
++         * deferred start, so keep the last real measurement. */
++        if (latency >= VLC_TICK_FROM_MS(50)
++         && llabs(latency - _startLatency) > VLC_TICK_FROM_MS(5))
++        {
 +            msg_Warn(_aout, "playback start latency: %"PRId64" us", latency);
-+        _startLatency = latency;
++            _startLatency = latency;
++        }
 +    }
  
      aout_TimingReport(_aout, system_now, pos_ticks);
  }
-@@ -277,6 +303,8 @@ customBlock_Free(void *refcon, void *doomedMemoryBlock, size_t sizeInBytes)
+@@ -277,6 +309,8 @@ customBlock_Free(void *refcon, void *doomedMemoryBlock, size_t sizeInBytes)
      assert(!_dateReached);
  
      _dateReached = YES;
@@ -78,7 +84,7 @@ index 2ea7409..b9fa625 100644
      CMTime time = CMTimeMake(0, _sampleRate);
      [_sync setRate:1.0f time:time];
  
-@@ -302,7 +330,8 @@ customBlock_Free(void *refcon, void *doomedMemoryBlock, size_t sizeInBytes)
+@@ -302,7 +336,8 @@ customBlock_Free(void *refcon, void *doomedMemoryBlock, size_t sizeInBytes)
              CMTime writtenTime = CMTimeMake(_ptsSamples, _sampleRate);
              vlc_tick_t writtenTicks = [VLCAVSample CMTimeTotick:writtenTime];
              vlc_tick_t now = vlc_tick_now();
@@ -88,7 +94,7 @@ index 2ea7409..b9fa625 100644
              vlc_tick_t delta = deadline - now;
  
              if (delta <= 0)
-@@ -320,7 +349,7 @@ customBlock_Free(void *refcon, void *doomedMemoryBlock, size_t sizeInBytes)
+@@ -320,7 +355,7 @@ customBlock_Free(void *refcon, void *doomedMemoryBlock, size_t sizeInBytes)
                  {
                      timeout = vlc_cond_timedwait(&_bufferWait, &_bufferLock,
                                                   deadline);
