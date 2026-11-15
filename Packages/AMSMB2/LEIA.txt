@@ -1,0 +1,7 @@
+AMSMB2 4.0.3 (https://github.com/amosavian/AMSMB2, LGPL 2.1) com o libsmb2
+aff9fa6, copiados para cá em 15/11/2026 para uma correção: os cabeçalhos do
+libsmb2 passam a incluir os tipos que usam (stdint, time, sys/types, netdb),
+porque o Xcode 27 recusava o módulo ("time_t must be imported from module
+_DarwinFoundation2"). Fora isso, só saíram os testes e a dependência deles
+(swift-atomics). Para atualizar: copie a versão nova e reaplique o bloco
+"LibertyX" no topo de cada cabeçalho de Dependencies/libsmb2/include/.
