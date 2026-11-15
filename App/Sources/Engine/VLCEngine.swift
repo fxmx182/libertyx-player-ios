@@ -755,16 +755,7 @@ extension VLCEngine: VLCMediaPlayerDelegate {
         switch novo {
         case .opening:   state = .loading
         case .playing:
-            tocou = true
-            buffering = false
-            // O objeto de áudio do VLC só existe depois que a saída sobe;
-            // reaplicar aqui garante que o ganho interno fique em 100% e o
-            // volume que vale seja o do aparelho.
-            player.audio?.volume = Int32(savedVolume * 100)
-            aplicarTamanhoDaLegenda()
-            aplicarPedidoDeFaixas()
-            aplicarRegraDaLegenda()
-            state = .playing
+            comecouATocar()
         case .paused:    state = .paused
         // O VLC 4 não tem mais o estado "terminou": ao chegar ao fim ele
         // para. Parar depois de ter tocado, sem ninguém ter mandado, é o fim.
@@ -778,6 +769,21 @@ extension VLCEngine: VLCMediaPlayerDelegate {
         case .error:     state = .failed(String(localized: "o VLC não conseguiu abrir este arquivo"))
         default:         break
         }
+    }
+
+    /// O vídeo atual começou de fato: a duração passa a valer e as escolhas
+    /// de som e legenda são aplicadas a ele.
+    private func comecouATocar() {
+        tocou = true
+        buffering = false
+        // O objeto de áudio do VLC só existe depois que a saída sobe;
+        // reaplicar aqui garante que o ganho interno fique em 100% e o
+        // volume que vale seja o do aparelho.
+        player.audio?.volume = Int32(savedVolume * 100)
+        aplicarTamanhoDaLegenda()
+        aplicarPedidoDeFaixas()
+        aplicarRegraDaLegenda()
+        state = .playing
     }
 
     func mediaPlayerBufferingChanged(_ progresso: Float) {
@@ -800,6 +806,17 @@ extension VLCEngine: VLCMediaPlayerDelegate {
         // que o estado que o VLC anuncia. Como só emite na transição, isto não
         // volta a fazer o transporte piscar.
         buffering = false
+
+        // Trocar de vídeo com o player tocando (o próximo, no fim ou pela
+        // lista) não passa pelos estados no VLC 4: ele emenda o novo arquivo
+        // e continua "tocando", sem anunciar de novo. Sem esse aviso a
+        // duração ficava zero, e arrastar a barra e os dois toques não faziam
+        // nada até uma pausa e um play. O tempo andando no vídeo novo é o
+        // mesmo sinal.
+        if !tocou, player.isPlaying, tempoDoVLC > 0 {
+            LabLog.passo("VLC tocando o novo vídeo sem avisar o estado")
+            comecouATocar()
+        }
 
         if let pendente = alvoPendente {
             if abs(tempoDoVLC - pendente.tempo) < 3 {
