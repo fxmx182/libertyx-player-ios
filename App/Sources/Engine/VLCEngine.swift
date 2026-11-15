@@ -19,14 +19,10 @@ final class VLCEngine: NSObject, PlaybackEngine {
     /// Criado depois de `prepararEventos`, que o VLC lê aqui, ao nascer.
     private let player: VLCMediaPlayer = {
         VLCEngine.prepararEventos()
-        // A saída de som do VLC 3 (AudioUnit), não a nova do VLC 4
-        // (AVSampleBufferAudioRenderer). Com o relógio pelo arquivo (ver
-        // `configurarBuffer`), o VLC compara a toda hora onde o som deveria
-        // estar com onde a saída diz que está, e quando a diferença passa de
-        // 0,18 s ele joga o som fora — o corte. A saída nova mede isso por um
-        // aviso de fila, com folga; a AudioUnit mede no próprio instante em
-        // que o iPhone pede som, que era o que o VLC 3 usava.
-        let player = VLCMediaPlayer(options: ["--aout=audiounit_ios"])
+        // A saída de som fica a padrão do VLC 4 (AVSampleBufferAudioRenderer).
+        // A AudioUnit do VLC 3 foi tentada (build 60) e começava muda, e
+        // emudecia depois de acelerar, até pausar e voltar.
+        let player = VLCMediaPlayer()
         player.libraryInstance.loggers = [AvisosDoSom()]
         return player
     }()
