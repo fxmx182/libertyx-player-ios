@@ -127,6 +127,8 @@ final class VLCEngine: NSObject, PlaybackEngine {
     /// Se o vídeo chegou a tocar: o VLC 4 anuncia o fim como "parou", e só
     /// parar depois de ter tocado é o fim de verdade.
     private var tocou = false
+    /// Ver `mediaPlayerTimeChanged`: barra um aviso de tempo dentro de outro.
+    private var dentroDoAvisoDeTempo = false
 
     /// A janela flutuante, quando o VLC a deixa pronta para abrir.
     fileprivate var janela: VLCPictureInPictureWindowControlling?
@@ -160,8 +162,10 @@ final class VLCEngine: NSObject, PlaybackEngine {
     /// Toda ida a um ponto passa por aqui, para o destino ficar registrado.
     private func irPara(_ alvo: Double) {
         LabLog.passo("buscar: \(String(format: "%.1f", tempoDoVLC)) s → \(String(format: "%.1f", alvo)) s (duração \(String(format: "%.0f", duration)) s)")
-        player.time = VLCTime(int: Int32(alvo * 1000))
+        // O destino antes de mandar: mudar o tempo dispara o aviso de tempo
+        // na hora (ver `mediaPlayerTimeChanged`).
         alvoPendente = (alvo, CACurrentMediaTime(), 0)
+        player.time = VLCTime(int: Int32(alvo * 1000))
     }
 
     /// A duração, só depois de o vídeo começar a tocar.
@@ -802,6 +806,11 @@ extension VLCEngine: VLCMediaPlayerDelegate {
     }
 
     func mediaPlayerTimeChanged(_ notification: Notification) {
+        // Um aviso dentro de outro (o VLC 4 avisa de novo quando o tempo é
+        // mudado daqui de dentro) não refaz o trabalho: é o mesmo instante.
+        guard !dentroDoAvisoDeTempo else { return }
+        dentroDoAvisoDeTempo = true
+        defer { dentroDoAvisoDeTempo = false }
         // Tempo andando é a prova de que não está carregando — mais confiável
         // que o estado que o VLC anuncia. Como só emite na transição, isto não
         // volta a fazer o transporte piscar.
@@ -833,8 +842,13 @@ extension VLCEngine: VLCMediaPlayerDelegate {
                 }
                 if CACurrentMediaTime() - pendente.desde > prazo {
                     if pendente.tentativas == 0 {
-                        player.time = VLCTime(int: Int32(pendente.tempo * 1000))
+                        // Anotar a tentativa ANTES de mandar: no VLC 4 mudar o
+                        // tempo dispara este aviso na hora, dentro da própria
+                        // chamada. Anotado depois, o aviso de dentro via "ainda
+                        // não tentei", mandava de novo, e o círculo estourava a
+                        // pilha (build 79: o player fechava em alguns vídeos).
                         alvoPendente = (pendente.tempo, CACurrentMediaTime(), 1)
+                        player.time = VLCTime(int: Int32(pendente.tempo * 1000))
                     } else {
                         alvoPendente = nil
                     }
