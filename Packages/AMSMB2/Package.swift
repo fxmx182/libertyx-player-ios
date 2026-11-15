@@ -11,9 +11,10 @@ let package = Package(
         .watchOS(.v6),
     ],
     products: [
+        // LibertyX: estática, linkada dentro do app. Dinâmica, o Xcode não a
+        // embutia no .app (projeto do XcodeGen) e o app fechava ao abrir.
         .library(
             name: "AMSMB2",
-            type: .dynamic,
             targets: ["AMSMB2"]
         ),
     ],

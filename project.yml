@@ -17,8 +17,8 @@ packages:
     url: https://github.com/kishikawakatsumi/SMBClient
     from: "0.3.1"
 
-  # libsmb2 (o SMB do VLC) com uma camada em Swift, LGPL 2.1 e ligada como
-  # biblioteca dinâmica. Só o teste de velocidade usa: o SMBClient travava no
+  # libsmb2 (o SMB do VLC) com uma camada em Swift, LGPL 2.1, ligada dentro
+  # do app (estática). Só o teste de velocidade usa: o SMBClient travava no
   # meio das leituras grandes na rede local, e o libsmb2 é o que o player já
   # usa para tocar — o número medido é o que ele vai ter. Cópia local com
   # uma correção nos cabeçalhos para o Xcode 27 (ver Packages/AMSMB2/LEIA.txt).

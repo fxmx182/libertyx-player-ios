@@ -138,6 +138,16 @@ jobs:
             }
             echo "$(basename "$fw"): $(lipo -archs "$BIN"), assinado"
           done
+          # Toda biblioteca que o app carrega por @rpath tem que estar dentro
+          # dele. O build 77 linkou o AMSMB2 como framework e o Xcode não o
+          # embutiu: compilou, subiu ao TestFlight e fechava ao abrir.
+          for lib in $(otool -L "$APP/LabPlayer" | awk '/@rpath\//{print $1}'); do
+            [ -e "$APP/Frameworks/${lib#@rpath/}" ] || {
+              echo "::error title=Biblioteca fora do app::$lib não está em Frameworks/ — o app fecharia ao abrir"
+              exit 1
+            }
+            echo "dentro do app: $lib"
+          done
 
       # O log completo do job só é baixável por quem tem admin no repositório,
       # mas as *anotações* de um repo público são lidas por qualquer um. Então
@@ -333,6 +343,20 @@ jobs:
             OTHER_CODE_SIGN_FLAGS="--keychain $KEYCHAIN" \
             archive 2>&1 | tee archive.log | grep -E "error:|warning: .*sign|ARCHIVE" || true
           test -d "$RUNNER_TEMP/LibertyXPlayer.xcarchive" || { tail -60 archive.log; exit 1; }
+
+      - name: Conferir as bibliotecas do app
+        run: |
+          APP="$RUNNER_TEMP/LibertyXPlayer.xcarchive/Products/Applications/LabPlayer.app"
+          # Toda biblioteca que o app carrega por @rpath tem que estar dentro
+          # dele. O build 77 linkou o AMSMB2 como framework e o Xcode não o
+          # embutiu: compilou, subiu ao TestFlight e fechava ao abrir.
+          for lib in $(otool -L "$APP/LabPlayer" | awk '/@rpath\//{print $1}'); do
+            [ -e "$APP/Frameworks/${lib#@rpath/}" ] || {
+              echo "::error title=Biblioteca fora do app::$lib não está em Frameworks/ — o app fecharia ao abrir"
+              exit 1
+            }
+            echo "dentro do app: $lib"
+          done
 
       - name: Exportar e enviar
         env:
