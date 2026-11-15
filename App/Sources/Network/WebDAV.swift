@@ -88,7 +88,7 @@ struct WebDAV {
     /// lê ao tocar — é por ele que o teste de velocidade mede a banda.
     func pedidoDeLeitura(_ caminho: String, desde: Int64) -> URLRequest? {
         guard let url = Self.url(base: conta.url, caminho: caminho, pasta: false) else { return nil }
-        var pedido = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
+        var pedido = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30)
         pedido.setValue("bytes=\(desde)-", forHTTPHeaderField: "Range")
         if let autorizacao = autorizacao { pedido.setValue(autorizacao, forHTTPHeaderField: "Authorization") }
         return pedido

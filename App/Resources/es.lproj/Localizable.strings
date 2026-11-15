@@ -412,3 +412,7 @@
 "Variação" = "Variación";
 "Voando" = "Volando";
 "Wi-Fi" = "Wi-Fi";
+"O servidor parou de responder no meio da leitura." = "El servidor dejó de responder a mitad de la lectura.";
+"agora" = "ahora";
+"A leitura caiu 1 vez e foi refeita: o vídeo pode engasgar." = "La lectura se cayó 1 vez y se rehízo: el video puede trabarse.";
+"A leitura caiu %lld vezes e foi refeita: o vídeo pode engasgar." = "La lectura se cayó %lld veces y se rehízo: el video puede trabarse.";

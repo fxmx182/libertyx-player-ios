@@ -989,7 +989,7 @@ extension ServidorDeMidia {
         guard let url = url("/Playback/BitrateTest", consulta: [URLQueryItem(name: "Size", value: "\(bytes)")]) else {
             return nil
         }
-        var pedido = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
+        var pedido = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30)
         pedido.setValue(cabecalho, forHTTPHeaderField: "Authorization")
         pedido.setValue(cabecalho, forHTTPHeaderField: "X-Emby-Authorization")
         if let token { pedido.setValue(token, forHTTPHeaderField: "X-Emby-Token") }

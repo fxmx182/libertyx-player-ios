@@ -188,6 +188,12 @@ private struct PainelDeVelocidade: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else if !medindo, let resultado {
                 Escada(mbps: resultado.mbps)
+                if let tropecos = resultado.tropecos, tropecos > 0 {
+                    Label(Plural.quedas(tropecos), systemImage: "exclamationmark.triangle.fill")
+                        .font(LabFont.swiftUI(12.5, .semibold))
+                        .foregroundStyle(LabTheme.orange)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
                 Text(NotaDeVelocidade(resultado.mbps).veredito)
                     .font(LabFont.swiftUI(13.5, .semibold))
                     .foregroundStyle(LabTheme.text.opacity(0.85))
@@ -702,6 +708,13 @@ private enum Cores {
     }
 }
 
+extension Plural {
+    static func quedas(_ n: Int) -> String {
+        n == 1 ? String(localized: "A leitura caiu 1 vez e foi refeita: o vídeo pode engasgar.")
+               : String(localized: "A leitura caiu \(n) vezes e foi refeita: o vídeo pode engasgar.")
+    }
+}
+
 extension Formato {
     /// "7,4" abaixo de 10, inteiro daí para cima: casa decimal em 347 é ruído.
     static func mbps(_ v: Double) -> String {
@@ -721,6 +734,8 @@ extension Formato {
     static func quando(_ data: Date) -> String {
         let f = RelativeDateTimeFormatter()
         f.unitsStyle = .short
-        return f.localizedString(for: data, relativeTo: Date())
+        // Recém-medido sai "agora", e não "em 0 s" (o relógio andou um tico).
+        if Date().timeIntervalSince(data) < 5 { return String(localized: "agora") }
+        return f.localizedString(for: min(data, Date()), relativeTo: Date())
     }
 }

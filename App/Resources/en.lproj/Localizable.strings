@@ -412,3 +412,7 @@
 "Variação" = "Jitter";
 "Voando" = "Flying";
 "Wi-Fi" = "Wi-Fi";
+"O servidor parou de responder no meio da leitura." = "The server stopped responding mid-read.";
+"agora" = "now";
+"A leitura caiu 1 vez e foi refeita: o vídeo pode engasgar." = "The read dropped once and was redone: video may stutter.";
+"A leitura caiu %lld vezes e foi refeita: o vídeo pode engasgar." = "The read dropped %lld times and was redone: video may stutter.";
