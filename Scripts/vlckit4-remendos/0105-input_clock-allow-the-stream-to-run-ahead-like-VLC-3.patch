@@ -1,0 +1,38 @@
+From 64d723800fbc6e60ecbea86bd4af7c5b24d3048f Mon Sep 17 00:00:00 2001
+From: LibertyX <libertyx@localhost>
+Date: Sun, 15 Nov 2026 23:24:53 +0900
+Subject: [PATCH] input_clock: allow the stream to run ahead like VLC 3
+
+With the input as clock master (clock-master=input), the 300 ms gap check
+resets the clock reference on every PCR when the demuxer reads ahead in
+bursts: an MP4 over SMB produced hundreds of "clock gap, unexpected stream
+discontinuity" per second (stream_diff ~450 ms, system_diff ~0), and the
+clock never settled. Use VLC 3's 60 s limit; a stream going backward is
+still a discontinuity.
+---
+ src/clock/input_clock.c | 9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/src/clock/input_clock.c b/src/clock/input_clock.c
+index 01d873b679..b45bf79561 100644
+--- a/src/clock/input_clock.c
++++ b/src/clock/input_clock.c
+@@ -83,7 +83,14 @@
+  * my dice --Meuuh */
+ #define CR_MEAN_PTS_GAP VLC_TICK_FROM_MS(300)
+ 
+-#define CR_MAX_GAP CR_MEAN_PTS_GAP
++/* Maximum gap between the stream and system progress before assuming a
++ * discontinuity, as in VLC 3 (60 s). With the input as clock master, a
++ * demuxer reading ahead in bursts (MP4 over SMB, playing faster) advances
++ * the stream by ~450 ms per PCR with almost no system time in between: at
++ * 300 ms every single PCR reset the reference, hundreds of times per second,
++ * and the clock never settled. Real discontinuities going backward are still
++ * caught below (stream_diff < 0). */
++#define CR_MAX_GAP VLC_TICK_FROM_SEC(60)
+ 
+ /* Rate (in 1/256) at which we will read faster to try to increase our
+  * internal buffer (if we control the pace of the source).
+-- 
+2.47.3
+

@@ -43,6 +43,15 @@ final class RegistroDeErros: NSObject, @unchecked Sendable {
     private var ultimoDoVLC: String?
     private var repeticoes = 0
 
+    /// Teto de avisos do VLC por segundo. Numa enxurrada (o VLC 4 chegou a
+    /// mandar centenas de "clock gap" por segundo, cada um com um número
+    /// diferente, que a contagem de repetidos não pega) o registro inchava até
+    /// o teto e gravar tanto pesava o app; passa uma amostra e a conta.
+    private static let avisosPorSegundo = 25
+    private var segundoAtual = 0
+    private var avisosNoSegundo = 0
+    private var omitidos = 0
+
     private override init() {
         let pasta = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         try? FileManager.default.createDirectory(at: pasta, withIntermediateDirectories: true)
@@ -149,6 +158,20 @@ extension RegistroDeErros: VLCLogging {
         fila.async {
             if texto == self.ultimoDoVLC {
                 self.repeticoes += 1
+                return
+            }
+            let segundo = Int(agora.timeIntervalSince1970)
+            if segundo != self.segundoAtual {
+                if self.omitidos > 0 {
+                    self.gravar("\(self.formato.string(from: agora)) (mais \(self.omitidos) avisos do VLC no segundo anterior, omitidos)\n")
+                }
+                self.segundoAtual = segundo
+                self.avisosNoSegundo = 0
+                self.omitidos = 0
+            }
+            self.avisosNoSegundo += 1
+            if self.avisosNoSegundo > Self.avisosPorSegundo {
+                self.omitidos += 1
                 return
             }
             if self.repeticoes > 0 {
