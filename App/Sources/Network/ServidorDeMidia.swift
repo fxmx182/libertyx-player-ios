@@ -793,10 +793,8 @@ struct ServidorDeMidia {
 
     /// O arquivo original, sem conversão (`static=true`).
     func urlDoVideo(_ id: String) -> URL? {
-        url("/Videos/\(id)/stream", consulta: [
-            URLQueryItem(name: "static", value: "true"),
-            URLQueryItem(name: "MediaSourceId", value: id),
-        ] + chaveNaConsulta)
+        url("/Videos/\(id)/stream", consulta: [URLQueryItem(name: "static", value: "true")]
+            + fonteNaConsulta(id) + chaveNaConsulta)
     }
 
     /// A versão convertida pelo servidor (ver `Qualidade`): uma lista HLS em
@@ -804,8 +802,7 @@ struct ServidorDeMidia {
     /// escolhido; as legendas de fora o app baixa à parte, como sempre.
     func urlDaConversao(_ id: String, kbps: Int, sessao: String, audio: Int?) -> URL? {
         let largura = kbps >= 10_000 ? 1920 : kbps >= 4_000 ? 1280 : kbps >= 2_000 ? 960 : 640
-        var consulta = [
-            URLQueryItem(name: "MediaSourceId", value: id),
+        var consulta = fonteNaConsulta(id) + [
             URLQueryItem(name: "DeviceId", value: Self.idDoAparelho),
             URLQueryItem(name: "PlaySessionId", value: sessao),
             URLQueryItem(name: "VideoCodec", value: "h264"),
@@ -913,6 +910,13 @@ struct ServidorDeMidia {
     private var chaveNaConsulta: [URLQueryItem] {
         guard let token else { return [] }
         return [URLQueryItem(name: "ApiKey", value: token), URLQueryItem(name: "api_key", value: token)]
+    }
+
+    /// A fonte do vídeo. No Jellyfin o id da fonte é o do item (e a conversão
+    /// exige o parâmetro); no Emby é outro (`mediasource_…`) e o id do item
+    /// ali dá 400 — sem o parâmetro, o Emby usa a primeira fonte.
+    private func fonteNaConsulta(_ id: String) -> [URLQueryItem] {
+        conta.tipo == .emby ? [] : [URLQueryItem(name: "MediaSourceId", value: id)]
     }
 
     private static let idDoAparelho: String = {
