@@ -1,0 +1,102 @@
+From d75b23ef67b41edc189b313af5e9af45c40d0352 Mon Sep 17 00:00:00 2001
+From: LibertyX <libertyx@localhost>
+Date: Sun, 15 Nov 2026 09:26:41 +0900
+Subject: [PATCH] avsamplebuffer: compensate the synchronizer start latency
+
+The synchronizer time only starts running some time after the rate is set
+(about 300 ms with Bluetooth output). That latency was not accounted for,
+so every start was late by that much. With audio as the clock master this
+only shifts the clock, but when it is not (clock-master=input), the core
+sees the audio way too late, flushes, restarts late again, and the sound
+cuts every couple of seconds.
+
+Measure how far the synchronizer time is behind on the first timing point
+after each start, and start that much earlier the next time.
+---
+ modules/audio_output/apple/avsamplebuffer.m | 35 +++++++++++++++++++--
+ 1 file changed, 32 insertions(+), 3 deletions(-)
+
+diff --git a/modules/audio_output/apple/avsamplebuffer.m b/modules/audio_output/apple/avsamplebuffer.m
+index 2ea7409..b9fa625 100644
+--- a/modules/audio_output/apple/avsamplebuffer.m
++++ b/modules/audio_output/apple/avsamplebuffer.m
+@@ -85,6 +85,11 @@ API_AVAILABLE(macos(MIN_MACOS), ios(MIN_IOS), tvos(MIN_TVOS) VISIONOS_API_AVAILA
+     unsigned _sampleRate;
+     BOOL _stopped;
+     BOOL _dateReached;
++    /* How long the synchronizer time stays behind the start: measured on
++     * the first timing point after each start, and taken off the next ones */
++    vlc_tick_t _startTick;
++    vlc_tick_t _startLatency;
++    BOOL _latencyMeasured;
+     vlc_mutex_t _sessionLock;
+     BOOL _corked;
+     BOOL _uncorkOnPlay;
+@@ -258,6 +263,8 @@ customBlock_Free(void *refcon, void *doomedMemoryBlock, size_t sizeInBytes)
+ 
+     if (_ptsSamples >= 0)
+         _sync.rate = pause ? 0.0f : 1.0f;
++    /* a pause would be counted as start latency */
++    _latencyMeasured = YES;
+ }
+ 
+ - (void)whenTimeObserved:(CMTime) time
+@@ -267,7 +274,26 @@ customBlock_Free(void *refcon, void *doomedMemoryBlock, size_t sizeInBytes)
+     if (time.value == 0)
+         return;
+     vlc_tick_t system_now = vlc_tick_now();
+-    vlc_tick_t pos_ticks = [VLCAVSample CMTimeTotick:time] + _firstPts;
++    vlc_tick_t played = [VLCAVSample CMTimeTotick:time];
++    vlc_tick_t pos_ticks = played + _firstPts;
++
++    if (!_latencyMeasured)
++    {
++        /* The synchronizer time only starts running some time after the
++         * rate is set (the output latency, ~300 ms on Bluetooth). Not taking
++         * it into account makes every start late by that much: when audio is
++         * not the clock master, the core then flushes, restarts late again,
++         * and the sound cuts every couple of seconds. */
++        _latencyMeasured = YES;
++        vlc_tick_t latency = system_now - _startTick - played;
++        if (latency < 0)
++            latency = 0;
++        if (latency > VLC_TICK_FROM_SEC(1))
++            latency = VLC_TICK_FROM_SEC(1);
++        if (llabs(latency - _startLatency) > VLC_TICK_FROM_MS(5))
++            msg_Warn(_aout, "playback start latency: %"PRId64" us", latency);
++        _startLatency = latency;
++    }
+ 
+     aout_TimingReport(_aout, system_now, pos_ticks);
+ }
+@@ -277,6 +303,8 @@ customBlock_Free(void *refcon, void *doomedMemoryBlock, size_t sizeInBytes)
+     assert(!_dateReached);
+ 
+     _dateReached = YES;
++    _startTick = vlc_tick_now();
++    _latencyMeasured = NO;
+     CMTime time = CMTimeMake(0, _sampleRate);
+     [_sync setRate:1.0f time:time];
+ 
+@@ -302,7 +330,8 @@ customBlock_Free(void *refcon, void *doomedMemoryBlock, size_t sizeInBytes)
+             CMTime writtenTime = CMTimeMake(_ptsSamples, _sampleRate);
+             vlc_tick_t writtenTicks = [VLCAVSample CMTimeTotick:writtenTime];
+             vlc_tick_t now = vlc_tick_now();
+-            vlc_tick_t deadline = _lastDate - writtenTicks;
++            /* Start early by the latency measured last time */
++            vlc_tick_t deadline = _lastDate - writtenTicks - _startLatency;
+             vlc_tick_t delta = deadline - now;
+ 
+             if (delta <= 0)
+@@ -320,7 +349,7 @@ customBlock_Free(void *refcon, void *doomedMemoryBlock, size_t sizeInBytes)
+                 {
+                     timeout = vlc_cond_timedwait(&_bufferWait, &_bufferLock,
+                                                  deadline);
+-                    deadline = _lastDate - writtenTicks;
++                    deadline = _lastDate - writtenTicks - _startLatency;
+                 }
+ 
+                 if (timeout != 0 && !_stopped)
+-- 
+2.47.3
+
