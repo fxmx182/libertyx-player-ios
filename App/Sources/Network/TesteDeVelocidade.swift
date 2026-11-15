@@ -654,9 +654,14 @@ enum FonteDeLeitura {
     func ler(_ contador: Contador) async throws {
         switch self {
         case .smb(let servidor, let senha):
+            let reserva: @Sendable () async throws -> [String] = {
+                let navegacao = SMBConnection(server: servidor, password: senha)
+                defer { Task { await navegacao.disconnect() } }
+                return try await navegacao.listShares()
+            }
             try await LeituraSMB.ler(LeituraSMB.Destino(host: servidor.host, porta: servidor.port,
                                                         usuario: servidor.isGuest ? nil : servidor.username,
-                                                        senha: senha), contador)
+                                                        senha: senha, pastasDeReserva: reserva), contador)
         case .webdav(let conta, let senha):  try await Self.lerWebDAV(conta, senha: senha, contador)
         case .midia(let conta, let token):   try await Self.lerMidia(conta, token: token, contador)
         }

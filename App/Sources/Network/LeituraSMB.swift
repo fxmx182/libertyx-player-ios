@@ -15,6 +15,9 @@ enum LeituraSMB {
         /// `nil` entra como convidado.
         let usuario: String?
         let senha: String?
+        /// As pastas compartilhadas por outro caminho, se o libsmb2 não
+        /// conseguir listá-las (ver `arquivo`).
+        var pastasDeReserva: (@Sendable () async throws -> [String])? = nil
     }
 
     /// Duas conexões ao mesmo tempo, cada uma lendo o seu trecho.
@@ -38,7 +41,7 @@ enum LeituraSMB {
         let procura = try gerente(destino)
         let achado: Achado?
         do {
-            achado = try await arquivo(procura)
+            achado = try await arquivo(procura, destino)
         } catch {
             try? await procura.disconnectShare()
             throw explicar(error, destino)
@@ -82,15 +85,19 @@ enum LeituraSMB {
         let codigo = erro as NSError
         guard codigo.domain == NSPOSIXErrorDomain else { return erro }
         switch Int32(codigo.code) {
-        case EPERM, EACCES:
+        case EPERM, ECONNREFUSED:
             // O libsmb2 não entra como convidado em todo servidor (o Samba
-            // recusa), mesmo onde a navegação entra.
+            // recusa), mesmo onde a navegação entra. ECONNREFUSED é como ele
+            // devolve o login recusado (a porta já respondeu antes, na medida
+            // da resposta).
             return destino.usuario == nil
                 ? ErroDoTeste(mensagem: String(localized: "O teste de velocidade não consegue entrar como convidado neste servidor. Cadastre-o com usuário e senha para medir."))
                 : ErroDoTeste(mensagem: String(localized: "Usuário ou senha recusados pelo servidor."))
+        case EACCES:
+            return ErroDoTeste(mensagem: String(localized: "Este usuário não tem permissão para ler os arquivos grandes deste servidor."))
         case ETIMEDOUT:
             return ErroDoTeste(mensagem: String(localized: "O servidor não mandou nada a tempo."))
-        case ECONNREFUSED, EHOSTUNREACH, ENETUNREACH:
+        case EHOSTUNREACH, ENETUNREACH:
             return ErroDoTeste(mensagem: String(localized: "O servidor não respondeu. Ele está ligado e na mesma rede?"))
         default:
             return erro
@@ -159,12 +166,29 @@ enum LeituraSMB {
 
     /// O maior arquivo que aparecer numa olhada rápida pelas pastas — de
     /// cima para baixo, até achar um grande ou o tempo acabar.
-    static func arquivo(_ smb: SMB2Manager) async throws -> Achado? {
-        let pastas = try await smb.listShares()
-            .map(\.name)
-            .filter { !$0.hasSuffix("$") }
+    static func arquivo(_ smb: SMB2Manager, _ destino: Destino) async throws -> Achado? {
+        // O Samba 4.22 (Debian 13) tem um defeito ao fechar o canal da lista
+        // de pastas ("Unexpected fake_file_handle" no log dele): o libsmb2
+        // recebe erro e desiste, embora o login tenha passado. O SMBClient da
+        // navegação ignora esse erro, então a lista vem por ele.
+        var pastas: [String]
+        do {
+            pastas = try await smb.listShares().map(\.name)
+        } catch {
+            guard let reserva = destino.pastasDeReserva else { throw error }
+            pastas = try await reserva()
+        }
+        pastas = pastas.filter { !$0.hasSuffix("$") }
         let prazo = Date().addingTimeInterval(10)
-        var melhor: Achado?
+        // Os maiores de cada tipo: vídeo primeiro (é o que o player lê, e o
+        // que a pessoa costuma poder ler), qualquer arquivo depois.
+        var videos: [Achado] = []
+        var outros: [Achado] = []
+        func guardar(_ achado: Achado, em lista: inout [Achado]) {
+            lista.append(achado)
+            lista.sort { $0.tamanho > $1.tamanho }
+            if lista.count > 6 { lista.removeLast() }
+        }
 
         procura: for pasta in pastas {
             do { try await smb.connectShare(name: pasta) } catch { continue }
@@ -185,16 +209,40 @@ enum LeituraSMB {
                         continue
                     }
                     let tamanho = (item[.fileSizeKey] as? NSNumber)?.int64Value ?? 0
-                    if tamanho > (melhor?.tamanho ?? 0) {
-                        melhor = Achado(pasta: pasta, caminho: caminho, tamanho: tamanho)
-                    }
+                    guard tamanho >= minimo else { continue }
+                    let achado = Achado(pasta: pasta, caminho: caminho, tamanho: tamanho)
+                    if ehVideo(nome) { guardar(achado, em: &videos) } else { guardar(achado, em: &outros) }
                 }
-                if let m = melhor, m.tamanho >= bastante { break procura }
+                if videos.contains(where: { $0.tamanho >= bastante }) { break procura }
             }
             if Date() >= prazo { break }
         }
-        guard let m = melhor, m.tamanho >= minimo else { return nil }
-        return m
+
+        // O maior arquivo pode não ser legível por esse usuário (no servidor
+        // de casa era um backup do root, e o "sem permissão" saía como senha
+        // recusada). Abre cada candidato e fica com o primeiro que deixa ler.
+        var ultimoErro: (any Error)?
+        for candidato in videos + outros {
+            if Task.isCancelled { return nil }
+            do {
+                try await smb.connectShare(name: candidato.pasta)
+                let amostra: Data = try await smb.contents(atPath: candidato.caminho,
+                                                           range: 0..<UInt64(65_536), progress: nil)
+                if !amostra.isEmpty { return candidato }
+            } catch {
+                ultimoErro = error
+            }
+        }
+        if let ultimoErro { throw ultimoErro }
+        return nil
+    }
+
+    private static let extensoesDeVideo: Set<String> = [
+        "mkv", "mp4", "m4v", "mov", "avi", "ts", "m2ts", "mts", "wmv", "webm", "mpg", "mpeg", "iso", "vob",
+    ]
+
+    private static func ehVideo(_ nome: String) -> Bool {
+        extensoesDeVideo.contains((nome as NSString).pathExtension.lowercased())
     }
 }
 
