@@ -1,0 +1,55 @@
+From eed47d4aa4183d0e2fa2504dd12ba20fc1d58611 Mon Sep 17 00:00:00 2001
+From: LibertyX <libertyx@localhost>
+Date: Sun, 15 Nov 2026 12:37:24 +0900
+Subject: [PATCH] aout: do not flush in a loop when playing faster
+
+The late and early limits shrink with the rate (45 ms late at 4x), but
+restarting an output is not instant: the AVSampleBuffer synchronizer starts
+about 300 ms late. When the audio is not the clock master and the rate is
+above 1, a late flush restarts late again and is flushed again, every
+block: the sound disappears while playing faster, and the drift keeps
+growing for seconds after going back to normal speed.
+
+While playing faster, only flush beyond 600 ms, and never insert silence;
+resampling, and the flush on the next rate change, catch up.
+---
+ src/audio_output/dec.c | 16 ++++++++++++++--
+ 1 file changed, 14 insertions(+), 2 deletions(-)
+
+diff --git a/src/audio_output/dec.c b/src/audio_output/dec.c
+index 2230761..5232d02 100644
+--- a/src/audio_output/dec.c
++++ b/src/audio_output/dec.c
+@@ -634,7 +634,19 @@ static void stream_HandleDrift(vlc_aout_stream *stream, vlc_tick_t drift,
+      * is not portable, not supported by some hardware and often unsafe/buggy
+      * where supported. The other alternative is to flush the buffers
+      * completely. */
+-    if (drift > lroundf(+3 * AOUT_MAX_PTS_DELAY / rate))
++    /* LibertyX: the limits shrink with the rate (45 ms late at 4x), but an
++     * output restart is not instant (the AVSampleBuffer synchronizer starts
++     * some 300 ms late). When playing faster, a flush would restart late
++     * again, be flushed again, and so on: the sound vanished while holding
++     * to speed up and for seconds after letting go. While faster than
++     * normal, only flush when hopelessly late, and never pad with silence
++     * (resampling, and the flush on the next rate change, catch up). */
++    const bool faster = rate > 1.f;
++    vlc_tick_t late_limit = lroundf(+3 * AOUT_MAX_PTS_DELAY / rate);
++    if (faster && late_limit < VLC_TICK_FROM_MS(600))
++        late_limit = VLC_TICK_FROM_MS(600);
++
++    if (drift > late_limit)
+     {
+         if (tracer != NULL)
+             vlc_tracer_TraceEvent(tracer, "RENDER", stream->str_id, "late_flush");
+@@ -650,7 +662,7 @@ static void stream_HandleDrift(vlc_aout_stream *stream, vlc_tick_t drift,
+ 
+     /* Early audio output.
+      * This is rare except at startup when the buffers are still empty. */
+-    if (drift < lroundf(-3 * AOUT_MAX_PTS_ADVANCE / rate))
++    if (!faster && drift < lroundf(-3 * AOUT_MAX_PTS_ADVANCE / rate))
+     {
+         if (tracer != NULL)
+             vlc_tracer_TraceEvent(tracer, "RENDER", stream->str_id, "early_silence");
+-- 
+2.47.3
+
