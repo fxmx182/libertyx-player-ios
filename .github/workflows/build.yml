@@ -2,7 +2,7 @@ name: Build IPA
 
 on:
   push:
-    branches: [main]
+    branches: [main, vlc3]
     paths-ignore:
       - "**.md"
       - "imagens/**"
@@ -219,7 +219,9 @@ jobs:
   # Store Connect (Scripts/asc.py), sem Mac, e moram nos segredos do repo.
   testflight:
     name: Enviar ao TestFlight
-    if: github.ref == 'refs/heads/main'
+    # vlc3: o app com o motor VLC 3, o que os testadores de fora recebem
+    # enquanto o VLC 4 (main) é testado só pelo dono.
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/vlc3'
     runs-on: xcode-27
     timeout-minutes: 40
 
