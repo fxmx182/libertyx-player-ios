@@ -245,7 +245,7 @@ jobs:
     # interno (o liberar-externo.py é que leva um build aos testadores).
     if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/vlckit4-proprio') && needs.vlckit-atual.outputs.atual == '1'
     runs-on: xcode-27
-    timeout-minutes: 40
+    timeout-minutes: 70
 
     steps:
       - uses: actions/checkout@v4
@@ -368,6 +368,19 @@ jobs:
             exit 1
           }
           echo "Build ${{ github.run_number }} enviado ao TestFlight"
+
+      # O build do VLC 4 vai só para o dono, no grupo "Eu (VLC 4)": o grupo
+      # interno antigo recebia todo build, inclusive os do ramo vlc3.
+      - name: Pôr no grupo Eu (VLC 4)
+        timeout-minutes: 27
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          python3 -m venv "$RUNNER_TEMP/asc"
+          "$RUNNER_TEMP/asc/bin/pip" -q install pyjwt cryptography requests
+          ASC_KEY_PATH="$HOME/.appstoreconnect/private_keys/AuthKey_$ASC_KEY_ID.p8" \
+            "$RUNNER_TEMP/asc/bin/python" Scripts/grupo-vlc4.py ${{ github.run_number }}
 
       - name: Apagar o chaveiro
         if: always()
