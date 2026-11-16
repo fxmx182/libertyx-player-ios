@@ -1,0 +1,54 @@
+From 5028432abec8413a9f52ccfd44022dfe20521f1e Mon Sep 17 00:00:00 2001
+From: LibertyX <libertyx@localhost>
+Date: Tue, 17 Nov 2026 08:00:12 +0900
+Subject: [PATCH] ts: probe the length and seek by time on seekable sources
+
+A MPEG-TS file over SMB, HTTP or WebDAV (seekable, but not "fast"
+seekable) had its boundaries never probed: the length was the last DTS
+read so far, growing with playback, and DEMUX_SET_TIME failed, so the
+emulated seek by position used that wrong length. A 2h41m recording of a
+live stream could not be seeked at all. Probe the start and the end, and
+run the binary search, whenever the source can seek.
+---
+ modules/demux/mpeg/ts.c     | 6 +++++-
+ modules/demux/mpeg/ts_psi.c | 7 +++++--
+ 2 files changed, 10 insertions(+), 3 deletions(-)
+
+diff --git a/modules/demux/mpeg/ts.c b/modules/demux/mpeg/ts.c
+index 4c97330..8c128f0 100644
+--- a/modules/demux/mpeg/ts.c
++++ b/modules/demux/mpeg/ts.c
+@@ -1985,7 +1985,11 @@ static int SeekToTime( demux_t *p_demux, const ts_pmt_t *p_pmt, vlc_tick_t i_see
+     if( vlc_stream_GetSize( p_sys->stream, &i_stream_size ) != VLC_SUCCESS )
+       return VLC_EGENERIC;
+ 
+-    if( !p_sys->b_canfastseek || i_stream_size < p_sys->i_packet_size )
++    /* A seekable (not fast seekable) source such as SMB or HTTP costs one
++     * request per step of the binary search: a few dozen, acceptable for an
++     * exact seek, whereas failing here made the seek land by byte ratio. */
++    if( !(p_sys->b_canfastseek || p_sys->b_canseek) ||
++        i_stream_size < p_sys->i_packet_size )
+         return VLC_EGENERIC;
+ 
+     const uint64_t i_initial_pos = vlc_stream_Tell( p_sys->stream );
+diff --git a/modules/demux/mpeg/ts_psi.c b/modules/demux/mpeg/ts_psi.c
+index f2ca1a9..0430562 100644
+--- a/modules/demux/mpeg/ts_psi.c
++++ b/modules/demux/mpeg/ts_psi.c
+@@ -2229,8 +2229,11 @@ static void PMTCallBack( void *data, dvbpsi_pmt_t *p_dvbpsipmt )
+ 
+     UpdatePESFilters( p_demux, p_sys->seltype == PROGRAM_ALL );
+ 
+-    /* Probe Boundaries */
+-    if( p_sys->b_canfastseek && !p_pmt->b_last_dts_probed )
++    /* Probe Boundaries. Also when seeking is merely possible: over SMB or
++     * HTTP (not "fast" seekable) the length was otherwise unknown and grew
++     * with playback, so a file could not be seeked at all. It costs two
++     * seeks at open. */
++    if( (p_sys->b_canfastseek || p_sys->b_canseek) && !p_pmt->b_last_dts_probed )
+     {
+         ProbeStart( p_demux, p_pmt->i_number );
+         ProbeEnd( p_demux, p_pmt->i_number );
+-- 
+2.47.3
+
