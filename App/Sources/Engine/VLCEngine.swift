@@ -161,7 +161,11 @@ final class VLCEngine: NSObject, PlaybackEngine {
         Task { [weak self] in
             while let self, let alvo = self.buscaDoTs, self.indiceTs === indice {
                 self.buscaDoTs = nil
-                let fracao = (try? await indice.fracao(de: alvo)) ?? Float(alvo / indice.duracao)
+                // O SMBClient às vezes para no meio de uma leitura: passado o
+                // prazo, vai pela proporção do arquivo, que erra uns minutos
+                // mas não deixa a barra sem resposta.
+                let medida = await Self.comPrazo(4) { try? await indice.fracao(de: alvo) }
+                let fracao = medida ?? Float(alvo / indice.duracao)
                 guard self.indiceTs === indice else { break }
                 self.player.position = fracao
             }
@@ -170,6 +174,21 @@ final class VLCEngine: NSObject, PlaybackEngine {
     }
 
     // MARK: - MPEG-TS pela rede
+
+    /// O resultado de `trabalho`, ou `nil` se ele não terminar em `segundos`.
+    /// Não espera o trabalho parado: quem chega primeiro responde.
+    private static func comPrazo<T>(_ segundos: Double,
+                                    _ trabalho: @escaping () async -> T?) async -> T? {
+        let resposta = RespostaUnica<T>()
+        return await withCheckedContinuation { continuacao in
+            resposta.guardar(continuacao)
+            Task { resposta.dar(await trabalho()) }
+            Task {
+                try? await Task.sleep(nanoseconds: UInt64(segundos * 1_000_000_000))
+                resposta.dar(nil)
+            }
+        }
+    }
 
     private var indiceTs: IndiceDeTs?
     /// Lendo o começo e o fim do arquivo: a duração fica zerada até saber se
@@ -981,5 +1000,23 @@ extension VLCEngine {
         case .esAdded:   return "faixa nova"
         @unknown default: return "\(estado.rawValue)"
         }
+    }
+}
+
+/// Entrega uma única resposta a quem espera; as seguintes são ignoradas.
+private final class RespostaUnica<T>: @unchecked Sendable {
+    private let trava = NSLock()
+    private var continuacao: CheckedContinuation<T?, Never>?
+
+    func guardar(_ c: CheckedContinuation<T?, Never>) {
+        trava.lock(); continuacao = c; trava.unlock()
+    }
+
+    func dar(_ valor: T?) {
+        trava.lock()
+        let c = continuacao
+        continuacao = nil
+        trava.unlock()
+        c?.resume(returning: valor)
     }
 }
