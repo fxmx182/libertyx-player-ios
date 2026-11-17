@@ -141,11 +141,103 @@ final class VLCEngine: NSObject, PlaybackEngine {
     /// Toda ida a um ponto passa por aqui, para o destino ficar registrado.
     private func irPara(_ alvo: Double) {
         LabLog.passo("buscar: \(String(format: "%.1f", tempoDoVLC)) s → \(String(format: "%.1f", alvo)) s (duração \(String(format: "%.0f", duration)) s)")
-        player.time = VLCTime(int: Int32(alvo * 1000))
+        pedirAoVlc(alvo)
         alvoPendente = (alvo, CACurrentMediaTime(), 0)
     }
 
+    /// Leva o VLC a um instante: pelo tempo, ou — numa gravação em MPEG-TS
+    /// pela rede — pela posição que o índice achou (ver `IndiceDeTs`).
+    private func pedirAoVlc(_ alvo: Double) {
+        guard let indice = indiceTs else {
+            player.time = VLCTime(int: Int32(alvo * 1000))
+            return
+        }
+        // Cada busca lê alguns trechos do arquivo pela rede. Arrastando, vale
+        // só a mais nova: as que chegarem no meio de um cálculo esperam, e só
+        // a última é feita.
+        buscaDoTs = alvo
+        guard !calculandoTs else { return }
+        calculandoTs = true
+        Task { [weak self] in
+            while let self, let alvo = self.buscaDoTs, self.indiceTs === indice {
+                self.buscaDoTs = nil
+                let fracao = (try? await indice.fracao(de: alvo)) ?? Float(alvo / indice.duracao)
+                guard self.indiceTs === indice else { break }
+                self.player.position = fracao
+            }
+            self?.calculandoTs = false
+        }
+    }
+
+    // MARK: - MPEG-TS pela rede
+
+    private var indiceTs: IndiceDeTs?
+    /// Lendo o começo e o fim do arquivo: a duração fica zerada até saber se
+    /// é TS, para a barra não mostrar a do VLC, que cresce junto com o tempo.
+    private var medindoTs = false
+    private var geracaoDoTs = 0
+    private var buscaDoTs: Double?
+    private var calculandoTs = false
+
+    /// De onde ler o arquivo por trechos, para os casos que o VLC lê pela rede
+    /// sem conseguir pular por tempo. Conversão do servidor e canal ao vivo
+    /// já chegam como HLS, que o VLC indexa sozinho.
+    private static func leitorDeTrechos(_ origem: MediaOrigin, url: URL) -> LeitorDeTrechos? {
+        switch origem {
+        case .file:
+            return nil
+        case .smb(let referencia, let caminho):
+            guard let servidor = SMBServerStore.shared.servers.first(where: { $0.id == referencia.serverID }) else { return nil }
+            return LeitorSMB(servidor: servidor, senha: SMBServerStore.shared.password(for: servidor),
+                             share: referencia.share, caminho: caminho)
+        case .midia(let id, let item):
+            if Conversoes.shared.canal(item) != nil || Qualidade.da(id) > 0 { return nil }
+            return LeitorHTTP(url: url)
+        case .webdav, .remote:
+            guard url.scheme == "http" || url.scheme == "https" else { return nil }
+            return LeitorHTTP(url: url)
+        }
+    }
+
+    private func medirTs(_ leitor: LeitorDeTrechos) {
+        medindoTs = true
+        geracaoDoTs += 1
+        let geracao = geracaoDoTs
+        Task { [weak self] in
+            let indice = try? await IndiceDeTs.abrir(leitor)
+            guard let self, self.geracaoDoTs == geracao else {
+                await leitor.fechar()
+                return
+            }
+            self.medindoTs = false
+            guard let indice else {
+                await leitor.fechar()
+                return
+            }
+            self.indiceTs = indice
+            LabLog.passo("MPEG-TS pela rede: duração \(String(format: "%.0f", indice.duracao)) s pelo relógio do arquivo")
+            self.aplicarRestauracao()
+        }
+        // Servidor que não responde não pode deixar o vídeo sem duração.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+            guard let self, self.geracaoDoTs == geracao, self.medindoTs else { return }
+            self.medindoTs = false
+        }
+    }
+
+    private func fecharIndiceTs() {
+        geracaoDoTs += 1
+        medindoTs = false
+        buscaDoTs = nil
+        if let indice = indiceTs {
+            Task { await indice.fechar() }
+        }
+        indiceTs = nil
+    }
+
     var duration: Double {
+        if let indice = indiceTs { return indice.duracao }
+        if medindoTs { return 0 }
         let ms = player.media?.length.intValue ?? 0
         return ms > 0 ? Double(ms) / 1000 : 0
     }
@@ -212,7 +304,7 @@ final class VLCEngine: NSObject, PlaybackEngine {
         // Pausado na tela bloqueada, nenhum quadro novo viria até o play, e a
         // tela ficaria preta: buscar o ponto onde está faz o VLC desenhar um.
         if !player.isPlaying {
-            player.time = player.time
+            if indiceTs != nil { player.position = player.position } else { player.time = player.time }
         }
     }
 
@@ -249,6 +341,8 @@ final class VLCEngine: NSObject, PlaybackEngine {
         tamanhoDoArquivo = item.fileSize
         bytesNaBusca = nil
         origemAtual = item.origin
+        fecharIndiceTs()
+        if let leitor = Self.leitorDeTrechos(item.origin, url: url) { medirTs(leitor) }
 
         LabLog.passo("carregar: \(Self.tipo(item.origin)) · \(item.title)")
         player.media = media
@@ -668,9 +762,9 @@ final class VLCEngine: NSObject, PlaybackEngine {
 
     /// O ponto e as faixas de antes de refazer, assim que existirem de novo.
     fileprivate func aplicarRestauracao() {
-        if let alvo = alvoAoTocar, player.isPlaying {
+        if let alvo = alvoAoTocar, player.isPlaying, !medindoTs {
             alvoAoTocar = nil
-            player.time = VLCTime(int: Int32(alvo * 1000))
+            pedirAoVlc(alvo)
         }
         guard let restaurar = faixasARestaurar else { return }
         let legenda = restaurar.legenda
@@ -718,6 +812,7 @@ final class VLCEngine: NSObject, PlaybackEngine {
     func makeRenderView() -> UIView { container }
 
     func teardown() {
+        fecharIndiceTs()
         player.stop()
         player.delegate = nil
         // Solta a permissão só depois de parar: fechar antes deixaria o VLC
@@ -772,7 +867,9 @@ extension VLCEngine: VLCMediaPlayerDelegate {
         buffering = false
 
         if let pendente = alvoPendente {
-            if abs(tempoDoVLC - pendente.tempo) < 3 {
+            // Pela posição (TS) o VLC recomeça no quadro-chave seguinte, que
+            // numa live pode estar uns segundos adiante.
+            if abs(tempoDoVLC - pendente.tempo) < (indiceTs != nil ? 6 : 3) {
                 alvoPendente = nil
             } else {
                 // Não chegou. Em rede a busca demora mais para assentar; passado
@@ -786,7 +883,7 @@ extension VLCEngine: VLCMediaPlayerDelegate {
                 }
                 if CACurrentMediaTime() - pendente.desde > prazo {
                     if pendente.tentativas == 0 {
-                        player.time = VLCTime(int: Int32(pendente.tempo * 1000))
+                        pedirAoVlc(pendente.tempo)
                         alvoPendente = (pendente.tempo, CACurrentMediaTime(), 1)
                     } else {
                         alvoPendente = nil
