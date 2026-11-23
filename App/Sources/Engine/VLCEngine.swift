@@ -761,7 +761,7 @@ final class VLCEngine: NSObject, PlaybackEngine {
         let legenda = currentSubtitleTrack
         let atraso = player.currentVideoSubTitleDelay
         player.delegate = nil
-        player.stop()
+        Self.parar(player)
         player = VLCMediaPlayer(library: TamanhoDaLegenda.biblioteca())
         player.delegate = self
         player.drawable = container
@@ -830,10 +830,25 @@ final class VLCEngine: NSObject, PlaybackEngine {
 
     func makeRenderView() -> UIView { container }
 
+    /// Para o VLC fora da tela principal.
+    ///
+    /// O `stop()` do VLCKit 3 espera a leitura do arquivo terminar, e uma
+    /// leitura presa na rede (a ponte derrubada, o servidor que não responde)
+    /// deixava o app congelado — fechado pelo iOS depois de 5 s ao sair
+    /// (0x8BADF00D, "Failed to terminate gracefully").
+    /// `segurando`: o que precisa viver até o VLC parar (a permissão de
+    /// leitura do arquivo do aparelho).
+    private static func parar(_ reprodutor: VLCMediaPlayer, segurando: Any? = nil) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            reprodutor.stop()
+            withExtendedLifetime(segurando) {}
+        }
+    }
+
     func teardown() {
         fecharIndiceTs()
-        player.stop()
         player.delegate = nil
+        Self.parar(player, segurando: access)
         // Solta a permissão só depois de parar: fechar antes deixaria o VLC
         // lendo um arquivo que ele já não pode mais acessar.
         access = nil
