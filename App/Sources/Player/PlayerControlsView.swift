@@ -86,6 +86,8 @@ final class PlayerControlsView: UIView {
     /// dele fica transparente e estas duas ficam por baixo.
     private let trilhaFundo = UIView()
     private let trilhaCarregada = UIView()
+    /// Os risquinhos dos capítulos, por cima da trilha e por baixo da bolinha.
+    private let marcas = MarcasDaTrilha()
     private var larguraCarregada: NSLayoutConstraint?
     /// `nil` até a primeira medida, para a primeira acomodação sempre valer.
     private var estaDeitado: Bool?
@@ -105,6 +107,9 @@ final class PlayerControlsView: UIView {
     /// Transporte à esquerda, ajustes à direita.
     private let transporte = UIStackView()
     private let ajustes = UIStackView()
+    /// Deitado, metade das ferramentas vai para a esquerda do play: todas à
+    /// direita não cabiam desde que o PiP entrou, e se espremiam no canto.
+    private let ajustesEsquerda = UIStackView()
     private let aspectButton = UIButton(type: .system)
     private let pipButton = UIButton(type: .system)
 
@@ -185,7 +190,8 @@ final class PlayerControlsView: UIView {
 
         let extras = [audioButton, subtitleButton, repeatButton, rotateButton, speedButton]
         if deitado {
-            extras.forEach { ajustes.insertArrangedSubview($0, at: 0) }
+            [audioButton, subtitleButton, speedButton].forEach { ajustesEsquerda.addArrangedSubview($0) }
+            [repeatButton, rotateButton].enumerated().forEach { ajustes.insertArrangedSubview($1, at: $0) }
         } else {
             extras.forEach { ilha.addArrangedSubview($0) }
         }
@@ -326,9 +332,13 @@ final class PlayerControlsView: UIView {
         ajustes.translatesAutoresizingMaskIntoConstraints = false
         ajustes.addArrangedSubview(pipButton)
         ajustes.addArrangedSubview(aspectButton)
+        ajustesEsquerda.axis = .horizontal
+        ajustesEsquerda.alignment = .center
+        ajustesEsquerda.spacing = 8
+        ajustesEsquerda.translatesAutoresizingMaskIntoConstraints = false
 
-        [elapsedLabel, trilhaFundo, trilhaCarregada, slider, totalLabel, rotuloFino,
-         lockButton, transporte, ajustes].forEach(bottomBar.addSubview)
+        [elapsedLabel, trilhaFundo, trilhaCarregada, marcas, slider, totalLabel, rotuloFino,
+         lockButton, ajustesEsquerda, transporte, ajustes].forEach(bottomBar.addSubview)
 
         NSLayoutConstraint.activate([
             bottomBar.bottomAnchor.constraint(equalTo: bottomAnchor),
@@ -356,8 +366,12 @@ final class PlayerControlsView: UIView {
             transporte.heightAnchor.constraint(equalToConstant: 48),
             // Nenhum grupo invade o vizinho: com pouca largura quem cede é o
             // do meio, encolhendo o espaçamento antes de encostar.
-            transporte.leadingAnchor.constraint(greaterThanOrEqualTo: lockButton.trailingAnchor,
+            transporte.leadingAnchor.constraint(greaterThanOrEqualTo: ajustesEsquerda.trailingAnchor,
                                                 constant: 8),
+
+            ajustesEsquerda.leadingAnchor.constraint(equalTo: lockButton.trailingAnchor, constant: 8),
+            ajustesEsquerda.centerYAnchor.constraint(equalTo: lockButton.centerYAnchor),
+            ajustesEsquerda.heightAnchor.constraint(equalToConstant: 48),
 
             ajustes.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -10),
             ajustes.centerYAnchor.constraint(equalTo: lockButton.centerYAnchor),
@@ -389,6 +403,11 @@ final class PlayerControlsView: UIView {
             trilhaCarregada.leadingAnchor.constraint(equalTo: trilhaFundo.leadingAnchor),
             trilhaCarregada.centerYAnchor.constraint(equalTo: trilhaFundo.centerYAnchor),
             trilhaCarregada.heightAnchor.constraint(equalToConstant: 5),
+
+            marcas.leadingAnchor.constraint(equalTo: trilhaFundo.leadingAnchor),
+            marcas.trailingAnchor.constraint(equalTo: trilhaFundo.trailingAnchor),
+            marcas.centerYAnchor.constraint(equalTo: trilhaFundo.centerYAnchor),
+            marcas.heightAnchor.constraint(equalToConstant: 11),
         ])
     }
 
@@ -583,6 +602,11 @@ final class PlayerControlsView: UIView {
 
     // MARK: - Atualizações
 
+    /// Onde começam os capítulos, de 0 a 1.
+    func setMarcas(_ fracoes: [Double]) {
+        marcas.fracoes = fracoes
+    }
+
     /// O quanto já está carregado, em segundos de vídeo.
     func setBuffered(_ instante: Double) {
         guard duration > 0 else { return }
@@ -772,5 +796,36 @@ final class PastilhaLabel: UILabel {
         let base = super.intrinsicContentSize
         return CGSize(width: base.width + insets.left + insets.right,
                       height: base.height + insets.top + insets.bottom)
+    }
+}
+
+/// Risquinhos finos onde começa cada capítulo, como no app do Jellyfin.
+/// Mais altos que a trilha, para aparecer também sobre a parte já tocada.
+final class MarcasDaTrilha: UIView {
+    var fracoes: [Double] = [] { didSet { setNeedsDisplay() } }
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isOpaque = false
+        backgroundColor = .clear
+        contentMode = .redraw
+        isUserInteractionEnabled = false
+        translatesAutoresizingMaskIntoConstraints = false
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) não usado") }
+
+    override func draw(_ rect: CGRect) {
+        guard let contexto = UIGraphicsGetCurrentContext(), !fracoes.isEmpty else { return }
+        let largura: CGFloat = 2
+        for fracao in fracoes {
+            let x = (bounds.width * CGFloat(fracao)).rounded() - largura / 2
+            let risco = CGRect(x: x, y: 0, width: largura, height: bounds.height)
+            contexto.setFillColor(UIColor.black.withAlphaComponent(0.45).cgColor)
+            contexto.fill(risco.insetBy(dx: -0.75, dy: 0))
+            contexto.setFillColor(UIColor.white.withAlphaComponent(0.92).cgColor)
+            contexto.fill(risco)
+        }
     }
 }

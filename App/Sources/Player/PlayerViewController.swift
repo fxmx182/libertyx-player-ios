@@ -480,12 +480,31 @@ final class PlayerViewController: UIViewController {
     private func carregarSegmentos(_ alvo: MediaItem) {
         segmentos = []
         mostrarPulo(nil)
+        controls.setMarcas([])
         guard case .midia(let contaID, let itemID) = alvo.origin,
               let conta = ContasDeRede.shared.conta(contaID) else { return }
         Task { @MainActor [weak self] in
-            let lidos = await ServidorDeMidia(conta: conta, token: ContasDeRede.shared.segredo(conta)).segmentos(itemID)
+            let servidor = ServidorDeMidia(conta: conta, token: ContasDeRede.shared.segredo(conta))
+            async let doServidor = servidor.segmentos(itemID)
+            async let doArquivo = servidor.capitulos(itemID)
+            let (lidos, capitulos) = await (doServidor, doArquivo)
             guard let self, self.item.origin == alvo.origin else { return }
-            self.segmentos = lidos.filter { ["Intro", "Outro", "Recap", "Preview"].contains($0.tipo) }
+            // Os risquinhos: onde começa cada capítulo (o primeiro, no zero, não).
+            if capitulos.duracao > 0 {
+                self.controls.setMarcas(capitulos.lista.map { $0.inicio / capitulos.duracao }
+                                                       .filter { $0 > 0.005 && $0 < 0.995 })
+            }
+            // As marcações do servidor (plugin) mandam; sem elas, os nomes
+            // dos capítulos.
+            let validos = lidos.filter { ["Intro", "Outro", "Recap", "Preview"].contains($0.tipo) }
+            self.segmentos = validos.isEmpty
+                ? ServidorDeMidia.segmentos(dos: capitulos.lista, duracao: capitulos.duracao)
+                : validos
+            if !self.segmentos.isEmpty {
+                LabLog.passo("pulos: " + self.segmentos.map {
+                    "\($0.tipo) \(TimeFormat.clock($0.inicio))–\(TimeFormat.clock($0.fim))"
+                }.joined(separator: ", "))
+            }
         }
     }
 

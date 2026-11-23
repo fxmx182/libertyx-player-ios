@@ -531,6 +531,65 @@ struct ServidorDeMidia {
             inicio = Double((try? c.decode(Int64.self, forKey: .inicio)) ?? 0) / ServidorDeMidia.ticks
             fim = Double((try? c.decode(Int64.self, forKey: .fim)) ?? 0) / ServidorDeMidia.ticks
         }
+
+        init(tipo: String, inicio: Double, fim: Double) {
+            self.tipo = tipo
+            self.inicio = inicio
+            self.fim = fim
+        }
+    }
+
+    /// Um capítulo do arquivo: onde começa e o nome que ele traz.
+    struct Capitulo: Hashable {
+        let inicio: Double
+        let nome: String
+    }
+
+    /// Os capítulos do vídeo — os risquinhos da barra — e a duração, que
+    /// fecha o último.
+    func capitulos(_ id: String) async -> (lista: [Capitulo], duracao: Double) {
+        struct Resposta: Decodable {
+            struct Marca: Decodable { let StartPositionTicks: Int64?; let Name: String? }
+            let Chapters: [Marca]?
+            let RunTimeTicks: Int64?
+        }
+        guard let resposta: Resposta = try? await pedir("/Users/\(usuarioID)/Items/\(id)", consulta: [
+            URLQueryItem(name: "Fields", value: "Chapters"),
+        ]) else { return ([], 0) }
+        let duracao = Double(resposta.RunTimeTicks ?? 0) / Self.ticks
+        let lista = (resposta.Chapters ?? []).map {
+            Capitulo(inicio: Double($0.StartPositionTicks ?? 0) / Self.ticks, nome: $0.Name ?? "")
+        }
+        return (lista.sorted { $0.inicio < $1.inicio }, duracao)
+    }
+
+    /// Os trechos que dá para pular, pelo nome dos capítulos: "Opening",
+    /// "OP", "Credits", "Ending", "Preview"… É o que o servidor faria com um
+    /// plugin de marcações; sem ele, o nome que o próprio arquivo dá ao
+    /// capítulo já diz o que é. Capítulo genérico ("Chapter 3", "Part A") não
+    /// vira nada.
+    static func segmentos(dos capitulos: [Capitulo], duracao: Double) -> [Segmento] {
+        guard duracao > 0 else { return [] }
+        let tipos: [(tipo: String, padrao: String)] = [
+            ("Intro", #"(?i)\b(op|opening|intro|introduction|abertura|apertura|theme song|title sequence)\b"#),
+            ("Outro", #"(?i)\b(ed|ending|credits?|end credits|cr[ée]ditos|outro|encerramento)\b"#),
+            ("Preview", #"(?i)\b(preview|next episode|next time|pr[ée]via|trailer)\b"#),
+            ("Recap", #"(?i)\b(recap|previously|resumo|anteriormente)\b"#),
+        ]
+        var achados: [Segmento] = []
+        for (i, capitulo) in capitulos.enumerated() {
+            // "Preview End": é onde a prévia acaba, não uma prévia.
+            if capitulo.nome.range(of: #"(?i)\bpreview end\b"#, options: .regularExpression) != nil { continue }
+            guard let tipo = tipos.first(where: {
+                capitulo.nome.range(of: $0.padrao, options: .regularExpression) != nil
+            })?.tipo else { continue }
+            let fim = i + 1 < capitulos.count ? capitulos[i + 1].inicio : duracao
+            let tamanho = fim - capitulo.inicio
+            // Um "capítulo" de metade do vídeo não é abertura nem crédito.
+            guard tamanho >= 5, tamanho <= max(240, duracao * 0.25) else { continue }
+            achados.append(Segmento(tipo: tipo, inicio: capitulo.inicio, fim: fim))
+        }
+        return achados
     }
 
     /// As marcações do vídeo (Jellyfin 10.10 em diante). Quem as cria é um
