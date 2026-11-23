@@ -265,14 +265,10 @@ final class PlayerControlsView: UIView {
             self?.mostrarVelocidade(velocidade)
         }
         slider.addTarget(self, action: #selector(sliderChanged), for: .valueChanged)
-        // Um toque na barra leva o vídeo até ali.
-        //
-        // O controle padrão do sistema só responde a arrasto a partir da
-        // bolinha: tocar no meio da trilha não faz nada. Em vídeo isso
-        // contraria o que todo mundo espera — apontar para um ponto é a forma
-        // mais direta de dizer "quero ver isto aqui".
-        slider.addGestureRecognizer(UITapGestureRecognizer(target: self,
-                                                           action: #selector(sliderTapped)))
+        // Um toque na barra leva o vídeo até ali — quem faz isso é o próprio
+        // `FineScrubSlider`, que traz a bolinha para baixo do dedo ao encostar.
+        // Havia também um reconhecedor de toque por cima, e o mesmo toque
+        // virava duas buscas: a segunda, às vezes, para o 0:00.
         slider.addTarget(self, action: #selector(sliderTouchDown), for: .touchDown)
         slider.addTarget(self, action: #selector(sliderTouchUp),
                          for: [.touchUpInside, .touchUpOutside, .touchCancel])
@@ -737,22 +733,6 @@ final class PlayerControlsView: UIView {
         onLockChange?(isLocked)
     }
 
-    @objc private func sliderTapped(_ gesto: UITapGestureRecognizer) {
-        guard duration > 0 else { return }
-
-        // A trilha não ocupa a largura inteira do controle: a bolinha precisa
-        // caber nas pontas. Perguntar ao próprio controle onde ela está evita
-        // um desvio que só apareceria perto do começo e do fim.
-        let trilha = slider.trackRect(forBounds: slider.bounds)
-        let ponto = gesto.location(in: slider)
-        let fracao = max(0, min(1, (ponto.x - trilha.minX) / max(1, trilha.width)))
-
-        slider.setValue(Float(fracao), animated: true)
-        let destino = Double(fracao) * duration
-        elapsedLabel.text = TimeFormat.clock(destino)
-        onScrub?(destino, true)
-    }
-
     @objc private func fundoTocado() { onBackgroundTap?() }
 
     private func mostrarVelocidade(_ velocidade: Float) {
@@ -767,10 +747,16 @@ final class PlayerControlsView: UIView {
         UIView.animate(withDuration: 0.15) { self.rotuloFino.alpha = texto == nil ? 0 : 1 }
     }
 
+    /// Se o dedo moveu a bolinha desde que encostou.
+    private var arrastouABarra = false
+
+    // Sem zerar `arrastouABarra` aqui: o toque fora da bolinha já move a
+    // barra dentro de `beginTracking`, e o aviso de encostar pode vir depois.
     @objc private func sliderTouchDown() { isUserScrubbing = true }
 
     @objc private func sliderChanged() {
         guard duration > 0 else { return }
+        arrastouABarra = true
         let time = Double(slider.value) * duration
         elapsedLabel.text = TimeFormat.clock(time)
         totalLabel.text = "-" + TimeFormat.clock(max(0, duration - time))
@@ -779,7 +765,11 @@ final class PlayerControlsView: UIView {
 
     @objc private func sliderTouchUp() {
         isUserScrubbing = false
-        guard duration > 0 else { return }
+        // Encostar na bolinha e soltar sem mover não pede busca nenhuma: a
+        // barra mostra o tempo arredondado, e buscar ali recuava o vídeo.
+        let arrastou = arrastouABarra
+        arrastouABarra = false
+        guard duration > 0, arrastou else { return }
         onScrub?(Double(slider.value) * duration, true)
     }
 }

@@ -100,7 +100,7 @@ final class PonteHTTP: NSObject, @unchecked Sendable {
     /// terminava sozinho no primeiro pulo, como se tivesse chegado ao fim.
     private func portaPronta() async throws -> UInt16 {
         if let atual = trava.withLock({ porta }), !(await responde(atual)) {
-            LabLog.problem("ponte: a porta \(atual) parou de responder; refazendo")
+            LabLog.passo("ponte: a porta \(atual) parou de responder (o iOS a fecha em segundo plano); refazendo")
             refazer()
         }
         return try await abrir()

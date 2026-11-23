@@ -386,6 +386,7 @@ final class PlayerViewController: UIViewController {
             }
 
             self.ultimoTempo = time
+            if self.engine.duration > 0 { self.ultimaDuracao = self.engine.duration }
             self.controls.update(currentTime: time, duration: self.engine.duration)
             self.atualizarPulo(time)
             self.refreshIndicadores()
@@ -700,6 +701,9 @@ final class PlayerViewController: UIViewController {
     /// O último instante que o motor informou — depois do fim ele pode
     /// responder zero.
     private var ultimoTempo: Double = 0
+    /// A última duração conhecida. No VLC 4 o motor responde zero assim que
+    /// para — justo quando é preciso saber se a parada foi longe do fim.
+    private var ultimaDuracao: Double = 0
     /// Reaberturas por queda da leitura: no máximo duas seguidas por vídeo.
     private var reaberturas: (origem: MediaOrigin, quando: CFTimeInterval, vezes: Int)?
 
@@ -712,7 +716,7 @@ final class PlayerViewController: UIViewController {
         case .smb, .webdav, .midia, .remote: break
         case .file: return false
         }
-        let duracao = engine.duration
+        let duracao = max(engine.duration, ultimaDuracao)
         let instante = ultimoTempo
         guard duracao > 60, instante > 1, instante < duracao - 30 else { return false }
         let agora = CACurrentMediaTime()
@@ -761,6 +765,7 @@ final class PlayerViewController: UIViewController {
         currentIndex = index
         item = playlist[index]
         ultimoTempo = 0
+        ultimaDuracao = 0
 
         // Estado do vídeo anterior não pode vazar para o novo: um erro
         // mostrado antes bloquearia o alerta do próximo, e as faixas listadas
