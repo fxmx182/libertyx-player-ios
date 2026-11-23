@@ -226,6 +226,25 @@ struct ServidorDeMidia {
         return episodios.isEmpty ? [episodio] : episodios
     }
 
+    /// O episódio seguinte na ordem da série — passa para a temporada
+    /// seguinte e não depende do que já foi visto. É o "próximo" do player.
+    /// `nil` para filme ou no último episódio.
+    func episodioSeguinte(_ itemID: String) async throws -> Item? {
+        let atual: Item = try await pedir("/Users/\(usuarioID)/Items/\(itemID)")
+        guard let serie = atual.serieID else { return nil }
+        // A lista começa no próprio episódio: dois itens bastam.
+        let lista: Lista = try await pedir("/Shows/\(serie)/Episodes", consulta: [
+            URLQueryItem(name: "UserId", value: usuarioID),
+            URLQueryItem(name: "StartItemId", value: itemID),
+            URLQueryItem(name: "Limit", value: "2"),
+            URLQueryItem(name: "Fields", value: "DateCreated"),
+            URLQueryItem(name: "EnableUserData", value: "true"),
+        ])
+        let episodios = await lembrandoOndeParou(lista.Items.filter(\.ehVideo))
+        guard let posicao = episodios.firstIndex(where: { $0.id == itemID }) else { return nil }
+        return episodios.dropFirst(posicao + 1).first
+    }
+
     /// O episódio que vem depois deste, pelo "A seguir" do servidor — que
     /// sabe das outras temporadas e do que já foi visto em outro aparelho.
     /// `nil` para filme ou quando a série acabou.

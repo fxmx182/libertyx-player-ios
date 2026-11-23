@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import UIKit
 
 /// Ponte local entre o VLC e servidores HTTPS.
 ///
@@ -18,7 +19,7 @@ import Network
 /// enquanto o atual é entregue. Entregar só depois de o VLC consumir o bloco
 /// anterior é o que impede um filme inteiro de se acumular na memória quando
 /// ele pausa ou enche o próprio buffer.
-final class PonteHTTP: @unchecked Sendable {
+final class PonteHTTP: NSObject, @unchecked Sendable {
 
     static let shared = PonteHTTP()
 
@@ -86,43 +87,104 @@ final class PonteHTTP: @unchecked Sendable {
 
     // MARK: - Servidor local
 
+    /// A porta da ponte anterior: refeita, a ponte tenta a mesma, para o
+    /// vídeo que já estava aberto continuar no endereço que o VLC tem.
+    private var portaAnterior: UInt16?
+
+    /// A porta da ponte, conferida: a ponte que não responde é refeita.
+    ///
+    /// Com o app parado ou em segundo plano, o iOS derruba o soquete da ponte
+    /// sem avisar — o estado continua "pronta" e nenhum erro chega. A porta
+    /// guardada seguia sendo entregue ao VLC, que levava "conexão recusada"
+    /// em todo vídeo até o app ser fechado; e o vídeo que estava aberto
+    /// terminava sozinho no primeiro pulo, como se tivesse chegado ao fim.
     private func portaPronta() async throws -> UInt16 {
+        if let atual = trava.withLock({ porta }), !(await responde(atual)) {
+            LabLog.problem("ponte: a porta \(atual) parou de responder; refazendo")
+            refazer()
+        }
+        return try await abrir()
+    }
+
+    /// Ao voltar para a frente, a ponte é conferida antes de o VLC precisar.
+    @objc private func voltouParaAFrente() {
+        Task { _ = try? await portaPronta() }
+    }
+
+    private override init() {
+        super.init()
+        NotificationCenter.default.addObserver(self, selector: #selector(voltouParaAFrente),
+                                               name: UIApplication.willEnterForegroundNotification, object: nil)
+    }
+
+    private func abrir() async throws -> UInt16 {
         try await withCheckedThrowingContinuation { continuacao in
             fila.async {
-                if let porta = self.porta { continuacao.resume(returning: porta); return }
+                if let porta = self.trava.withLock({ self.porta }) { continuacao.resume(returning: porta); return }
                 self.esperando.append(continuacao)
                 guard self.listener == nil else { return }
-                do {
-                    let parametros = NWParameters.tcp
-                    // Só o próprio aparelho: nada de fora alcança a ponte.
-                    parametros.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
-                    let novo = try NWListener(using: parametros)
-                    novo.newConnectionHandler = { [weak self] conexao in
-                        guard let self else { return }
-                        conexao.start(queue: self.fila)
-                        Task { await self.atender(conexao) }
-                    }
-                    novo.stateUpdateHandler = { [weak self] estado in self?.mudou(estado) }
-                    self.listener = novo
-                    novo.start(queue: self.fila)
-                } catch {
-                    self.falhou(error)
-                }
+                self.escutar(em: self.portaAnterior)
             }
         }
     }
 
-    private func mudou(_ estado: NWListener.State) {
+    /// Na fila. `numero` nil: qualquer porta livre.
+    private func escutar(em numero: UInt16?) {
+        do {
+            let parametros = NWParameters.tcp
+            parametros.allowLocalEndpointReuse = true
+            // Só o próprio aparelho: nada de fora alcança a ponte.
+            let porta = numero.flatMap(NWEndpoint.Port.init(rawValue:)) ?? .any
+            parametros.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: porta)
+            let novo = try NWListener(using: parametros)
+            novo.newConnectionHandler = { [weak self] conexao in
+                guard let self else { return }
+                conexao.start(queue: self.fila)
+                Task { await self.atender(conexao) }
+            }
+            novo.stateUpdateHandler = { [weak self, weak novo] estado in
+                guard let self, let novo, novo === self.listener else { return }
+                self.mudou(estado, pedida: numero)
+            }
+            listener = novo
+            novo.start(queue: fila)
+        } catch {
+            if numero != nil { escutar(em: nil) } else { falhou(error) }
+        }
+    }
+
+    private func mudou(_ estado: NWListener.State, pedida: UInt16?) {
         switch estado {
         case .ready:
             guard let numero = listener?.port?.rawValue else { return }
-            porta = numero
+            trava.withLock { porta = numero }
+            portaAnterior = numero
             esperando.forEach { $0.resume(returning: numero) }
             esperando = []
-        case .failed(let erro):
-            falhou(erro)
+        case .failed(let erro), .waiting(let erro):
+            // A porta de antes pode estar ocupada: qualquer outra serve.
+            if pedida != nil {
+                listener?.cancel()
+                listener = nil
+                escutar(em: nil)
+            } else {
+                falhou(erro)
+            }
+        case .cancelled:
+            // Cancelada por fora (o iOS): a próxima vez refaz.
+            listener = nil
+            trava.withLock { porta = nil }
         default:
             break
+        }
+    }
+
+    /// Joga a ponte fora; a próxima chamada abre outra, na mesma porta se der.
+    private func refazer() {
+        fila.sync {
+            listener?.cancel()
+            listener = nil
+            trava.withLock { porta = nil }
         }
     }
 
@@ -132,9 +194,30 @@ final class PonteHTTP: @unchecked Sendable {
         LabLog.problem("ponte: \(erro)")
         listener?.cancel()
         listener = nil
-        porta = nil
+        trava.withLock { porta = nil }
         esperando.forEach { $0.resume(throwing: erro) }
         esperando = []
+    }
+
+    /// Se a ponte aceita conexão nesta porta (até um segundo).
+    private func responde(_ numero: UInt16) async -> Bool {
+        guard let porta = NWEndpoint.Port(rawValue: numero) else { return false }
+        return await withCheckedContinuation { continuacao in
+            let conexao = NWConnection(host: .ipv4(.loopback), port: porta, using: .tcp)
+            let resposta = RespostaDaPonte(continuacao)
+            conexao.stateUpdateHandler = { estado in
+                switch estado {
+                case .ready: resposta.dar(true); conexao.cancel()
+                case .failed, .waiting: resposta.dar(false); conexao.cancel()
+                default: break
+                }
+            }
+            conexao.start(queue: .global(qos: .userInitiated))
+            DispatchQueue.global().asyncAfter(deadline: .now() + 1) {
+                resposta.dar(false)
+                conexao.cancel()
+            }
+        }
     }
 
     // MARK: - Um pedido do VLC
@@ -330,5 +413,21 @@ final class PonteHTTP: @unchecked Sendable {
                 if let erro { continuacao.resume(throwing: erro) } else { continuacao.resume() }
             })
         }
+    }
+}
+
+/// Uma resposta só para quem espera; as seguintes são ignoradas.
+private final class RespostaDaPonte: @unchecked Sendable {
+    private let trava = NSLock()
+    private var continuacao: CheckedContinuation<Bool, Never>?
+
+    init(_ c: CheckedContinuation<Bool, Never>) { continuacao = c }
+
+    func dar(_ valor: Bool) {
+        trava.lock()
+        let c = continuacao
+        continuacao = nil
+        trava.unlock()
+        c?.resume(returning: valor)
     }
 }
