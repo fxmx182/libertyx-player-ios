@@ -39,7 +39,7 @@ final class PlayerViewController: UIViewController {
     /// Muda ao pular de faixa — daí não ser constante.
     private var item: MediaItem
     /// Os outros vídeos da mesma pasta, para anterior/próxima.
-    private let playlist: [MediaItem]
+    private var playlist: [MediaItem]
     private var currentIndex: Int
 
     private var renderView: UIView!
@@ -385,6 +385,7 @@ final class PlayerViewController: UIViewController {
                 return
             }
 
+            self.ultimoTempo = time
             self.controls.update(currentTime: time, duration: self.engine.duration)
             self.atualizarPulo(time)
             self.refreshIndicadores()
@@ -421,6 +422,7 @@ final class PlayerViewController: UIViewController {
                 controls.update(currentTime: 0, duration: engine.duration)
                 buscarLegendasAoLado(item)
                 carregarSegmentos(item)
+                completarFila()
 
                 // Retomar é pergunta, não regra: às vezes se quer rever o
                 // filme desde o começo, e voltar sozinho ao meio obriga a
@@ -676,7 +678,41 @@ final class PlayerViewController: UIViewController {
         switchTo(index: currentIndex + 1)
     }
 
+    /// O último instante que o motor informou — depois do fim ele pode
+    /// responder zero.
+    private var ultimoTempo: Double = 0
+    /// Reaberturas por queda da leitura: no máximo duas seguidas por vídeo.
+    private var reaberturas: (origem: MediaOrigin, quando: CFTimeInterval, vezes: Int)?
+
+    /// "Fim" longe do fim, num vídeo pela rede: foi a leitura que caiu (a
+    /// ponte derrubada pelo iOS, o servidor que fechou a conexão), e o VLC
+    /// chama isso de fim de arquivo. Tratar como fim marcava o episódio como
+    /// visto e pulava para o próximo; aqui ele reabre no mesmo ponto.
+    private func reabrirSeALeituraCaiu() -> Bool {
+        switch item.origin {
+        case .smb, .webdav, .midia, .remote: break
+        case .file: return false
+        }
+        let duracao = engine.duration
+        let instante = ultimoTempo
+        guard duracao > 60, instante > 1, instante < duracao - 30 else { return false }
+        let agora = CACurrentMediaTime()
+        var vezes = 1
+        if let antes = reaberturas, antes.origem == item.origin, agora - antes.quando < 120 {
+            vezes = antes.vezes + 1
+        }
+        guard vezes <= 2 else { return false }
+        reaberturas = (item.origin, agora, vezes)
+        LabLog.problem("o vídeo parou em \(TimeFormat.clock(instante)) de \(TimeFormat.clock(duracao)): a leitura caiu; reabrindo no mesmo ponto")
+        let chave = item.origin.resumeKey
+        ResumeStore.shared.save(position: instante, duration: duracao, for: chave)
+        EscolhaDeFaixas.shared.pedirInicio(.continuar, para: chave)
+        loadAndPlay()
+        return true
+    }
+
     private func handlePlaybackEnded() {
+        if reabrirSeALeituraCaiu() { return }
         if repeatMode == .one {
             Task { @MainActor in
                 await engine.seek(to: 0, precise: false)
@@ -705,6 +741,7 @@ final class PlayerViewController: UIViewController {
 
         currentIndex = index
         item = playlist[index]
+        ultimoTempo = 0
 
         // Estado do vídeo anterior não pode vazar para o novo: um erro
         // mostrado antes bloquearia o alerta do próximo, e as faixas listadas
@@ -772,6 +809,28 @@ final class PlayerViewController: UIViewController {
     /// Nome de episódio: "S01E02", "s1 e2" ou "1x02".
     private static func ehEpisodio(_ nome: String) -> Bool {
         nome.range(of: #"(?i)(\bS\d{1,2}\s?E\d{1,3}\b|\b\d{1,2}x\d{2,3}\b)"#, options: .regularExpression) != nil
+    }
+
+    /// Episódio do servidor no fim da fila: pergunta ao servidor qual vem
+    /// depois e o põe na fila. A fila que chega ao player é só a temporada —
+    /// ou só o episódio, aberto pelo "Continuar assistindo" —, e sem isto o
+    /// "próximo" ficava apagado e o fim do episódio fechava o player.
+    private func completarFila() {
+        guard case .midia(let contaID, let itemID) = item.origin,
+              currentIndex == playlist.count - 1,
+              let conta = ContasDeRede.shared.conta(contaID) else { return }
+        let atual = item
+        Task { @MainActor [weak self] in
+            let servidor = ServidorDeMidia(conta: conta, token: ContasDeRede.shared.segredo(conta))
+            guard let seguinte = try? await servidor.episodioSeguinte(itemID) else { return }
+            let novo = servidor.paraTocar(seguinte)
+            guard let self, self.item.origin == atual.origin, self.currentIndex == self.playlist.count - 1,
+                  !self.playlist.contains(where: { $0.origin == novo.origin }) else { return }
+            self.playlist.append(novo)
+            self.updateNavigation()
+            self.refreshNowPlaying()
+            LabLog.passo("próximo do servidor: \(novo.title)")
+        }
     }
 
     private func updateNavigation() {

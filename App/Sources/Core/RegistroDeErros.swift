@@ -151,6 +151,10 @@ final class RegistroDeErros: NSObject, @unchecked Sendable {
 
 extension RegistroDeErros: VLCLogging {
     func handleMessage(_ message: String, logLevel level: VLCLogLevel, context: VLCLogContext?) {
+        // Opções que o próprio VLCKit passa e a biblioteca não tem (marq-*,
+        // quiet, audiounit_ios-gain): uma dúzia de linhas a cada vídeo aberto,
+        // sem efeito nenhum, escondendo o que importa.
+        if message.hasPrefix("option "), message.hasSuffix(" does not exist") { return }
         let tipo = level == .error ? "VLC erro" : "VLC aviso"
         let modulo = context.map { " [\($0.module)]" } ?? ""
         let texto = "\(tipo)\(modulo): \(message)"
