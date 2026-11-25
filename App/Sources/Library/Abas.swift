@@ -382,6 +382,12 @@ struct AjustesView: View {
 
     private static let site = URL(string: "https://fxmx182.github.io")!
     private static let email = "libertyx.suporte@gmail.com"
+    /// Página de nota na App Store (o id do app no App Store Connect).
+    private static let avaliacao = URL(string: "https://apps.apple.com/app/id6826934911?action=write-review")!
+    /// Instalado pelo TestFlight: ainda não há página na App Store para dar
+    /// nota, então a linha leva ao app do TestFlight, onde fica o "Enviar
+    /// feedback". O recibo do TestFlight é o de sandbox.
+    private static let peloTestFlight = Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt"
 
     var body: some View {
         NavigationStack {
@@ -460,6 +466,13 @@ struct AjustesView: View {
                         }
 
                         grupo(String(localized: "Fale com a gente")) {
+                            Button { avaliar() } label: {
+                                LinhaDeAjuste(simbolo: Self.peloTestFlight ? "bubble.left" : "star",
+                                              titulo: Self.peloTestFlight ? String(localized: "Enviar feedback pelo TestFlight")
+                                                                          : String(localized: "Avaliar o LibertyX"),
+                                              externo: true)
+                            }
+                            divisoria
                             ShareLink(item: Self.site,
                                       message: Text("O LibertyX Player toca qualquer vídeo, do celular ou direto do servidor de casa.")) {
                                 LinhaDeAjuste(simbolo: "square.and.arrow.up", titulo: String(localized: "Compartilhar o LibertyX"),
@@ -523,6 +536,10 @@ struct AjustesView: View {
 
     private var divisoria: some View {
         Rectangle().fill(LabTheme.glassBorder).frame(height: 0.5).padding(.leading, 58)
+    }
+
+    private func avaliar() {
+        abrir(Self.peloTestFlight ? URL(string: "itms-beta://")! : Self.avaliacao)
     }
 
     private func escreverEmail() {
