@@ -12,9 +12,8 @@ import SwiftUI
 ///
 /// Uma diferença do padrão do iOS, de propósito, para ser igual ao Android:
 /// cada aba abre sempre do começo. O iOS guarda a última tela de cada aba, e
-/// tocar em Início trazia de volta a pasta do Jellyfin deixada aberta. Quem
-/// troca de aba esquece a pilha da aba que deixou — recriada enquanto não
-/// aparece, então ninguém vê o salto.
+/// tocar em Início trazia de volta a pasta do Jellyfin deixada aberta. Tocar
+/// numa aba — outra ou a mesma — a recria na raiz (ver `Recomeco`).
 struct Abas: View {
     enum Aba: Hashable { case inicio, ajustes, extra(Dock.Item) }
 
@@ -29,28 +28,23 @@ struct Abas: View {
     var body: some View {
         let extras = dock.validos(contas.contas, smb: servidoresSMB.servers)
         TabView(selection: Binding(get: { aba }, set: { nova in
-            // Trocar de aba esquece a pilha da que ficou; tocar na aba que já
-            // está aberta volta ao começo dela — de dentro de uma pasta, de um
-            // servidor ou de uma página, Início leva sempre ao Início.
-            if nova != aba {
-                geracao[aba, default: 0] += 1
-            } else {
-                geracao[nova, default: 0] += 1
-            }
+            // A aba tocada recomeça, seja outra ou a que já está aberta: de
+            // dentro de uma pasta, de um servidor ou de uma página, Início leva
+            // sempre ao Início. É a que vai aparecer, então a TabView a
+            // redesenha na hora; a que ficou para trás pode nem ser atualizada
+            // enquanto está escondida.
+            geracao[nova, default: 0] += 1
             aba = nova
         })) {
-            LibraryView()
-                .id(geracao[.inicio, default: 0])
+            Recomeco(geracao: geracao[.inicio, default: 0]) { LibraryView() }
                 .tabItem { Label("Início", systemImage: "play") }
                 .tag(Aba.inicio)
             ForEach(extras, id: \.self) { item in
-                tela(item)
-                    .id(geracao[.extra(item), default: 0])
+                Recomeco(geracao: geracao[.extra(item), default: 0]) { tela(item) }
                     .tabItem { rotulo(item) }
                     .tag(Aba.extra(item))
             }
-            AjustesView()
-                .id(geracao[.ajustes, default: 0])
+            Recomeco(geracao: geracao[.ajustes, default: 0]) { AjustesView() }
                 .tabItem { Label("Ajustes", systemImage: "gearshape") }
                 .tag(Aba.ajustes)
         }
@@ -102,6 +96,21 @@ struct Abas: View {
                 Label(servidor.name, image: "LogoSMB")
             }
         }
+    }
+}
+
+/// O conteúdo de uma aba, recriado do zero — pilha de navegação incluída —
+/// cada vez que `geracao` muda.
+///
+/// O `.id` fica aqui dentro, e não direto no filho da TabView: lá ele é a
+/// identidade da própria aba, que a TabView usa para casar aba com tela, e
+/// trocá-lo não recriava nada — a pasta deixada aberta voltava igual.
+private struct Recomeco<Conteudo: View>: View {
+    let geracao: Int
+    @ViewBuilder let conteudo: () -> Conteudo
+
+    var body: some View {
+        conteudo().id(geracao)
     }
 }
 
